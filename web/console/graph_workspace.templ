@@ -3,6 +3,7 @@ package consoleweb
 import "fmt"
 
 templ GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTopology) {
+ <script src="/console/assets/graph-observation.js" defer></script>
  <div data-graph-workspace>
   <nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Graphs</a></nav>
   <div class="record-head graph-record-head">

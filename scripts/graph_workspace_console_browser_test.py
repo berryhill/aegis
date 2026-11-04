@@ -86,9 +86,9 @@ def desktop(page):
     assert geometry["ready"], "canvas missing nodes or edges"
     assert geometry["startAtNode"] and geometry["endAtNode"], f"edge endpoints disconnected: {geometry}"
 
-    # Selection and viewport controls must not touch the network or authority state.
+    # Selection and viewport controls must not mutate authority; Graph auth reads are GET-only.
     seen = []
-    page.on("request", lambda request: seen.append(request.url))
+    page.on("request", lambda request: seen.append(request.url) if request.method not in ("GET", "HEAD") else None)
     node = page.locator('[data-graph-node="0"]')
     node.focus()
     page.keyboard.press("Enter")

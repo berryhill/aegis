@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+
+- Graph detail aligns bounded node/edge geometry, supports full Fit for 128-rank/row definitions, retains textual raw-record fallback above display bounds, and clears protected content on observed authentication loss or unverifiable readback. A separate read-only observation asset preserves presentation-only navigation. Actual frozen-CLI browser fixtures are source coverage pending capacity-gated execution and independent acceptance; no runtime authority or general scheduler is added.
+
 ### Added
 
 - #352 source: packaged `aegis skills install|inventory|update|rollback` thin

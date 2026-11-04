@@ -39,6 +39,12 @@ var NavigationJS = append(append(append(append([]byte{}, navigationJS...), graph
 //go:embed execution_debugger.js
 var ExecutionDebuggerJS []byte
 
+// GraphObservationJS performs only authenticated same-origin Graph SSR reads.
+// It is intentionally separate from the no-network presentation navigation.
+//
+//go:embed graph_observation.js
+var GraphObservationJS []byte
+
 //go:embed vendor/datastar-v1.0.2.js
 var Datastar []byte
 

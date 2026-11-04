@@ -60,6 +60,8 @@ controller native checks use the complete private frozen inventory. Candidate
 acceptance does not publish or declare whole-contribution success. See
 [candidate qualification](managed-contribution-candidate.md).
 
+Graph definition workspace: exact server-selected immutable revision → bounded rank/row projection → shared card/SVG coordinates → contextual inspection and raw-record textual fallback. Presentation navigation remains network-free; a separate external Graph observation asset performs only existing authenticated SSR GETs and discards their inert parsed content after checking authentication markers. It never inserts fetched data or selects authority. Graph dependency geometry does not establish scheduling or execution eligibility.
+
 Read-only execution debugger: interpreter → atomic cursor observations → verified digest-linked Doer trace → exact-run application projection → authenticated Console polling/replay. Graph definition dependencies are not execution scheduling or verified artifact handoffs. The same authenticated read joins a canonical escaped current-outcome template through the existing owner/evidence result reader; history replay never changes that current observation. See [execution debugger](EXECUTION_DEBUGGER.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow
