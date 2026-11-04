@@ -148,6 +148,77 @@ class ResourceTests(unittest.TestCase):
                     self.assertEqual(client.next_id, 8)
                     self.assertEqual(client.receive.call_count, len(sequence))
 
+    def test_disposed_fixture_favicon_ack_requires_exact_old_document(self):
+        for late_navigation in (False, True):
+            client = self.paced_client()
+            paused = self.paused(resource='Other', url='http://fixture:8450/favicon.ico')
+            paused['params'].update(networkId='icon', frameId='frame')
+            start = {'method': 'Network.requestWillBeSent', 'params': {
+                'requestId': 'icon', 'frameId': 'frame', 'loaderId': 'old-document',
+                'type': 'Other', 'request': {'url': 'http://fixture:8450/favicon.ico', 'method': 'GET'}}}
+            navigation = {'method': 'Page.frameNavigated', 'params': {
+                'frame': {'id': 'frame', 'loaderId': 'new-document'}}}
+            ack = {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}}
+            client.receive = mock.Mock(side_effect=[start, paused] +
+                ([ack, navigation] if late_navigation else [navigation, ack]) +
+                [{'id': 2, 'result': {'preserved': True}}])
+            self.assertEqual(client.command('test'), {'preserved': True})
+            self.assertEqual(client.sock.sendall.call_count, 2)
+
+    def test_favicon_disposal_cannot_admit_application_or_unbound_requests(self):
+        import copy
+        for mutation in ('origin', 'path', 'query', 'type', 'frame', 'same-loader',
+                         'no-loader', 'no-network', 'no-navigation', 'finished', 'failed', 'restart'):
+            with self.subTest(mutation=mutation):
+                client = self.paced_client()
+                paused = self.paused(resource='Other', url='http://fixture:8450/favicon.ico')
+                paused['params'].update(networkId='icon', frameId='frame')
+                start = {'method': 'Network.requestWillBeSent', 'params': {
+                    'requestId': 'icon', 'frameId': 'frame', 'loaderId': 'old',
+                    'type': 'Other', 'request': {'url': 'http://fixture:8450/favicon.ico', 'method': 'GET'}}}
+                navigation = {'method': 'Page.frameNavigated', 'params': {'frame': {'id': 'frame', 'loaderId': 'new'}}}
+                if mutation == 'origin': start['params']['request']['url'] = 'http://other:8450/favicon.ico'
+                if mutation == 'path': start['params']['request']['url'] = 'http://fixture:8450/console/loops/run'
+                if mutation == 'query': start['params']['request']['url'] += '?extra=1'
+                if mutation == 'type': start['params']['type'] = 'XHR'
+                if mutation == 'frame': navigation['params']['frame']['id'] = 'other'
+                if mutation == 'same-loader': navigation['params']['frame']['loaderId'] = 'old'
+                if mutation == 'no-loader': start['params']['loaderId'] = ''
+                if mutation == 'no-network': paused['params'].pop('networkId')
+                events = [start, paused] + ([] if mutation == 'no-navigation' else [navigation])
+                if mutation in ('finished', 'failed'):
+                    events.append({'method': 'Network.loadingFinished' if mutation == 'finished' else 'Network.loadingFailed', 'params': {'requestId': 'icon'}})
+                if mutation == 'restart': events.append(copy.deepcopy(start))
+                client.events = events
+                self.assertFalse(client._fixture_favicon_superseded(paused['params']))
+
+    def test_network_start_after_pause_requires_first_exact_request_and_cancel(self):
+        import copy
+        for mutation in ('valid', 'url', 'method', 'frame', 'no-loader', 'no-cancel', 'success', 'restart'):
+            with self.subTest(mutation=mutation):
+                client = self.paced_client()
+                paused = self.paused()
+                paused['params'].update(networkId='network', frameId='frame')
+                start = {'method': 'Network.requestWillBeSent', 'params': {
+                    'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader',
+                    'request': {'url': paused['params']['request']['url'], 'method': 'GET'}}}
+                cancel = {'method': 'Network.loadingFailed', 'params': {
+                    'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
+                if mutation == 'url': start['params']['request']['url'] += '-other'
+                if mutation == 'method': start['params']['request']['method'] = 'POST'
+                if mutation == 'frame': start['params']['frameId'] = 'other'
+                if mutation == 'no-loader': start['params']['loaderId'] = ''
+                if mutation == 'no-cancel': cancel['params']['canceled'] = False
+                if mutation == 'success': cancel['method'] = 'Network.loadingFinished'
+                client.events = [paused, start, cancel]
+                if mutation == 'restart': client.events.extend([copy.deepcopy(start), cancel])
+                self.assertEqual(client._fixture_request_cancelled(paused['params']), mutation == 'valid')
+        client = self.paced_client()
+        client.receive = mock.Mock(side_effect=[paused, {'id': 3, 'error': {
+            'code': -32602, 'message': 'Invalid InterceptionId.'}}, {'id': 2, 'result': {'preserved': True}},
+            start, cancel])
+        self.assertEqual(client.command('test'), {'preserved': True})
+
     def test_pacing_has_no_idle_catchup_and_only_exact_origin(self):
         now = [0.0]
         sent = []

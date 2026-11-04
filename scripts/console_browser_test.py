@@ -191,15 +191,27 @@ class DevTools:
         start: dict[str, Any] | None = None
         terminal: dict[str, Any] | None = None
         pause_start: dict[str, Any] | None = None
+        pause_seen = False
+        late_start_seen = False
         for event in self.events:
             params = event.get("params", {})
             if (event.get("method") == "Fetch.requestPaused"
-                    and params.get("requestId") == paused.get("requestId") and pause_start is None):
-                pause_start = start
+                    and params.get("requestId") == paused.get("requestId") and not pause_seen):
+                pause_start, pause_seen = start, True
             if params.get("requestId") != network_id:
                 continue
             if event.get("method") == "Network.requestWillBeSent":
                 start, terminal = params, None
+                if pause_seen and pause_start is None and not late_start_seen:
+                    # Fetch and Network are asynchronous CDP domains. Bind only
+                    # the first later start, with the exact original request.
+                    late_start_seen = True
+                    request = params.get("request", {})
+                    original = paused.get("request", {})
+                    if (params.get("frameId") == frame_id and request.get("url")
+                            and request.get("url") == original.get("url")
+                            and request.get("method") and request.get("method") == original.get("method")):
+                        pause_start = params
             elif event.get("method") in ("Network.loadingFailed", "Network.loadingFinished"):
                 terminal = event
         return bool(start and start is pause_start and start.get("loaderId") and start.get("frameId") == frame_id
@@ -214,6 +226,45 @@ class DevTools:
         classification = ("invalid_interception_id" if error.get("message") == "Invalid InterceptionId."
                           else "unknown")
         return f"DevTools command Fetch.continueRequest failed; code={code}; classification={classification}"
+
+    def _fixture_favicon_superseded(self, paused: dict[str, Any]) -> bool:
+        """Chrome may discard its icon interception without a Network terminal.
+
+        Require the exact fixture icon and disposal of its original document;
+        an invalid ID or an unrelated navigation alone is not sufficient.
+        """
+        network_id, frame_id = paused.get("networkId"), paused.get("frameId")
+        if not network_id or not frame_id or paused.get("resourceType") != "Other":
+            return False
+        start = None
+        pause_start = None
+        pause_seen = False
+        replacement = False
+        terminal = False
+        for event in self.events:
+            params = event.get("params", {})
+            method = event.get("method")
+            if method == "Fetch.requestPaused" and params.get("requestId") == paused.get("requestId") and not pause_seen:
+                pause_start, pause_seen = start, True
+            if params.get("requestId") == network_id:
+                if method == "Network.requestWillBeSent":
+                    start = params
+                elif method in ("Network.loadingFailed", "Network.loadingFinished"):
+                    terminal = True
+            if pause_seen and method == "Page.frameNavigated" and pause_start:
+                frame = params.get("frame", {})
+                if frame.get("id") == frame_id and frame.get("loaderId") and frame["loaderId"] != pause_start.get("loaderId"):
+                    replacement = True
+        if not (pause_seen and start and start is pause_start and not terminal and replacement
+                and start.get("frameId") == frame_id and start.get("loaderId") and start.get("type") == "Other"):
+            return False
+        parsed = urllib.parse.urlsplit(start.get("request", {}).get("url", ""))
+        return ((parsed.scheme, parsed.netloc) == getattr(self, "fixture_origin", None)
+                and parsed.path == "/favicon.ico" and not parsed.query and not parsed.fragment
+                and parsed.username is None and parsed.password is None
+                and paused.get("request", {}).get("url") == start.get("request", {}).get("url")
+                and paused.get("request", {}).get("method") == "GET"
+                and start.get("request", {}).get("method") == "GET")
 
     def _cancellation_diagnostic(self, paused: dict[str, Any]) -> str:
         """Closed context flags and public routing only; never raw CDP errors/IDs."""
@@ -243,7 +294,8 @@ class DevTools:
             "start_seen": bool(starts), "loader_present": bool(start.get("loaderId")),
             "frame_matches": bool(start and start.get("frameId") == paused.get("frameId")),
             "terminal": terminal[-1]["method"] if terminal else "none",
-            "exact_cancelled": self._fixture_request_cancelled(paused), "route": route,
+            "exact_cancelled": self._fixture_request_cancelled(paused),
+            "favicon_superseded": self._fixture_favicon_superseded(paused), "route": route,
         }, sort_keys=True)
 
     def command(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -293,10 +345,10 @@ class DevTools:
             elif received.get("method") == "Fetch.requestPaused" and getattr(self, "fixture_origin", None) is not None:
                 paused = received["params"]
                 continuation = self._continue_fixture_request(paused)
-                continuations[continuation] = {key: paused.get(key) for key in ("requestId", "networkId", "frameId")}
-                continuations[continuation]["request"] = {"url": paused.get("request", {}).get("url", "")}
+                continuations[continuation] = {key: paused.get(key) for key in ("requestId", "networkId", "frameId", "resourceType")}
+                continuations[continuation]["request"] = {key: paused.get("request", {}).get(key, "") for key in ("url", "method")}
             for ack, paused in list(invalid_acks.items()):
-                if self._fixture_request_cancelled(paused):
+                if self._fixture_request_cancelled(paused) or self._fixture_favicon_superseded(paused):
                     del invalid_acks[ack]
         return response.get("result", {})
 
