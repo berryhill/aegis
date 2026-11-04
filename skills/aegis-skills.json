@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:75cc0cbe705b3ac023558b2aba3786946e71a891ff11d03d533bad53d39e8fa7",
+    "content_digest": "sha256:90a907ed4a6d2c53aaaa1efb13f590fc541fcdfe3935355bc67699e0dd73f468",
     "source_revision": "repository"
   },
   "operations": [
@@ -330,12 +330,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:99f1851dbff1995f81d6a1041eb23a504bb1b87414c6c4c8c3f42e993dca4a40",
+      "content_digest": "sha256:75512e3ab27d0c0c9d2cdc7b036040f89770ba06ef582e7cf962364350a7628f",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:7cd60ce1e763a616fa8f9885ebbe8d86243bce3e957f90480c13f7ab8d2bf1ea",
-          "size": 55480
+          "sha256": "sha256:5fd411c0165fbb39ba2684a33c93db453bbc3c5781795016a9e9b2ab2d3e63bf",
+          "size": 56355
         }
       ]
     },
@@ -484,12 +484,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:ae078f8bedfa9638ee7096a08dd5ce07da2d122e594b5a219a140ca2d5791666",
+      "content_digest": "sha256:0148f73f30d640185ca8a585f737308558e66f2cd15e7835862557ed57048d9a",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:53a19303dc3db12baa8c49d3e0a3471a8277f87b16d35870bda212b4e8107c68",
-          "size": 21243
+          "sha256": "sha256:319d331c76c75ed528c0a02319175b1ba707a1b0e0266301368be3168c2fbd06",
+          "size": 21876
         },
         {
           "path": "references/evidence-fixtures.json",

@@ -110,10 +110,22 @@ func TestConsoleLoopRunRouteBlockedIntentAndAuthentication(t *testing.T) {
 		e.ServeHTTP(response, request)
 		return response
 	}
-	for _, response := range []*httptest.ResponseRecorder{invoke("key", csrf, published.Revision.Digest, false), invoke("key", "wrong", published.Revision.Digest, true), invoke("key", csrf, "sha256:"+strings.Repeat("a", 64), true)} {
-		if response.Code == http.StatusOK {
-			t.Fatalf("untrusted form admitted: %s", response.Body.String())
-		}
+	for _, tc := range []struct {
+		name, token, digest string
+		authenticated       bool
+		status              int
+	}{
+		{"unauthenticated", csrf, published.Revision.Digest, false, http.StatusUnauthorized},
+		{"invalid-csrf", "wrong", published.Revision.Digest, true, http.StatusForbidden},
+		{"wrong-digest", csrf, "sha256:" + strings.Repeat("a", 64), true, http.StatusForbidden},
+		{"missing-digest", csrf, "", true, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := invoke("key", tc.token, tc.digest, tc.authenticated)
+			if response.Code != tc.status {
+				t.Fatalf("denial status=%d, want %d: %s", response.Code, tc.status, response.Body.String())
+			}
+		})
 	}
 	first := invoke("stable-key", csrf, published.Revision.Digest, true)
 	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "session_selection_zero_authorized_matches") || !strings.Contains(first.Body.String(), "review_charter_successor_with_matching_authentication") || !strings.Contains(first.Body.String(), "required_charter:") || !strings.Contains(first.Body.String(), "Request key:") || !strings.Contains(first.Body.String(), "stable-key") || !strings.Contains(first.Body.String(), "Read back or resume this request") {

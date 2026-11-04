@@ -688,9 +688,13 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 				model.Surface.Inspector.Queue.RunResult = consoleQueueRunResult(c.Request().Context(), svc, subject, model.Surface.Inspector.Key)
 			}
 			if domain == consoleLoops && model.Surface.Inspector != nil && model.Surface.Inspector.Loop.DoerV4 {
-				model.Surface.LoopRunKey, err = consoleLoopRunKey(c, subject, model.Surface.Inspector)
+				var redirected bool
+				model.Surface.LoopRunKey, redirected, err = consoleLoopRunPageIdentity(c, subject, model.Surface.Inspector)
 				if err != nil {
 					return err
+				}
+				if redirected {
+					return nil
 				}
 			}
 		}

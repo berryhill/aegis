@@ -325,6 +325,29 @@ GOMAXPROCS=2 go test -p 1 ./internal/command -run '^TestCompanion' -count=1
 
 The companion command tests use inert injected protocol helpers and private fixture sockets; they are not human desktop confirmation or integrated installed-browser proof. Neither these checks nor the fake-Hermes installed vertical satisfy the required live source gate. Same-account subprocess/path controls still do not provide complete host confinement.
 
+## Console input readback and distinct v4 Run identity
+
+Authenticated Queue detail renders normalized JSON values already returned by
+its execution view for direct Loop and Graph sources, even without a reusable
+Graph. It preserves `false`, `0`, objects, arrays and escaped strings as JSON.
+The source label is **normalized run snapshot**: persisted values do not establish
+whether an input was caller-supplied or defaulted. A declared Graph port absent
+from the snapshot is marked absent/missing, never given an invented default.
+This projection does not load workspace files, private definition source or
+credentials, or expand the existing authenticated execution-view disclosure.
+
+For a published selected-file v4 Loop, **Start a distinct run** rotates the
+server-issued request cookie once for that action, then responds with HTTP 303
+to the clean exact-revision URL. Follow that canonical location: reload, Back to
+the clean detail and reopening it retain the new cookie/key. Repeating the
+explicit action is another distinct-run request, not unknown-response recovery.
+After an interrupted Run, use the original same-key readback/resume instead.
+Authentication, exact revision/digest pins and Run form origin/CSRF checks remain
+mandatory. This adds no v5 browser launch/editor; v5 uses typed Run inputs.
+
+Focused handler/renderer regressions are not fresh real-browser, current-provider
+or installed-target acceptance. See the [issue 326 launch review](implementation/issue-326-launch-review.md).
+
 ## Reusable typed v5 definition
 
 `aegis loops doer-reusable FILE [--output NEW_FILE]` accepts an existing `agent_id`, `loop_id`, positive `revision`, `idempotency_key`, optional exact `previous_digest`, and `doer_reusable: {"max_attempts": 2}` (one to three attempts). It prints a v5 publication draft, or creates a new private file without overwriting one. It does not bind a task or workspace, consult a configured authority, publish, activate, queue, or run. Publication still requires the authenticated service and its ordinary ownership/authority checks.
