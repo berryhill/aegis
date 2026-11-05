@@ -135,6 +135,9 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
             process.poll.return_value = None
             def launch(*args, **kwargs):
                 (chrome_home / "DevToolsActivePort").write_text("")
+                kwargs["stderr"].write("secret-token /private/path Resource temporarily unavailable")
+                kwargs["stderr"].flush()
+                self.assertEqual((workspace / "chrome.stderr").stat().st_mode & 0o777, 0o600)
                 return process
             clock = [0.0]
             def monotonic():
@@ -145,8 +148,11 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
                   mock.patch.object(console_browser_test, "stop_chrome"),
                   mock.patch.object(console_browser_test.time, "monotonic", side_effect=monotonic),
                   mock.patch.object(console_browser_test.time, "sleep")):
-                with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready"):
+                with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready") as failure:
                     console_browser_test.main()
+                self.assertIn('startup={"process": "running", "stderr": "resource"}', str(failure.exception))
+                self.assertNotIn("secret-token", str(failure.exception))
+                self.assertNotIn("/private/path", str(failure.exception))
 
     def test_waits_for_missing_empty_partial_then_complete_port(self):
         with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
@@ -221,6 +227,33 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
                 with self.subTest(value=value):
                     path.write_text(value + "\n/devtools/browser/proof\n")
                     self.assertEqual(console_browser_test.wait_for_active_port(path, time.monotonic() + 1, ProcessStub(None)), int(value))
+
+
+class ChromeStartupDiagnosticTest(unittest.TestCase):
+    def test_closed_classification_never_returns_stderr_or_paths(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            path = pathlib.Path(directory) / "private.stderr"
+            for text, expected in (
+                ("secret-token No usable sandbox /private/path", "sandbox"),
+                ("private Resource temporarily unavailable", "resource"),
+                ("ProcessSingleton /private/profile", "profile"),
+                ("DevTools listening on ws://secret-host/private", "devtools_listening"),
+                ("secret-token unknown startup failure", "unclassified"),
+            ):
+                path.write_text(text)
+                self.assertEqual(console_browser_test.chrome_startup_diagnostic(path, ProcessStub(None)),
+                                 {"process": "running", "stderr": expected})
+            path.unlink()
+            self.assertEqual(console_browser_test.chrome_startup_diagnostic(path, ProcessStub(17)),
+                             {"process": "exited", "stderr": "unclassified"})
+
+    def test_stderr_read_is_bounded(self):
+        path = mock.MagicMock()
+        stream = path.open.return_value.__enter__.return_value
+        stream.read.return_value = b"unknown private output"
+        self.assertEqual(console_browser_test.chrome_startup_diagnostic(path, ProcessStub(None)),
+                         {"process": "running", "stderr": "unclassified"})
+        stream.read.assert_called_once_with(65536)
 
 
 class PageWebsocketTest(unittest.TestCase):

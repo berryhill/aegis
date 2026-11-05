@@ -410,6 +410,24 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
     raise RuntimeError("Chrome did not expose a debuggable console page")
 
 
+def chrome_startup_diagnostic(path: pathlib.Path, process: ProcessState) -> dict[str, str]:
+    """Closed startup evidence only: stderr can contain private URLs and paths."""
+    try:
+        with path.open("rb") as stream:
+            stderr = stream.read(65536).lower()
+    except OSError:
+        stderr = b""
+    indicators = {
+        "sandbox": (b"no usable sandbox", b"failed to move to new namespace"),
+        "resource": (b"resource temporarily unavailable", b"cannot allocate memory", b"too many open files"),
+        "profile": (b"singletonlock", b"processsingleton"),
+        "devtools_listening": (b"devtools listening on",),
+    }
+    matches = [name for name, patterns in indicators.items() if any(pattern in stderr for pattern in patterns)]
+    return {"process": "running" if process.poll() is None else "exited",
+            "stderr": ",".join(matches) if matches else "unclassified"}
+
+
 def wait_for_active_port(path: pathlib.Path, deadline: float, process: ProcessState) -> int:
     """Wait for Chrome's complete port line, not merely the file's existence.
 
@@ -967,7 +985,7 @@ def main() -> int:
     chrome_home = workspace / ("chrome-registration" if registration_only else "chrome-registration-readback" if registration_readback else "chrome-inspection")
     chrome_home.mkdir(mode=0o700)
     chrome_stderr_path = workspace / "chrome.stderr"
-    chrome_stderr = chrome_stderr_path.open("w", encoding="utf-8")
+    chrome_stderr = os.fdopen(os.open(chrome_stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8")
     process = subprocess.Popen(
         [
             "/usr/bin/google-chrome",
@@ -992,7 +1010,11 @@ def main() -> int:
     try:
         active_port = chrome_home / "DevToolsActivePort"
         startup_deadline = time.monotonic() + CHROME_START_TIMEOUT
-        port = wait_for_active_port(active_port, startup_deadline, process)
+        try:
+            port = wait_for_active_port(active_port, startup_deadline, process)
+        except RuntimeError as error:
+            diagnostic = chrome_startup_diagnostic(chrome_stderr_path, process)
+            raise RuntimeError(str(error) + "; startup=" + json.dumps(diagnostic, sort_keys=True)) from None
         # DevToolsActivePort can appear before Chrome's first page target is
         # queryable. This stage needs a fresh budget, not startup's remainder.
         page_deadline = time.monotonic() + PAGE_TARGET_TIMEOUT
