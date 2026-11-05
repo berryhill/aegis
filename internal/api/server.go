@@ -1384,6 +1384,12 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		}
 		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", consoleweb.ExecutionDebuggerJS)
 	})
+	e.GET("/console/assets/graph-observation.js", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", consoleweb.GraphObservationJS)
+	})
 	e.GET("/console/queue/:item/debugger", func(c *echo.Context) error {
 		if err := consoleHeaders(c, true); err != nil {
 			return consoleError(err)

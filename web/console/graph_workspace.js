@@ -18,6 +18,7 @@
   inspector.hidden = true;
   split.classList.add("solo");
   for (const button of definitionButtons) button.setAttribute("aria-expanded", "false");
+  let sizeCanvasPane = () => {};
   const show = (index) => {
     if (index !== null && !panels.some(p => p.dataset.graphNodePanel === index)) return;
     inspector.hidden = false;
@@ -27,6 +28,7 @@
     for (const node of nodes) node.setAttribute("aria-pressed", String(node.dataset.graphNode === index));
     for (const button of definitionButtons) button.setAttribute("aria-expanded", String(index === null));
     title.textContent = index === null ? "Graph definition" : "Node inspector";
+    sizeCanvasPane();
     title.focus({preventScroll: true});
     if (matchMedia("(max-width:1080px)").matches) inspector.scrollIntoView({block:"start"});
   };
@@ -38,30 +40,70 @@
     split.classList.add("solo");
     for (const node of nodes) node.setAttribute("aria-pressed", "false");
     for (const button of definitionButtons) button.setAttribute("aria-expanded", "false");
+    sizeCanvasPane();
     (lastNode || definitionButtons[0]).focus({preventScroll:true});
   };
   root.querySelector("[data-graph-close]").addEventListener("click", close);
   inspector.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); close(); } });
-  // Bounded zoom: scale the grid stage without changing the layout grid.
-  // The grid keeps nodes positioned by track; transform only re-renders
-  // their visual size, and SVG paths are expressed as percentages so the
-  // arrows remain attached without inline-style layout.
-  let zoom = 1;
+  // Only numerical, measured geometry enters the same-origin external CSSOM.
+  // The clipping pan-space removes the unscaled layout footprint: native scroll
+  // bounds must match the transformed cards AND SVG, including below 30% Fit.
+  const space = root.querySelector("[data-graph-pan-space]");
+  let stageRule, spaceRule, paneRule;
+  for (const sheet of document.styleSheets) {
+    try {
+      if (!sheet.href || new URL(sheet.href, location.href).origin !== location.origin) continue;
+      const i = sheet.insertRule(".graph-workspace .graph-pan-space {}", sheet.cssRules.length);
+      spaceRule = sheet.cssRules[i].style;
+      const j = sheet.insertRule(".graph-workspace .graph-stage {}", sheet.cssRules.length);
+      stageRule = sheet.cssRules[j].style;
+      const k = sheet.insertRule(".graph-workspace .gw-canvas {}", sheet.cssRules.length);
+      paneRule = sheet.cssRules[k].style;
+      break;
+    } catch (_) { /* Native unscaled canvas/text remains usable without CSSOM. */ }
+  }
+  if (!stageRule || !spaceRule || !space) return;
+  stageRule.position = "absolute";
+  let zoom = 1, fitted = false;
+  const fitScale = () => Math.max(Number.EPSILON, Math.min(1,
+    Math.max(1, viewport.clientWidth-8)/Math.max(1, stage.scrollWidth),
+    Math.max(1, viewport.clientHeight-8)/Math.max(1, stage.scrollHeight)));
   const setZoom = (value, fit = false) => {
+    if (!Number.isFinite(value)) return;
     const old = zoom;
     const x = (viewport.scrollLeft + viewport.clientWidth/2)/old;
     const y = (viewport.scrollTop + viewport.clientHeight/2)/old;
-    zoom = Math.max(.3, Math.min(2, value));
-    stage.style.transform = `scale(${zoom})`;
+    zoom = Math.max(Math.min(.3, fitScale()), Math.min(2, value));
+    fitted = fit;
+    stageRule.transform = `scale(${zoom})`;
+    spaceRule.width = `${stage.scrollWidth*zoom}px`;
+    spaceRule.height = `${stage.scrollHeight*zoom}px`;
     viewport.scrollLeft = fit ? 0 : x*zoom - viewport.clientWidth/2;
     viewport.scrollTop = fit ? 0 : y*zoom - viewport.clientHeight/2;
-    root.querySelector("[data-graph-scale]").textContent = `${Math.round(zoom*100)}%`;
+    const percent = zoom*100;
+    root.querySelector("[data-graph-scale]").textContent = `${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
   };
-  const fit = () => {
-    const sw = stage.scrollWidth, sh = stage.scrollHeight;
-    const fitZoom = Math.min(1,(viewport.clientWidth-8)/sw,(viewport.clientHeight-8)/sh);
-    setZoom(Math.max(.3, Math.min(2, fitZoom)), true);
+  const fit = () => setZoom(fitScale(), true);
+  const pane = root.querySelector(".gw-canvas");
+  sizeCanvasPane = () => {
+    // Natural definition height, not zoomed footprint, drives the adaptive pane.
+    // Reset first so inspector/viewport wrapping can be measured after resizing.
+    paneRule.height = "auto";
+    const chrome = Math.max(0, pane.offsetHeight-viewport.clientHeight);
+    const cap = Math.min(innerWidth <= 760 ? 360 : 620,
+      Math.max(240, Math.round(innerHeight*.68)));
+    let height = Math.max(240, Math.min(cap, stage.offsetHeight+chrome+10));
+    if (!inspector.hidden && Math.abs(pane.getBoundingClientRect().top-inspector.getBoundingClientRect().top)<2)
+      height = Math.max(height, Math.min(cap, inspector.offsetHeight));
+    paneRule.height = `${Math.round(height)}px`;
   };
+  sizeCanvasPane();
+  window.addEventListener("resize", () => { sizeCanvasPane(); if (fitted) fit(); });
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(sizeCanvasPane).observe(inspector);
+  setZoom(1);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => {
+    if (fitted) fit();
+  }).observe(viewport);
   root.querySelector("[data-graph-fit]").addEventListener("click", fit);
   for (const button of root.querySelectorAll("[data-graph-zoom]")) button.addEventListener("click", () => setZoom(zoom+(button.dataset.graphZoom === "in" ? .1 : -.1)));
   viewport.addEventListener("keydown", e => {

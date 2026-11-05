@@ -54,6 +54,8 @@ source/Git identity; unknown interrupted effects stay held and budgets never
 reset. Noncooperating same-UID writers remain outside the advisory-lock guarantee.
 See [candidate bounds](managed-contribution-candidate.md).
 
+The Graph detail observer treats authentication as server-owned: existing same-origin no-store HTML GET, inert parsing of existing login/logout markers, no session renewal or mutation. A failed/unknown read clears protected DOM without claiming confirmed revocation. Visibility return hides the old workspace until readback; pagehide removes protected body content before BFCache restoration, which reloads from the server. Disclosure already observed, screenshots and disabled-JavaScript open documents cannot be recalled. The visible polling interval is not instantaneous cross-tab revocation notification.
+
 The exact-run debugger exposes only authenticated pinned definition context and content-free digest-linked interpreter observations. Same-origin no-store polling grants no execution authority; missing legacy observations are unknown and interpreter terminal is not disposition. The browser rejects regressing versions, history substitution and cross-run responses, marks transport loss stale, and clears protected topology on authentication loss. Local custody is not separately protected attestation. The polled current-outcome HTML is exclusively escaped server templ output, joined through the selected item's existing exact-owner verified-evidence reader. No raw diagnostic/model HTML is admitted; authentication loss clears outcome/content and initial protected data as well as topology.
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

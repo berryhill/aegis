@@ -135,6 +135,9 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
             process.poll.return_value = None
             def launch(*args, **kwargs):
                 (chrome_home / "DevToolsActivePort").write_text("")
+                kwargs["stderr"].write("secret-token /private/path Resource temporarily unavailable")
+                kwargs["stderr"].flush()
+                self.assertEqual((workspace / "chrome.stderr").stat().st_mode & 0o777, 0o600)
                 return process
             clock = [0.0]
             def monotonic():
@@ -145,8 +148,11 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
                   mock.patch.object(console_browser_test, "stop_chrome"),
                   mock.patch.object(console_browser_test.time, "monotonic", side_effect=monotonic),
                   mock.patch.object(console_browser_test.time, "sleep")):
-                with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready"):
+                with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready") as failure:
                     console_browser_test.main()
+                self.assertIn('startup={"process": "running", "stderr": "resource"}', str(failure.exception))
+                self.assertNotIn("secret-token", str(failure.exception))
+                self.assertNotIn("/private/path", str(failure.exception))
 
     def test_waits_for_missing_empty_partial_then_complete_port(self):
         with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
@@ -223,7 +229,44 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
                     self.assertEqual(console_browser_test.wait_for_active_port(path, time.monotonic() + 1, ProcessStub(None)), int(value))
 
 
+class ChromeStartupDiagnosticTest(unittest.TestCase):
+    def test_closed_classification_never_returns_stderr_or_paths(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            path = pathlib.Path(directory) / "private.stderr"
+            for text, expected in (
+                ("secret-token No usable sandbox /private/path", "sandbox"),
+                ("private Resource temporarily unavailable", "resource"),
+                ("ProcessSingleton /private/profile", "profile"),
+                ("DevTools listening on ws://secret-host/private", "devtools_listening"),
+                ("secret-token unknown startup failure", "unclassified"),
+            ):
+                path.write_text(text)
+                self.assertEqual(console_browser_test.chrome_startup_diagnostic(path, ProcessStub(None)),
+                                 {"process": "running", "stderr": expected})
+            path.unlink()
+            self.assertEqual(console_browser_test.chrome_startup_diagnostic(path, ProcessStub(17)),
+                             {"process": "exited", "stderr": "unclassified"})
+
+    def test_stderr_read_is_bounded(self):
+        path = mock.MagicMock()
+        stream = path.open.return_value.__enter__.return_value
+        stream.read.return_value = b"unknown private output"
+        self.assertEqual(console_browser_test.chrome_startup_diagnostic(path, ProcessStub(None)),
+                         {"process": "running", "stderr": "unclassified"})
+        stream.read.assert_called_once_with(65536)
+
+
 class PageWebsocketTest(unittest.TestCase):
+    def test_charter_registration_waits_for_complete_document_before_native_back(self):
+        source = pathlib.Path(console_browser_test.__file__).read_text()
+        start = source.index('click(devtools, \'a[href="/console/agents/charter-import"]\')')
+        end = source.index('click(devtools, "#charter-import-back")', start)
+        readiness = source[start:end]
+        self.assertIn("document.readyState === 'complete'", readiness)
+        self.assertIn("location.pathname === '/console/agents/charter-import'", readiness)
+        self.assertIn("document.querySelector('#charter-import-title')", readiness)
+        self.assertIn("document.querySelector('#charter-import-review')", readiness)
+
     def test_queue_evidence_requires_real_inspector_navigation(self):
         source = pathlib.Path(console_browser_test.__file__).read_text()
         start = source.index('canvas-first Queue with collapsed definition inspector and route focus')
@@ -624,6 +667,107 @@ class NativeTouchTest(unittest.TestCase):
             "Emulation.setTouchEmulationEnabled",
             {"enabled": False},
         )
+
+
+class PacerCancellationChromeTest(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('AEGIS_ACCEPTANCE_PORT'),
+                         'HTTP Chrome fixture requires lifetime acceptance_port.py claim')
+    def test_superseded_native_navigation_requires_exact_cancelled_ack(self):
+        import http.server
+        import threading
+        from scripts import console_browser_test as driver
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                body = b'<a id="pending" href="/pending">Pending</a><a id="next" href="/next">Next</a>'
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', int(os.environ['AEGIS_ACCEPTANCE_PORT'])), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 3)
+        self.addCleanup(server.shutdown)
+        origin = 'http://127.0.0.1:' + os.environ['AEGIS_ACCEPTANCE_PORT']
+        with tempfile.TemporaryDirectory(prefix='pacer-chrome-', dir=pathlib.Path.cwd()) as home:
+            process = subprocess.Popen([
+                '/usr/bin/google-chrome', '--headless=new', '--incognito', '--disable-gpu',
+                '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0',
+                '--remote-allow-origins=http://localhost', '--user-data-dir=' + home, 'about:blank',
+            ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True, env=driver.chrome_environment())
+            devtools = None
+            try:
+                port = driver.wait_for_active_port(pathlib.Path(home) / 'DevToolsActivePort', time.monotonic() + 15, process)
+                devtools = driver.DevTools(driver.page_websocket(port, time.monotonic() + 8, process))
+                for domain in ('Page', 'Network', 'Runtime'):
+                    devtools.command(domain + '.enable')
+                driver.navigate(devtools, origin)
+                driver.wait_for(devtools, "document.readyState === 'complete'", 'pacer fixture')
+                devtools.command('Fetch.enable', {'patterns': [{'urlPattern': origin + '/pending*', 'requestStage': 'Request'}]})
+                # Independent requests provide causal negative and repaired controls.
+                for repaired, deferred in ((False, False), (True, False), (True, True)):
+                    devtools.fixture_origin = None
+                    points = devtools.evaluate("['pending','next'].map(id=>{const e=document.getElementById(id),r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e}})")
+                    self.assertTrue(all(point['hit'] for point in points))
+                    def native_click(point):
+                        for kind in ('mousePressed', 'mouseReleased'):
+                            devtools.command('Input.dispatchMouseEvent', {'type': kind, 'x': point['x'], 'y': point['y'], 'button': 'left', 'clickCount': 1})
+                    start = len(devtools.events)
+                    native_click(points[0])
+                    # Runtime evaluation can block behind paused document navigation.
+                    # Drain with the same command receive deadline and event budgets.
+                    while not any(e.get('method') == 'Fetch.requestPaused' for e in devtools.events[start:]):
+                        devtools._remaining()
+                        event = devtools.receive()
+                        devtools._remaining()
+                        devtools.event_bytes += len(driver.json.dumps(event).encode())
+                        driver.require(len(devtools.events) < driver.MAX_EVENTS and devtools.event_bytes <= driver.MAX_EVENT_BYTES, 'DevTools event budget exceeded')
+                        devtools.events.append(event)
+                    paused = next(e for e in devtools.events[start:] if e.get('method') == 'Fetch.requestPaused')
+                    native_click(points[1])
+                    driver.wait_for(devtools, "location.pathname === '/next' && document.readyState === 'complete'", 'superseding native navigation')
+                    self.assertTrue(devtools._fixture_request_cancelled(paused['params']))
+                    original_receive = devtools.receive
+                    queued = [paused]
+                    # Controlled delivery of REAL Chrome cancellation and ack,
+                    # not a claim that Chrome naturally emitted them in this order.
+                    withheld = [e for e in devtools.events if deferred
+                                and e.get('method') == 'Network.loadingFailed'
+                                and e.get('params', {}).get('requestId') == paused['params']['networkId']]
+                    if deferred:
+                        self.assertEqual(len(withheld), 1)
+                        devtools.events = [e for e in devtools.events if e not in withheld]
+                        self.assertFalse(devtools._fixture_request_cancelled(paused['params']))
+                    errors = []
+                    def receive():
+                        event = queued.pop(0) if queued else original_receive()
+                        if 'error' in event:
+                            errors.append(event['error'])
+                            if deferred:
+                                queued.extend(withheld)
+                        return event
+                    devtools.receive = receive
+                    devtools.fixture_origin = ('http', '127.0.0.1:' + os.environ['AEGIS_ACCEPTANCE_PORT'])
+                    devtools.fixture_next_release = time.monotonic()
+                    try:
+                        if repaired:
+                            self.assertEqual(devtools.evaluate('42'), 42)
+                        else:
+                            with mock.patch.object(devtools, '_fixture_request_cancelled', return_value=False):
+                                with self.assertRaisesRegex(RuntimeError, 'code=-32602; classification=invalid_interception_id'):
+                                    devtools.evaluate('42')
+                        self.assertEqual(errors, [{'code': -32602, 'message': 'Invalid InterceptionId.'}])
+                    finally:
+                        devtools.receive = original_receive
+            finally:
+                driver.stop_chrome(process, devtools)
 
 
 class NavigateTest(unittest.TestCase):
