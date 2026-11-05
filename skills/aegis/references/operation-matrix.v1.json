@@ -83,7 +83,8 @@
         "GET /console/fragments/surface",
         "GET /console/fragments/inspect",
         "GET /console/assets/execution-debugger.js",
-        "GET /console/assets/graph-observation.js"
+        "GET /console/assets/graph-observation.js",
+        "GET /console/assets/loop-observation.js"
       ],
       "transport_classification": "shipped"
     },

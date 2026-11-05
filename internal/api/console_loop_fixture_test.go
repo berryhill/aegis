@@ -26,7 +26,9 @@ func loopDetailBranchFixture(t *testing.T) (loop.LoopRevision, loop.LoopValidati
 		}, RequiredEvidence: []loop.EvidenceRequirement{{Claim: "record", ProducerStepID: "left"}},
 	}
 	revision, validation, err := loop.NewRevision(definition)
-	if err != nil || validation.Outcome != loop.ValidationValid { t.Fatalf("branch fixture invalid: %v %+v", err, validation.Issues) }
+	if err != nil || validation.Outcome != loop.ValidationValid {
+		t.Fatalf("branch fixture invalid: %v %+v", err, validation.Issues)
+	}
 	return revision, validation
 }
 
@@ -34,7 +36,9 @@ func loopDetailCycleFixtures(t *testing.T) []loop.LoopRevision {
 	t.Helper()
 	one := loop.RetryPolicy{MaxAttempts: 1}
 	terminal := loop.Step{ID: "done", Kind: loop.StepTerminal, Retry: one, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}}
-	gate := func(id string) loop.Step { return loop.Step{ID: id, Kind: loop.StepGate, Retry: one, Gate: &loop.GateDefinition{Mode: "exclusive"}} }
+	gate := func(id string) loop.Step {
+		return loop.Step{ID: id, Kind: loop.StepGate, Retry: one, Gate: &loop.GateDefinition{Mode: "exclusive"}}
+	}
 	inputs := []loop.LoopRevision{
 		{LoopID: "self-loop", Name: "Bounded self-cycle fixture", Revision: 1, EntryStepID: "g", Steps: []loop.Step{gate("g"), terminal}, Transitions: []loop.Transition{
 			{ID: "self", FromStepID: "g", ToStepID: "g", Condition: "retry", MaxTraversals: 2},
@@ -51,7 +55,9 @@ func loopDetailCycleFixtures(t *testing.T) []loop.LoopRevision {
 	result := make([]loop.LoopRevision, 0, len(inputs))
 	for _, input := range inputs {
 		revision, validation, err := loop.NewRevision(input)
-		if err != nil || validation.Outcome != loop.ValidationValid { t.Fatalf("cycle fixture invalid: %v %+v", err, validation.Issues) }
+		if err != nil || validation.Outcome != loop.ValidationValid {
+			t.Fatalf("cycle fixture invalid: %v %+v", err, validation.Issues)
+		}
 		result = append(result, revision)
 	}
 	return result

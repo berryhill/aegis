@@ -49,46 +49,74 @@ func TestLoopDetailFrozenSeed(t *testing.T) {
 	record := func(value loop.LoopRevision, kind string) {
 		t.Helper()
 		view, readErr := svc.GetLoopViewAs(ctx, subject, value.LoopID, value.Revision)
-		if readErr != nil { t.Fatal(readErr) }
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
 		ids := make([]string, 0, len(view.Revision.Steps))
-		for _, step := range view.Revision.Steps { ids = append(ids, step.ID) }
-		metadata = append(metadata, map[string]any{"id":view.Revision.LoopID,"revision":view.Revision.Revision,"digest":view.Revision.Digest,"name":view.Revision.Name,"steps":ids,"transitions":view.Revision.Transitions,"kind":kind})
+		for _, step := range view.Revision.Steps {
+			ids = append(ids, step.ID)
+		}
+		metadata = append(metadata, map[string]any{"id": view.Revision.LoopID, "revision": view.Revision.Revision, "digest": view.Revision.Digest, "name": view.Revision.Name, "steps": ids, "transitions": view.Revision.Transitions, "kind": kind})
 	}
 	publish := func(value loop.LoopRevision, kind string) {
 		t.Helper()
-		_, publishErr := svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID:owner.AgentID,Revision:value,ExpectedPreviousDigest:value.PreviousDigest,IdempotencyKey:fmt.Sprintf("loop-detail-additional-%d",len(metadata))})
-		if publishErr != nil { t.Fatal(publishErr) }
-		record(value,kind)
+		_, publishErr := svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: owner.AgentID, Revision: value, ExpectedPreviousDigest: value.PreviousDigest, IdempotencyKey: fmt.Sprintf("loop-detail-additional-%d", len(metadata))})
+		if publishErr != nil {
+			t.Fatal(publishErr)
+		}
+		record(value, kind)
 	}
-	record(revision,"doer")
-	newer, _, err := loop.NewDoerRevision(revision.LoopID,2,revision.Digest,*revision.Doer)
-	if err != nil { t.Fatal(err) }
-	newer.Name="Newer authored Loop detail fixture"
-	newer, _, err=loop.NewRevision(newer)
-	if err != nil { t.Fatal(err) }
-	publish(newer,"doer-latest")
+	record(revision, "doer")
+	newer, _, err := loop.NewDoerRevision(revision.LoopID, 2, revision.Digest, *revision.Doer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer.Name = "Newer authored Loop detail fixture"
+	newer, _, err = loop.NewRevision(newer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish(newer, "doer-latest")
 	branch, _ := loopDetailBranchFixture(t)
-	publish(branch,"branch")
-	for _, value := range loopDetailCycleFixtures(t) { publish(value,value.LoopID) }
+	publish(branch, "branch")
+	for _, value := range loopDetailCycleFixtures(t) {
+		publish(value, value.LoopID)
+	}
 	maximum, _ := loopMaximumPresentationFixture(t)
-	publish(maximum,"maximum")
+	publish(maximum, "maximum")
 	namespace := branch
-	namespace.LoopID, namespace.Name="team/loop:stage","Namespace identifier fixture"
-	namespace, _, err=loop.NewRevision(namespace)
-	if err != nil { t.Fatal(err) }
-	publish(namespace,"namespace")
+	namespace.LoopID, namespace.Name = "team/loop:stage", "Namespace identifier fixture"
+	namespace, _, err = loop.NewRevision(namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish(namespace, "namespace")
 	// Canonical invalid/terminal-only definitions are rejected, not inserted as
 	// counterfeit published records just to obtain a screenshot.
-	invalid := loop.LoopRevision{LoopID:"terminal-only",Revision:1,EntryStepID:"done",Steps:[]loop.Step{{ID:"done",Kind:loop.StepTerminal,Retry:loop.RetryPolicy{MaxAttempts:1},Terminal:&loop.TerminalDefinition{Outcome:loop.OutcomeSucceeded}}}}
+	invalid := loop.LoopRevision{LoopID: "terminal-only", Revision: 1, EntryStepID: "done", Steps: []loop.Step{{ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}}}}
 	_, invalidValidation, invalidErr := loop.NewRevision(invalid)
-	if invalidErr==nil || invalidValidation.Outcome!=loop.ValidationInvalid { t.Fatal("terminal-only fixture must fail canonical validation") }
-	if _, publishErr:=svc.PublishLoopAs(ctx,subject,app.PublishLoopInput{AgentID:owner.AgentID,Revision:invalid,IdempotencyKey:"invalid-terminal-only"});publishErr==nil { t.Fatal("invalid terminal-only definition published") }
-	inventory, inventoryErr:=svc.ListLoopInventoryAs(ctx,subject)
-	if inventoryErr!=nil { t.Fatal(inventoryErr) }
-	for _, view:=range inventory { if view.Revision.LoopID==invalid.LoopID { t.Fatal("rejected definition left a published record") } }
-	manifest, marshalErr:=json.Marshal(map[string]any{"records":metadata,"invalid_terminal_only":invalidValidation.Issues,"invalid_record_absent":true})
-	if marshalErr!=nil { t.Fatal(marshalErr) }
-	if err=os.WriteFile(filepath.Join(root,"fixtures.json"),manifest,0600);err!=nil { t.Fatal(err) }
+	if invalidErr == nil || invalidValidation.Outcome != loop.ValidationInvalid {
+		t.Fatal("terminal-only fixture must fail canonical validation")
+	}
+	if _, publishErr := svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: owner.AgentID, Revision: invalid, IdempotencyKey: "invalid-terminal-only"}); publishErr == nil {
+		t.Fatal("invalid terminal-only definition published")
+	}
+	inventory, inventoryErr := svc.ListLoopInventoryAs(ctx, subject)
+	if inventoryErr != nil {
+		t.Fatal(inventoryErr)
+	}
+	for _, view := range inventory {
+		if view.Revision.LoopID == invalid.LoopID {
+			t.Fatal("rejected definition left a published record")
+		}
+	}
+	manifest, marshalErr := json.Marshal(map[string]any{"records": metadata, "invalid_terminal_only": invalidValidation.Issues, "invalid_record_absent": true})
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	if err = os.WriteFile(filepath.Join(root, "fixtures.json"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
 	svc.Config.API.Listen = "127.0.0.1:" + os.Getenv("AEGIS_ACCEPTANCE_PORT")
 	svc.Config.API.Console.Origin = "http://" + svc.Config.API.Listen
 	repo, err := filepath.Abs("../..")

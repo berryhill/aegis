@@ -3,9 +3,9 @@
    CSS-grid positioning, strict CSP. */
 .loop-detail-page [data-loop-workspace]{display:grid;gap:16px;min-width:0}
 .loop-detail-page [data-loop-workspace][hidden]{display:none!important}
-.loop-detail-page .loop-record-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:start}
+.loop-detail-page .loop-record-head{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:20px;align-items:start}
 .loop-record-head h2{font-size:24px;margin:0 0 6px;min-width:0;overflow-wrap:anywhere}.loop-record-head p{color:var(--muted);overflow-wrap:anywhere}
-.loop-record-actions{display:flex;gap:8px;flex-wrap:wrap}.record-head-tags{display:flex;gap:10px;flex-wrap:wrap;overflow-wrap:anywhere}
+.loop-record-actions{display:flex;gap:8px;flex-wrap:wrap;min-width:0}.loop-record-actions p{flex-basis:100%;font-size:12px}.record-head-tags{display:flex;gap:10px;flex-wrap:wrap;overflow-wrap:anywhere}
 .loop-record-head .meta-strip{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0 0}.meta-strip dt{font-size:11px;color:var(--muted)}.meta-strip dd{margin:4px 0;font-size:13px}
 .loop-admission{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.loop-admission p{margin:4px 0}.loop-issues{padding-left:20px}.loop-issues code{color:var(--st-denied)}
 .loop-detail-page .loop-workspace{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
@@ -27,7 +27,7 @@
    console's strict Content-Security-Policy (style-src 'self') does not block
    the canvas. Fixed implicit tracks and explicit server-projected node cells
    keep HTML and SVG aligned independently of node declaration order. */
-.loop-viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;background-image:radial-gradient(circle at 1px 1px,var(--border) 1px,transparent 0);background-size:24px 24px;cursor:grab}
+.loop-viewport{flex:1;min-height:220px;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;background-image:radial-gradient(circle at 1px 1px,var(--border) 1px,transparent 0);background-size:24px 24px;cursor:grab}
 .loop-stage{position:relative;display:grid;grid-auto-columns:212px;grid-auto-rows:102px;row-gap:32px;column-gap:32px;padding:72px 32px 32px;width:max-content;transform-origin:0 0;transition:none}
 .loop-edge-layer{position:absolute;inset:0;pointer-events:none;width:100%;height:100%}
 .loop-edge-path{stroke:var(--muted);stroke-width:1.5;fill:none}.loop-edge-return{stroke:var(--accent);stroke-width:2.5}#loop-arrow path{fill:var(--muted)}
@@ -45,7 +45,7 @@
 .loop-textual{overflow-wrap:anywhere}.loop-textual details{padding:10px;border-bottom:1px solid var(--border)}.loop-textual summary{cursor:pointer}
 .loop-workspace [hidden]{display:none!important}
 .loop-tab-nav{display:flex;gap:6px;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2)}
-.loop-support{min-width:0;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+.loop-detail-page .loop-support{display:block;min-width:0;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden}
 .loop-tab-nav button{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);font:inherit;cursor:pointer}
 .loop-tab-nav button[aria-selected=true]{color:var(--accent);border-color:var(--border);background:var(--surface)}
 .lw-tab-panel[hidden]{display:none!important}
@@ -60,5 +60,5 @@
 .loop-support-section .spec dt{font-size:11px;color:var(--muted)}
 .loop-support-section .spec dd{margin:0 0 6px;overflow-wrap:anywhere}
 .loop-support-section .empty-note{font-size:12px;color:var(--muted)}
-@media(max-width:1080px){.loop-detail-page .loop-workspace{grid-template-columns:minmax(0,1fr)}.loop-workspace .lw-canvas{height:min(46vh,340px)}.loop-workspace .lw-inspector{max-height:none}.loop-workspace .lw-body{overflow:visible}.loop-detail-page .loop-record-head{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:1080px){.loop-detail-page .loop-workspace{grid-template-columns:minmax(0,1fr)}.loop-workspace .lw-canvas{height:auto;min-height:340px}.loop-workspace .loop-viewport{height:min(46vh,340px);flex:none}.loop-workspace .lw-inspector{max-height:none}.loop-workspace .lw-body{overflow:visible}.loop-detail-page .loop-record-head{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:600px){.loop-record-actions{flex-direction:column;align-items:stretch}.loop-workspace .canvas-tools button{min-width:40px;min-height:40px}.loop-record-head .meta-strip{gap:16px}.loop-input-table th,.loop-input-table td{padding:8px 6px;font-size:11px}[data-loop-workspace] .cycle-band details[open]{max-height:80px}}

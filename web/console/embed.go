@@ -51,7 +51,6 @@ var LoopObservationJS []byte
 //go:embed graph_observation.js
 var GraphObservationJS []byte
 
-
 //go:embed vendor/datastar-v1.0.2.js
 var Datastar []byte
 

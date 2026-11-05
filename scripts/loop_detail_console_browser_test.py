@@ -66,6 +66,19 @@ def main():
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'page overflow'
 
     def capture(page, label):
+        # Auth observation briefly hides stale detail during a fresh read.
+        if page.locator('[data-loop-workspace]').count():
+            expect(page.locator('[data-loop-workspace]')).to_be_visible()
+        page.wait_for_timeout(400)
+        if page.locator('[data-loop-workspace]').count():
+            geometry = page.evaluate('''() => {
+                const box = selector => {const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+                return {header:box('.loop-record-head'),title:box('#inspector-title'),viewport:box('[data-loop-viewport]'),tabs:box('.loop-tab-nav'),panel:box('[data-loop-tab-panel]:not([hidden])')};
+            }''')
+            (root / (label + '.geometry.json')).write_text(json.dumps(geometry, indent=2))
+            assert geometry['viewport']['height'] >= 200, 'narrow canvas collapsed below usable height'
+            assert geometry['title']['width'] >= min(300, geometry['header']['width'] - 50), 'identity column collapsed'
+            assert geometry['panel']['y'] >= geometry['tabs']['y'] + geometry['tabs']['height'] - 2, 'tabs stretched beside panel'
         page.screenshot(path=str(root / (label + '.png')), full_page=True)
         visible = page.locator('body').inner_text().replace(str(root), '[isolated-fixture-root]')
         (root / (label + '.txt')).write_text(visible)

@@ -84,3 +84,21 @@ Root README, LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, CHANGELOG and thr
   demo/terminal recording, release binaries/checksums and contributor-issue assets
   need no new command/authority/install claim from this change. Release assets were
   not regenerated or published, and their release qualification is not claimed.
+
+## Independent review correction
+
+The first frozen-candidate independent review passed 15 functional Console cases
+but rejected desktop/narrow visual layout: the unbounded action track collapsed
+the title, legacy support-grid CSS stretched the tabs, and narrow canvas chrome
+left only 69px for the graph. The scoped correction bounds the action column,
+stacks supporting tabs above their panel and reserves a usable graph viewport.
+Settled-visible capture now asserts actual header, tab/panel and viewport geometry.
+The rebuilt candidate passed the actual isolated browser journey in
+`.scratch/235-visual-repair-2`, including the new geometric regressions.
+
+Exact-head CI also demonstrated formatting drift and one missing structural route
+inventory entry for the Loop observation asset. Formatting and the existing
+operation matrix/derived skill manifest were corrected; the focused
+`TestDistributedOperationMatrix`, manifest refresh and full Console package passed.
+These repairs do not change CI policy or grant new product authority. The first
+review's FAIL remains retained; final independent re-review is separate evidence.
