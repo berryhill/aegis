@@ -205,7 +205,7 @@ run_verification() {
         if [ "$reuse_ci" = true ]; then
             # Execute only the committed helper from the clean snapshot; an
             # unstaged working-tree verifier must never authorize publication.
-            python3 scripts/verify-ci-evidence.py "$source_revision" ||
+            python3 scripts/verify-ci-evidence.py "$source_revision" "$version" ||
                 fail 'exact source CI is not verified; wait for or repair that CI run before releasing'
         fi
         if [ "$mode" = fresh ] && [ "$dry_run" != 1 ]; then

@@ -179,6 +179,11 @@ vertical=$proof/vertical
 mkdir -m 0700 "$vertical" "$vertical/state" "$vertical/state/persistence"
 go run ./scripts/demo-authority-init "$vertical/state/persistence/authority-v1"
 python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$install/aegis" "$proof/vertical"
+if [ "$version" = 0.3.0 ]; then
+  # Owner-approved release profile, not a claim of browser qualification.
+  printf 'installed package verified: version=%s source_revision=%s targets=4 skill_bundle=validated_evaluated_reproducible packaged_skills_install_inventory=true checksums=valid updater_compatibility=true first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=skipped_optional_v0.3.0 real_chrome=not_exercised\n' "$version" "$expected_revision"
+  exit 0
+fi
 AEGIS_CANDIDATE_ARCHIVE_EXTRACTED=1 \
   "$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"
 

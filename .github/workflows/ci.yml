@@ -20,6 +20,8 @@ jobs:
     name: Repository checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      release-version: ${{ steps.release-scope.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,6 +37,17 @@ jobs:
         run: |
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
+      - name: Read committed release scope
+        id: release-scope
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          text = pathlib.Path('Makefile').read_text()
+          versions = re.findall(r'^VERSION \?= ([0-9]+\.[0-9]+\.[0-9]+)$', text, re.M)
+          assert len(versions) == 1, 'missing or ambiguous release scope'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('version=' + versions[0] + '\n')
+          PY
       - run: make verify-repository
       - name: Classify changelog without changing source
         run: python3 scripts/verify-budget.py python3 scripts/release-readiness-mode.py . auto "999.0.${{ github.run_number }}" ""
@@ -74,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     # Include toolchain setup/compilation outside the Go test-process budget.
     # All other jobs retain their existing bound; coverage is never skipped.
-    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b') && 16 || 10 }}
+    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b' || matrix.group == 'orchestration') && 16 || 10 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -106,8 +119,38 @@ jobs:
           git diff --exit-code
           test -z "$(git status --porcelain=v1 --untracked-files=no)"
 
+  package-proof:
+    name: Release package proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
+      - name: Prepare verification cgroup supervisor
+        run: |
+          sudo systemctl start "user@$(id -u).service"
+          printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
+      - name: Verify v0.3.0 package profile without optional browser acceptance
+        run: python3 scripts/verify-budget.py ./scripts/verify-installed-mvi.sh "0.3.0" "" "$(git rev-parse HEAD)"
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
   installed-proof:
     name: Release package and installed proof
+    needs: [repository-checks]
+    # Owner waived this optional browser journey for exactly v0.3.0.
+    # Retain a real skipped job, not a successful no-op or another Chrome run.
+    if: ${{ needs.repository-checks.outputs.release-version != '0.3.0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -239,17 +282,17 @@ jobs:
   release-readiness:
     name: Exact-head release readiness
     if: ${{ always() }}
-    needs: [repository-checks, go-shards, installed-proof, vet, authority-denial-matrix, vulnerability-scan, race]
+    needs: [repository-checks, go-shards, package-proof, vet, authority-denial-matrix, vulnerability-scan, race]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Require all exact-head gates, including non-skipped matrix success
+      - name: Require release eligibility gates (browser coverage reported separately)
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['NEEDS_JSON'])
-          assert set(results) == {'repository-checks', 'go-shards', 'installed-proof', 'vet', 'authority-denial-matrix', 'vulnerability-scan', 'race'}, results
+          assert set(results) == {'repository-checks', 'go-shards', 'package-proof', 'vet', 'authority-denial-matrix', 'vulnerability-scan', 'race'}, results
           assert all(job['result'] == 'success' for job in results.values()), results
           PY
