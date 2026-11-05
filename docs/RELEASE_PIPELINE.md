@@ -25,8 +25,10 @@ source suite. Package compilation caches are an optimization, not green-test evi
 Normal and race candidate tests use fresh execution rather than relying on cached
 results.
 
-Ordinary source CI has **27 expanded jobs**: seven normal and thirteen race Go
-lanes plus seven repository, packaging, security and aggregate jobs. There are no
+Ordinary source CI has **28 expanded jobs**: seven normal and thirteen race Go
+lanes plus eight repository, packaging, security and aggregate jobs. The extra
+non-browser package job separates eligibility from optional browser coverage
+(see the v0.3.0 profile below). There are no
 reusable/child workflows on those events. `scripts/verify-go-shard.py --bundle`
 packs the existing exact-once partitions into mode-specific sequential lanes;
 it does not remove tests or combine their alarms. Dynamic actual-mode inventories
@@ -76,11 +78,11 @@ Moving final to manager-e projects ~550s (existing ~438.9s + final), while manag
 projects ~478s. These are planning sums, **not fresh hosted success**.
 
 All 25 groups remain exact-once in each mode, with the same seven normal and
-thirteen race lane names plus seven fixed jobs: 27 jobs total. No matrix, job,
-partition, timeout, resource budget or native unexpected-zero-exit guard changes.
+thirteen race lane names. The packing change above did not alter partitions,
+resource budgets or native unexpected-zero-exit guards.
 Compile/list reuse remains once per split package per lane. Compiler, inventory
 and partition elapsed times remain separate `go_lane_phase` observations. Job
-alarms remain ten minutes except sixteen for race API; package alarms remain
+alarms remain ten minutes except sixteen for race API and orchestration; package alarms remain
 eight minutes except twelve for race API. Fresh complete exact-head hosted runs,
 including queue/setup and all jobs, must establish deadline fit and performance.
 
@@ -105,8 +107,10 @@ Preflight failure leaves real refs unchanged; later signer drift preserves the
 unpublished commit/tag for inspection without moving an immutable remote tag.
 On the canonical
 GitHub origin it reads GitHub-owned CI evidence for the exact source revision.
-It accepts only the latest canonical main push CI run, completed successfully,
-with successful complete job readback and all required aggregates. Missing, failed,
+By default it accepts only the latest canonical main push CI run, completed successfully,
+with successful complete job readback and all required aggregates. The exact
+v0.3.0 exception below distinguishes release eligibility from complete coverage.
+Missing, failed,
 partial, ambiguous, source-mismatched or rerunning evidence denies; no caller-authored
 JSON, old green attempt or local verdict can substitute. Repair or complete the
 named source CI before retrying release. Other GitHub origins cannot borrow these
@@ -120,7 +124,8 @@ A tag name is passed as shell data, not interpolated into shell source.
 
 The tag workflow builds its actual final version/revision-bound four platform
 archives and skill bundle once, verifies checksums and archive structure, installs
-the extracted native archive and runs the complete browser/fleet/first-run proof.
+the extracted native archive and runs the selected version's fleet/first-run proof
+(plus browser acceptance for every version other than exactly 0.3.0).
 Those exact bytes—not synthetic-source binaries—are then published. Independent
 GitHub API readback must show the exact stable non-draft release, asset set, uploaded
 state, byte sizes and SHA-256 digests matching local artifacts. API or upload
@@ -130,10 +135,62 @@ publication authority or a critical-path requirement.
 
 ## Timing and boundaries
 
-Source CI and the tag job have ten-minute job deadlines. Timed successful CI and
+Source CI has the job deadlines above; the tag job has a ten-minute deadline. Timed successful CI and
 installed packaging runs are necessary performance evidence, not proof of a public
 release. Cold runner/cache, external queueing and upload/API delay count toward
 observed end-to-end latency; report them rather than silently excluding them.
 Publication requires the owner's release instruction and configured signer; this
 pipeline repair does not itself publish a new version, alter signing policy,
 update an installed executable, restart a gateway or prove live Doer execution.
+
+## Exact v0.3.0 bounded release profile
+
+The owner-approved exception applies only to stable **0.3.0**, never adjacent
+versions, prereleases, or the default verifier invocation. `release.sh` and the tag
+workflow pass the actual release version to `verify-ci-evidence.py SOURCE VERSION`.
+There is no environment waiver, caller-authored green receipt, log-to-green
+conversion or fallback to an older run. Canonical repository/workflow/main-push,
+exact SHA, latest attempt, pagination and stable service readback remain required.
+
+`Release package proof` runs the version-bound 0.3.0 profile independently of
+`Release package and installed proof`, which is explicitly skipped when the
+committed Makefile declares exactly 0.3.0. Other versions retain unchanged full
+browser acceptance. The skipped job retains its real GitHub conclusion, rather
+than repeating waived Chrome acceptance or reporting a successful no-op. This adds one
+job, not a new qualification campaign or hidden `continue-on-error`. The
+`Exact-head release readiness` aggregate now means **eligibility**, not all-coverage
+success: it requires the package job, repository checks, every normal/race shard,
+vet, authority denial, vulnerability scan and the unchanged `Race tests` aggregate.
+The standalone evidence verifier still independently requires all those exact jobs.
+For every other version it additionally requires full installed/browser proof
+and an overall successful workflow, so other releases stay strict by default.
+
+For 0.3.0 only, completed optional installed/browser outcomes may be success,
+failure, skipped, cancelled or timed_out; missing, ambiguous, running or
+source-mismatched optional evidence still denies. A terminal workflow conclusion
+of failure or cancelled is not relabelled success: the generated service-derived
+report returns `status=release_eligible`, `profile=v0.3.0-bounded`, the original
+`workflow_conclusion`, `coverage_complete` and each optional conclusion. Required
+job failure, cancellation or skip always denies, even with green aggregates.
+Historical passing evidence remains historical; previous failures are not erased.
+
+The final 0.3.0 archive verifier skips only the integrated console/browser stage,
+explicitly reporting `console=skipped_optional_v0.3.0 real_chrome=not_exercised`.
+It still builds all four archives with exact clean VCS version/revision, validates
+archive structure and checksums, validates/evaluates/builds/verifies the skill
+bundle, exercises packaged skills installation/inventory, unchanged v0.2.29
+updater compatibility, native provenance, bare first-run fail-closed/no-mutation,
+and the existing non-browser fleet proof. That proof uses a bounded synthetic
+Hermes gateway; it is not real-provider qualification. Signing, immutable tags,
+source-parent integrity and exact published-asset readback remain unchanged.
+The known Chrome `Fetch.continueRequest` invalid-interception failure is neither
+repaired nor claimed passed by this exception. No workstation update is implied.
+
+Run 42080286852 at 2c0bf9e had a cancelled race orchestration job despite retained
+logs reporting both partitions PASS, supervisor success and exit 0. That cancelled
+job remains **cancelled and ineligible**; logs cannot replace its GitHub verdict.
+Only that lane's outer hosted job cap is raised from ten to sixteen minutes to
+allow setup/cleanup margin, matching race API's existing cap. Test partitions,
+package alarms, uncached execution and security/resource bounds are unchanged.
+A fresh exact-head green race orchestration job is still mandatory; this change
+does not claim fresh hosted success or the sub-600-second publication target.
