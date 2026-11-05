@@ -148,6 +148,42 @@ class ResourceTests(unittest.TestCase):
                     self.assertEqual(client.next_id, 8)
                     self.assertEqual(client.receive.call_count, len(sequence))
 
+    def test_unverified_history_observer_diagnostic_remains_fail_closed(self):
+        client = self.paced_client()
+        paused = self.paused(resource='Fetch')
+        paused['params'].update(networkId='observer', frameId='frame')
+        start = {'method': 'Network.requestWillBeSent', 'params': {
+            'requestId': 'observer', 'frameId': 'frame', 'loaderId': 'restored',
+            'type': 'Fetch', 'request': paused['params']['request']}}
+        restored = {'method': 'Page.frameNavigated', 'params': {
+            'type': 'BackForwardCacheRestore', 'frame': {
+                'id': 'frame', 'loaderId': 'restored', 'url': 'private-url'}}}
+        replacement = {'method': 'Page.frameNavigated', 'params': {
+            'type': 'Navigation', 'frame': {'id': 'frame', 'loaderId': 'new'}}}
+        client.events = [restored, paused, start, replacement]
+        self.assertFalse(client._fixture_request_cancelled(paused['params']))
+        self.assertFalse(client._fixture_favicon_superseded(paused['params']))
+        diagnostic = client._cancellation_diagnostic(paused['params'])
+        context = json.loads(diagnostic)
+        self.assertEqual(context['resource_type'], 'Fetch')
+        self.assertTrue(context['request_matches'])
+        self.assertEqual(context['pause_occurrences'], 1)
+        self.assertEqual(context['start_occurrences'], 1)
+        self.assertEqual(context['frame_transitions'], [
+            {'type': 'BackForwardCacheRestore', 'after_pause': False, 'start_loader_matches': True},
+            {'type': 'Navigation', 'after_pause': True, 'start_loader_matches': False}])
+        for secret in ('private-url', 'private body', 'private cookie', 'private=yes', 'restored'):
+            self.assertNotIn(secret, diagnostic)
+        client.events.extend([{'method': 'Page.frameNavigated', 'params': {
+            'type': 'private-transition', 'frame': {'id': 'frame', 'loaderId': 'private-loader'}}}] * 12)
+        paused['params']['resourceType'] = 'private-resource'
+        bounded = client._cancellation_diagnostic(paused['params'])
+        self.assertEqual(len(json.loads(bounded)['frame_transitions']), 8)
+        self.assertEqual(json.loads(bounded)['resource_type'], 'unknown')
+        self.assertNotIn('private-transition', bounded)
+        self.assertNotIn('private-resource', bounded)
+        self.assertNotIn('private-loader', bounded)
+
     def test_disposed_fixture_favicon_ack_requires_exact_old_document(self):
         for late_navigation in (False, True):
             client = self.paced_client()

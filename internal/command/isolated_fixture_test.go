@@ -16,6 +16,69 @@ import (
 	"github.com/berryhill/aegis/internal/testprocess"
 )
 
+type isolatedFixtureCause string
+
+const (
+	isolatedFixtureDeadline       isolatedFixtureCause = "owned_deadline_expired"
+	isolatedFixtureCanceled       isolatedFixtureCause = "owned_context_canceled"
+	isolatedFixtureContextLive    isolatedFixtureCause = "owned_context_live"
+	isolatedFixtureContextUnknown isolatedFixtureCause = "owned_context_unobserved"
+)
+
+func isolatedFixtureCancellationCause(state testprocess.OwnedContextState) isolatedFixtureCause {
+	switch state {
+	case testprocess.OwnedContextLive:
+		return isolatedFixtureContextLive
+	case testprocess.OwnedContextDeadlineExceeded:
+		return isolatedFixtureDeadline
+	case testprocess.OwnedContextCanceled:
+		return isolatedFixtureCanceled
+	default:
+		return isolatedFixtureContextUnknown
+	}
+}
+
+type isolatedFixturePhase string
+
+const (
+	isolatedFixtureAdmissionWait isolatedFixturePhase = "admission_wait"
+	isolatedFixtureNativeReady   isolatedFixturePhase = "native_ready"
+	isolatedFixtureAdmitted      isolatedFixturePhase = "admitted"
+	isolatedFixtureWorkerLaunch  isolatedFixturePhase = "worker_launch"
+	isolatedFixtureWorkerFinish  isolatedFixturePhase = "worker_finish"
+	isolatedFixtureProcessLaunch isolatedFixturePhase = "process_launch"
+	isolatedFixtureProcessFinish isolatedFixturePhase = "process_finish"
+)
+
+type isolatedFixtureObservation struct {
+	phase              isolatedFixturePhase
+	elapsed, remaining time.Duration
+}
+
+type isolatedFixtureTiming struct {
+	origin, deadline time.Time
+	now              func() time.Time
+	events           []isolatedFixtureObservation
+	observe          func(isolatedFixtureObservation)
+}
+
+func newIsolatedFixtureTiming(origin, deadline time.Time, now func() time.Time) *isolatedFixtureTiming {
+	return &isolatedFixtureTiming{origin: origin, deadline: deadline, now: now}
+}
+
+func (d *isolatedFixtureTiming) mark(phase isolatedFixturePhase) isolatedFixtureObservation {
+	now := d.now()
+	remaining, _ := isolatedFixtureBudget(d.deadline, now)
+	event := isolatedFixtureObservation{phase: phase, elapsed: now.Sub(d.origin), remaining: remaining}
+	d.events = append(d.events, event)
+	if d.observe != nil {
+		d.observe(event)
+	}
+	return event
+}
+
+var isolatedFixtureClockOrigin = time.Now()
+
 const isolatedFixtureMarker = "AEGIS_COMMAND_FIXTURE_CHILD"
 const isolatedFixtureCleanupReserve = 3 * time.Second
 
@@ -294,25 +357,37 @@ func isolateCommandFixture(t *testing.T) bool {
 	}
 	root := t.Name()
 	phase := isolatedFixtureSelectedNativePhase()
-	done := isolatedFixtureStartAfter(phase, isolatedFixtureSlots, deadline, tempBase, func(home string, remaining time.Duration) isolatedFixtureOutcome {
+	timing := newIsolatedFixtureTiming(isolatedFixtureClockOrigin, deadline, time.Now)
+	done := isolatedFixtureStartAfterTimed(phase, isolatedFixtureSlots, deadline, tempBase, timing, func(home string, remaining time.Duration) isolatedFixtureOutcome {
 		env, err := isolatedFixtureEnvironment(parentEnv, home, isolatedFixtureCaches.build, isolatedFixtureCaches.modules, root)
 		if err != nil {
 			return isolatedFixtureOutcome{err: err}
 		}
-		remaining, err = isolatedFixtureRemaining(deadline)
-		if err != nil {
-			return isolatedFixtureOutcome{err: err}
+		event := timing.mark(isolatedFixtureProcessLaunch)
+		remaining = event.remaining
+		if remaining <= 0 {
+			return isolatedFixtureOutcome{err: errors.New("fixture parent deadline expired before process launch")}
 		}
 		// Resolve no executable or environment from the mutable parent here.
 		cmd := exec.Command(executable, "-test.run=^"+regexp.QuoteMeta(root)+"$", "-test.count=1", "-test.v", "-test.timeout="+remaining.String())
 		cmd.Env = env
-		output, runErr := testprocess.CombinedOutput(cmd, remaining)
-		status, err := isolatedFixtureResult(root, output, runErr)
-		return isolatedFixtureOutcome{status: status, bytes: len(output), err: err}
+		observed := testprocess.CombinedOutputObserved(cmd, remaining)
+		timing.mark(isolatedFixtureProcessFinish)
+		status, err := isolatedFixtureResult(root, observed.Output, observed.Err)
+		// This is context state at Run return, not exclusive causal proof of a
+		// kill. Never infer expiry from the OS error or elapsed time.
+		return isolatedFixtureOutcome{status: status, bytes: len(observed.Output), err: err, cause: isolatedFixtureCancellationCause(observed.OwnedContext), phases: isolatedFixtureChildTimings(observed.Output)}
 	})
 	// Admission and cleanup never depend on Go resuming parallel tests.
 	t.Parallel()
 	result := <-done
+	for _, event := range result.timing {
+		t.Logf("fixture timing root=%s phase=%s parent_elapsed=%s remaining=%s", root, event.phase, event.elapsed, event.remaining)
+	}
+	t.Logf("fixture context root=%s cause=%s", root, result.cause)
+	for _, phase := range result.phases {
+		t.Log(phase)
+	}
 	if result.err != nil {
 		t.Fatalf("%v (captured %d bytes; private output withheld)", result.err, result.bytes)
 	}
@@ -323,6 +398,9 @@ func isolateCommandFixture(t *testing.T) bool {
 }
 
 type isolatedFixtureOutcome struct {
+	timing []isolatedFixtureObservation
+	cause  isolatedFixtureCause
+	phases []string
 	status string
 	bytes  int
 	err    error
@@ -336,8 +414,13 @@ func isolatedFixtureStart(slots chan struct{}, deadline time.Time, tempBase stri
 }
 
 func isolatedFixtureStartAfter(phase *isolatedFixtureNativePhase, slots chan struct{}, deadline time.Time, tempBase string, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
+	return isolatedFixtureStartAfterTimed(phase, slots, deadline, tempBase, newIsolatedFixtureTiming(isolatedFixtureClockOrigin, deadline, time.Now), run)
+}
+
+func isolatedFixtureStartAfterTimed(phase *isolatedFixtureNativePhase, slots chan struct{}, deadline time.Time, tempBase string, timing *isolatedFixtureTiming, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
 	done := make(chan isolatedFixtureOutcome, 1)
 	previous, finish := phase.admissionTurn()
+	timing.mark(isolatedFixtureAdmissionWait)
 	go func() {
 		result := func() (result isolatedFixtureOutcome) {
 			var turn sync.Once
@@ -346,6 +429,7 @@ func isolatedFixtureStartAfter(phase *isolatedFixtureNativePhase, slots chan str
 			if err := phase.wait(deadline); err != nil {
 				return isolatedFixtureOutcome{err: err}
 			}
+			timing.mark(isolatedFixtureNativeReady)
 			if previous != nil {
 				if err := (&isolatedFixtureNativePhase{done: previous}).wait(deadline); err != nil {
 					return isolatedFixtureOutcome{err: err}
@@ -356,18 +440,24 @@ func isolatedFixtureStartAfter(phase *isolatedFixtureNativePhase, slots chan str
 				return isolatedFixtureOutcome{err: err}
 			}
 			finishTurn()
+			timing.mark(isolatedFixtureAdmitted)
 			defer release()
 			home, err := os.MkdirTemp(tempBase, "aegis-command-fixture-")
 			if err != nil {
 				return isolatedFixtureOutcome{err: err}
 			}
 			defer func() { result.err = errors.Join(result.err, os.RemoveAll(home)) }()
-			remaining, err := isolatedFixtureRemaining(deadline)
-			if err != nil {
-				return isolatedFixtureOutcome{err: err}
+			event := timing.mark(isolatedFixtureWorkerLaunch)
+			if event.remaining <= 0 {
+				return isolatedFixtureOutcome{err: errors.New("fixture parent deadline expired before launch")}
 			}
-			return run(home, remaining)
+			return run(home, event.remaining)
 		}()
+		timing.mark(isolatedFixtureWorkerFinish)
+		result.timing = timing.events
+		if result.cause == "" {
+			result.cause = isolatedFixtureContextUnknown
+		}
 		done <- result
 	}()
 	return done

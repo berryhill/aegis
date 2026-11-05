@@ -11,7 +11,7 @@ export GOMAXPROCS ?= 2
 export GOMEMLIMIT ?= 512MiB
 .NOTPARALLEL:
 
-VERSION ?= 0.2.2
+VERSION ?= 0.3.0
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 READINESS_MODE ?= prepare
 # Treat external mode/tag strings as literal environment data, including values

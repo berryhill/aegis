@@ -22,8 +22,12 @@ func runImplementationCheckerNative(ctx context.Context, cmd *exec.Cmd) error {
 			joined = completion.Joined()
 			return nil
 		})
+	return implementationCheckerNativeResult(cmd, joined, err)
+}
+
+func implementationCheckerNativeResult(cmd *exec.Cmd, joined bool, err error) error {
 	if errors.Is(err, execution.ErrNativeQuiescenceUnavailable) || (cmd.Process != nil && !joined) {
-		return implementation.ErrCheckerQuiescenceUnavailable
+		return implementation.CheckerQuiescenceFailure(err)
 	}
 	return err
 }

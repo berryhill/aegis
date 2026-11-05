@@ -288,7 +288,34 @@ class DevTools:
         start_before_pause = bool(start and pause_index is not None and any(
             event.get("method") == "Network.requestWillBeSent" and event.get("params") is start
             for event in self.events[:pause_index]))
+        resource_types = ("Document", "Stylesheet", "Image", "Media", "Font", "Script", "TextTrack",
+                          "XHR", "Fetch", "Prefetch", "EventSource", "WebSocket", "Manifest", "Other")
+        resource_type = paused.get("resourceType")
+        original, observed = paused.get("request", {}), start.get("request", {})
+        transitions = []
+        for index, event in enumerate(self.events):
+            if event.get("method") != "Page.frameNavigated":
+                continue
+            params = event.get("params", {})
+            frame = params.get("frame", {})
+            if not paused.get("frameId") or frame.get("id") != paused["frameId"]:
+                continue
+            kind = params.get("type")
+            transitions.append({
+                "type": kind if kind in ("Navigation", "BackForwardCacheRestore") else "unknown",
+                "after_pause": pause_index is not None and index > pause_index,
+                "start_loader_matches": bool(start.get("loaderId") and frame.get("loaderId") == start["loaderId"]),
+            })
         return json.dumps({
+            "resource_type": resource_type if resource_type in resource_types else "unknown",
+            "request_matches": bool(observed.get("url") and observed.get("method")
+                                    and all(observed.get(key) == original.get(key) for key in ("url", "method"))),
+            "pause_occurrences": sum(event.get("method") == "Fetch.requestPaused"
+                                     and event.get("params", {}).get("requestId") == paused.get("requestId")
+                                     for event in self.events),
+            "start_occurrences": len(starts),
+            # Keep the diagnostic bounded independently of the event ledger.
+            "frame_transitions": transitions[-8:],
             "pause_seen": pause_index is not None, "start_before_pause": start_before_pause,
             "network_present": bool(network_id), "frame_present": bool(paused.get("frameId")),
             "start_seen": bool(starts), "loader_present": bool(start.get("loaderId")),
