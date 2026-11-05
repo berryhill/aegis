@@ -21,6 +21,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- #188 Credential advisory skill v0.2.2 corrects custody defaults and separates
+  structural binding storage from fresh broker authorization. Synthetic owning-
+  service denial/nondisclosure regressions and opt-in extracted-executable skill
+  install/inventory and `secret` command/flag discovery complement structural
+  fixtures; real-account, published-release and Hermes adherence are separate.
+
 - #186 Queue advisory skill v0.3.0: exact direct-source/input readback, distinct
   exhaustion reason, supported reclaim and unsupported online adapter guidance,
   plus a portable evaluation ledger. Executable CLI/Serve/Badger regressions and

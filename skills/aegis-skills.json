@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:5218761c8c79c4b77cfc6043581f833ac86e1a2487614d420d131504cb9abe68",
+    "content_digest": "sha256:70564fcb28488644471d6ffe73fc27f185733e7a25302dabd55cf06f7458cb2f",
     "source_revision": "repository"
   },
   "operations": [
@@ -427,7 +427,7 @@
     },
     {
       "slug": "aegis-credential-authority",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "path": "skills/aegis-credential-authority",
       "description": "Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.",
       "dependencies": [
@@ -444,12 +444,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:29f03303676316ac69972cedbbaa9aa1cf56aa87c55328c9550e8a02b959e908",
+      "content_digest": "sha256:b0172b8bd995b84b454b430737b648b331a2ffd863c6d95f762939600068108b",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:96ff46e8fe1614028bb9b37d9a1859ccd919557c3b8789bdae4e5dfd39c333e9",
-          "size": 19620
+          "sha256": "sha256:6ebdb2cbc9cb659841e3009c2aa54725d9831fa403a94de2505db4a8dced7c57",
+          "size": 21214
         },
         {
           "path": "references/credential-fixtures.json",
@@ -463,8 +463,8 @@
         },
         {
           "path": "references/protected-intake.v1.md",
-          "sha256": "sha256:e1691d7fe6100822bcb68f24bc80f152d2e16ccca2e1e544e5256122531caf0f",
-          "size": 6712
+          "sha256": "sha256:a6cf48fb29b6e7a503fa898acc2a4c6a6cba6c59925ca1464779bafaddb427a7",
+          "size": 6745
         }
       ]
     },
