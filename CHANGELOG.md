@@ -6,6 +6,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- #235 source checkpoint: Loop details distinguish authored human names from
+  stable Run selectors, show complete cyclic components and transition bounds,
+  retain self edges and overflow textual definitions, expose contextual mappings,
+  and reconcile exact Loop fragment bookmarks through authenticated read routes.
+  Definition grants no execution authority; direct Run and Graph-node admission
+  remain unchanged. Browser/visual acceptance remains pending; see
+  [checkpoint](docs/implementation/235-loop-detail-checkpoint.md).
+
 ### Added
 
 - #352 source: packaged `aegis skills install|inventory|update|rollback` thin

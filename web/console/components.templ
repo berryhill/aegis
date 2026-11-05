@@ -767,14 +767,7 @@ func loopGraphChildSummary(record *RecordModel) string {
 	for _, link := range record.Links {
 		if strings.HasPrefix(link.Label, "Bound Graph") { bound++ }
 	}
-	switch bound {
-	case 0:
-		return "No Graph binds this exact revision. The Loop can only run after a Graph binds its ID, revision, and digest."
-	case 1:
-		return "Exactly one Graph binds this exact revision. Submitting that Graph is the only path to runtime execution."
-	default:
-		return fmt.Sprintf("%d Graph(s) bind this exact revision. Each binding admits its own run, but every consequential effect still requires fresh authority admission against the Graph-child.", bound)
-	}
+ return fmt.Sprintf("%d Graph(s) bind this exact revision. Definition grants no execution authority. Supported direct Run and exact Graph-node paths require existing authenticated admission.", bound)
 }
 
 func loopCycleMembersLabel(members []string) string {
@@ -1197,4 +1190,11 @@ func stateMessage(state string) string {
 	case "loading": return "Loading authoritative state…"
 	default: return "Fleet state could not be loaded or validated."
 	}
+}
+
+func loopHumanTitle(detail *LoopDetailModel) string {
+ if detail.HumanTitle == "" {return "Human name unavailable"}; return detail.HumanTitle
+}
+func loopRequiredInputCount(detail *LoopDetailModel) int {
+ n:=0;for _,p:=range detail.Inputs {if p.Required {n++}}; return n
 }

@@ -313,7 +313,7 @@ func TestLoopDetailWorkspaceRendersAcceptedInteractiveControlFlow(t *testing.T) 
 		"data-loop-node-panel=\"0\"", "data-loop-node-panel=\"1\"",
 		"loop-context-title",
 		"data-loop-tab=\"inputs\"", "data-loop-tab=\"evidence\"",
-		"Definition contract", "Evidence and outcomes",
+		"Required inputs", "Evidence and outcomes",
 		"Accessible textual equivalent", "Textual equivalent",
 		"Graph-child execution explanation",
 		"Step · action", "Step · terminal",

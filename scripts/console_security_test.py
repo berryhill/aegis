@@ -33,6 +33,9 @@ def bounded_navigation_source(source: str) -> str:
         ('  const resolveGraph = () => {',
          '  window.addEventListener("hashchange", resolveGraph);',
          '1163f088a34a655360fdf67ea175498ffbb1de4aa85600b173b51648ec3e0e43'),
+        ('  const resolveLoop = () => {',
+         '  window.addEventListener("hashchange", resolveLoop);',
+         '15e48ee42bfc7b6179f31fc670ddca8c8fa07f3ab43d61264e5b49c394675713'),
         ('  const resolveAgentFragment = () => {',
          '  addEventListener("hashchange", resolveAgentFragment);',
          '1ec3ec5d56958b6ef381f80fc312da98af06c8cadac03a2dd0fd7a6875402002'),
@@ -64,6 +67,9 @@ def main() -> int:
     css = (ROOT / "web/console/app.css").read_text(encoding="utf-8")
     embed = (ROOT / "web/console/embed.go").read_text(encoding="utf-8")
     navigation = (ROOT / "web/console/navigation.js").read_text(encoding="utf-8")
+    loop_template = (ROOT / "web/console/loop_workspace.templ").read_text(encoding="utf-8")
+    loop_projection = (ROOT / "web/console/loop_workspace.go").read_text(encoding="utf-8")
+    loop_script = (ROOT / "web/console/loop_workspace.js").read_text(encoding="utf-8")
     console = (ROOT / "internal/console/server.go").read_text(encoding="utf-8")
     handlers = (ROOT / "internal/api/console.go").read_text(encoding="utf-8")
     api = (ROOT / "internal/api/server.go").read_text(encoding="utf-8")
@@ -76,7 +82,7 @@ def main() -> int:
         require(f'data-state="{state}"' in component or f'case "{state}"' in component, f"service state missing: {state}")
     require("prefers-reduced-motion" in css and "@media(max-width:768px)" in css, "responsive/reduced-motion CSS missing")
 
-    first_party_active_source = "\n".join((component, model, handlers))
+    first_party_active_source = "\n".join((component, model, handlers, loop_template, loop_projection, loop_script))
     for forbidden in (
         "templ.Raw", "SafeURL", "SafeCSS", "ExecuteScript", "innerHTML", "outerHTML",
         "document.write", "eval(", "new Function", "localStorage", "sessionStorage", "<script>",
@@ -100,6 +106,10 @@ def main() -> int:
         "outerHTML", "document.write", "eval(", "new Function", "window.open", "form.submit",
     ):
         require(forbidden not in navigation, f"navigation asset exceeds presentation-only authority: {forbidden}")
+    for forbidden in ("fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "document.cookie", "localStorage", "sessionStorage"):
+        require(forbidden not in loop_script, f"Loop workspace exceeds local presentation: {forbidden}")
+    for required in ('location.pathname !== "/console/loops"', 'BigInt(revision) > 18446744073709551615n', 'key.length > 255'):
+        require(required in navigation, f"bounded Loop fragment control missing: {required}")
     # Fragments may select only an Agent identifier; authentication and exact
     # revision resolution remain server-side. Dynamic cases live alongside this
     # source contract in scripts/agent_navigation_test.cjs.

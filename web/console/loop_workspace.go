@@ -71,8 +71,8 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 				t.Nodes[j].InDegree++
 			}
 		}
-		if e.ID == "" || edgeCounts[e.ID] != 1 || e.FromStepID == "" || e.ToStepID == "" || counts[e.FromStepID] != 1 || counts[e.ToStepID] != 1 || e.FromStepID == e.ToStepID {
-			t.Issues = append(t.Issues, LoopIssueModel{Code: "display.unlinked_edge", Path: fmt.Sprintf("transitions[%d]", i), Message: "Transition has empty, duplicate, missing, ambiguous or self-linked endpoints/identity; preserved as text, not drawn."})
+		if e.ID == "" || edgeCounts[e.ID] != 1 || e.FromStepID == "" || e.ToStepID == "" || counts[e.FromStepID] != 1 || counts[e.ToStepID] != 1 {
+			t.Issues = append(t.Issues, LoopIssueModel{Code: "display.unlinked_edge", Path: fmt.Sprintf("transitions[%d]", i), Message: "Transition has empty, duplicate, missing, ambiguous endpoints/identity; preserved as text, not drawn."})
 			continue
 		}
 		a, b := indices[e.FromStepID], indices[e.ToStepID]
@@ -135,7 +135,6 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 	for _, back := range feedback {
 		cyclic = cyclic || back
 	}
-	cycleIndices := map[int]bool{}
 	valid := make([]LoopTransitionModel, 0, len(detail.Transitions))
 	if cyclic {
 		t.Issues = append(t.Issues, LoopIssueModel{Code: "display.cycle", Path: "transitions", Message: "Bounded control-flow cycle: feedback transitions use the return gutter; all drawable stored transitions retain direction."})
@@ -144,7 +143,23 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 				valid = append(valid, edge)
 			}
 		}
-		cycleIndices = loopDetectFirstSCC(detail.Steps, valid, indices)
+	}
+	for _, component := range loopStrongComponents(detail.Steps, valid, indices) {
+		cycle := LoopCycleModel{}
+		for i, step := range detail.Steps {
+			if component[i] {
+				cycle.Members = append(cycle.Members, step.ID)
+			}
+		}
+		for _, edge := range valid {
+			if component[indices[edge.FromStepID]] {
+				cycle.Transitions = append(cycle.Transitions, edge)
+				if !component[indices[edge.ToStepID]] {
+					cycle.Exits = append(cycle.Exits, edge)
+				}
+			}
+		}
+		t.Cycles = append(t.Cycles, cycle)
 	}
 	// Group nodes by rank into rows. Each rank becomes a grid column; nodes
 	// inside the same rank stack into successive rows.
@@ -165,15 +180,7 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 			t.Rows = count
 		}
 	}
-	// Cycle analytics: members, exit condition, exhaustion destination.
-	if cyclic && len(cycleIndices) > 0 {
-		members, maxIter, exitCond, exhaustID := loopCycleAnalytics(detail, valid, cycleIndices)
-		t.CycleMembers = members
-		t.CycleMaxIterations = maxIter
-		t.CycleExitCondition = exitCond
-		t.CycleExhaustionToID = exhaustID
-		t.ExhaustionDestination = loopExhaustionDestination(detail, exhaustID)
-	}
+
 	{
 		// Track dimensions match the CSS grid in loop_workspace.css:
 		// 212px nodes with 32px gaps. Reserve a 72px top gutter for the
@@ -204,6 +211,13 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 			y1 := float64((a.GridRow-1)*rowStride + padY + nodeH/2)
 			x2 := float64((b.GridColumn-1)*colStride + pad)
 			y2 := float64((b.GridRow-1)*rowStride + padY + nodeH/2)
+			if from == to {
+				x := float64((a.GridColumn-1)*colStride + pad + nodeW/2)
+				y := float64((a.GridRow-1)*rowStride + padY)
+				path := fmt.Sprintf("M %.2f %.2f C %.2f %.2f, %.2f %.2f, %.2f %.2f", x-24, y, x-80, y-64, x+80, y-64, x+24, y)
+				t.Edges = append(t.Edges, LoopLine{Index: i, Path: path, Back: true, LabelX: int(x), LabelY: int(y) - 48})
+				continue
+			}
 			if feedback[i] {
 				if a.GridRow == 1 && b.GridRow == 1 {
 					// Return above the first row instead of crossing the
@@ -278,140 +292,121 @@ func loopStepDisplayName(step LoopStepModel) string {
 	return "Unnamed step"
 }
 
-// loopDetectFirstSCC returns the set of vertex indices that participate in
-// the first non-trivial strongly connected component reachable in declared
-// order. A self-loop counts as a non-trivial SCC. The presentation never
-// invents which loop a viewer sees: ties are broken by smallest declared
-// index.
-func loopDetectFirstSCC(steps []LoopStepModel, transitions []LoopTransitionModel, indexOf map[string]int) map[int]bool {
+func loopMissingStepFields(step LoopStepModel) []string {
+	missing := []string{}
+	for _, field := range []struct{ name, value string }{
+		{"Display name", step.DisplayName}, {"Description", step.Description},
+		{"Instruction or condition", step.Instruction}, {"Declared tool", step.Tool},
+		{"Expected output", step.ExpectedOutput}, {"Failure behavior", step.FailureBehavior},
+	} {
+		if field.value == "" {
+			missing = append(missing, field.name)
+		}
+	}
+	if len(step.Capabilities) == 0 {
+		missing = append(missing, "Declared capabilities")
+	}
+	if step.TimeoutSeconds == 0 {
+		missing = append(missing, "Step timeout")
+	}
+	return missing
+}
+
+// loopStrongComponents computes complete cyclic SCCs in declared node order.
+// Opaque condition labels do not imply exhaustion semantics or global budgets.
+func loopStrongComponents(steps []LoopStepModel, transitions []LoopTransitionModel, indexOf map[string]int) []map[int]bool {
 	adj := make([][]int, len(steps))
-	for _, t := range transitions {
-		a, okA := indexOf[t.FromStepID]
-		b, okB := indexOf[t.ToStepID]
-		if !okA || !okB {
-			continue
-		}
-		adj[a] = append(adj[a], b)
-	}
-	for v := range adj {
-		for _, w := range adj[v] {
-			if w == v {
-				return map[int]bool{v: true}
+	self := map[int]bool{}
+	for _, e := range transitions {
+		a, okA := indexOf[e.FromStepID]
+		b, okB := indexOf[e.ToStepID]
+		if okA && okB {
+			adj[a] = append(adj[a], b)
+			if a == b {
+				self[a] = true
 			}
 		}
 	}
-	const (
-		white, gray, black = 0, 1, 2
-	)
-	color := make([]int, len(steps))
-	parent := make([]int, len(steps))
-	for i := range parent {
-		parent[i] = -1
+	next := 0
+	indexes, low := make([]int, len(steps)), make([]int, len(steps))
+	for i := range indexes {
+		indexes[i] = -1
 	}
-	var scc []int
-	var dfs func(v int)
-	dfs = func(v int) {
-		color[v] = gray
+	stack := []int{}
+	active := make([]bool, len(steps))
+	result := []map[int]bool{}
+	var visit func(int)
+	visit = func(v int) {
+		indexes[v] = next
+		low[v] = next
+		next++
+		stack = append(stack, v)
+		active[v] = true
 		for _, w := range adj[v] {
-			switch color[w] {
-			case white:
-				parent[w] = v
-				dfs(w)
-			case gray:
-				// Found a back-edge: w is an ancestor of v.
-				cycle := []int{}
-				cur := v
-				cycle = append(cycle, cur)
-				for cur != w && parent[cur] != -1 {
-					cur = parent[cur]
-					cycle = append(cycle, cur)
-				}
-				if len(cycle) > 1 {
-					scc = cycle
-				}
+			if indexes[w] < 0 {
+				visit(w)
+				low[v] = min(low[v], low[w])
+			} else if active[w] {
+				low[v] = min(low[v], indexes[w])
 			}
 		}
-		color[v] = black
+		if low[v] == indexes[v] {
+			component := map[int]bool{}
+			for {
+				w := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				active[w] = false
+				component[w] = true
+				if w == v {
+					break
+				}
+			}
+			if len(component) > 1 || self[v] {
+				result = append(result, component)
+			}
+		}
 	}
 	for v := range steps {
-		if color[v] == white {
-			dfs(v)
-			if len(scc) > 1 {
-				break
-			}
+		if indexes[v] < 0 {
+			visit(v)
 		}
 	}
-	out := map[int]bool{}
-	for _, v := range scc {
-		out[v] = true
+	first := func(c map[int]bool) int {
+		m := len(steps)
+		for v := range c {
+			m = min(m, v)
+		}
+		return m
 	}
-	return out
+	sort.Slice(result, func(i, j int) bool { return first(result[i]) < first(result[j]) })
+	return result
 }
 
-// loopCycleAnalytics extracts the bounded members, maximum traversal, exit
-// condition, and exhaustion destination for one SCC. It preserves the first
-// back-edge encountered in deterministic order so the presentation never
-// invents which loop a viewer sees.
-func loopCycleAnalytics(detail *LoopDetailModel, transitions []LoopTransitionModel, cycleIndices map[int]bool) (members []string, maxIter uint16, exitCondition, exhaustID string) {
-	ids := make([]int, 0, len(cycleIndices))
-	for v := range cycleIndices {
-		ids = append(ids, v)
+func loopDetectFirstSCC(steps []LoopStepModel, transitions []LoopTransitionModel, indexOf map[string]int) map[int]bool {
+	components := loopStrongComponents(steps, transitions, indexOf)
+	if len(components) > 0 {
+		return components[0]
 	}
-	sort.Ints(ids)
-	for _, v := range ids {
-		members = append(members, detail.Steps[v].ID)
-	}
-	for _, t := range transitions {
-		a, b, ok := loopLookupTransitionEndpoints(t, detail.Steps)
-		if !ok {
-			continue
-		}
-		if cycleIndices[a] && t.MaxTraversals > maxIter {
-			maxIter = t.MaxTraversals
-		}
-		// A transition whose source is in the SCC but target is outside
-		// is the cycle's exit edge.
-		if cycleIndices[a] && !cycleIndices[b] {
-			if t.Condition != "" && exitCondition == "" {
-				exitCondition = t.Condition
-			}
-			if t.Condition == "exhausted" && exhaustID == "" {
-				exhaustID = t.ToStepID
-			}
-		}
-	}
-	return members, maxIter, exitCondition, exhaustID
+	return map[int]bool{}
 }
 
-func loopLookupTransitionEndpoints(t LoopTransitionModel, steps []LoopStepModel) (int, int, bool) {
-	var a, b int = -1, -1
-	for i, s := range steps {
-		if s.ID == t.FromStepID {
-			a = i
-		}
-		if s.ID == t.ToStepID {
-			b = i
-		}
-	}
-	return a, b, a >= 0 && b >= 0
-}
-
-func loopExhaustionDestination(detail *LoopDetailModel, exitStepID string) string {
-	if detail == nil {
-		return ""
-	}
-	if exitStepID != "" {
-		for _, s := range detail.Steps {
-			if s.ID == exitStepID {
-				if s.TerminalOutcome != "" {
-					return s.ID + " · terminal " + s.TerminalOutcome
-				}
-				return s.ID
+// loopTextualNodes is independent of canvas admission: stored steps and their
+// adjacency remain inspectable even when bounded geometry is omitted.
+func loopTextualNodes(detail *LoopDetailModel) []LoopPosition {
+	nodes := make([]LoopPosition, 0, len(detail.Steps))
+	for i, step := range detail.Steps {
+		node := LoopPosition{Index: i, Step: step, DisplayName: loopStepDisplayName(step)}
+		for _, e := range detail.Transitions {
+			if e.FromStepID == step.ID {
+				node.Outgoing = append(node.Outgoing, e)
+			}
+			if e.ToStepID == step.ID {
+				node.Incoming = append(node.Incoming, e)
 			}
 		}
-		return exitStepID
+		nodes = append(nodes, node)
 	}
-	return "Not declared"
+	return nodes
 }
 
 // loopRoleSummary composes the headline row used by the page summary.

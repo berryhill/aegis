@@ -5675,14 +5675,7 @@ func loopGraphChildSummary(record *RecordModel) string {
 			bound++
 		}
 	}
-	switch bound {
-	case 0:
-		return "No Graph binds this exact revision. The Loop can only run after a Graph binds its ID, revision, and digest."
-	case 1:
-		return "Exactly one Graph binds this exact revision. Submitting that Graph is the only path to runtime execution."
-	default:
-		return fmt.Sprintf("%d Graph(s) bind this exact revision. Each binding admits its own run, but every consequential effect still requires fresh authority admission against the Graph-child.", bound)
-	}
+	return fmt.Sprintf("%d Graph(s) bind this exact revision. Definition grants no execution authority. Supported direct Run and exact Graph-node paths require existing authenticated admission.", bound)
 }
 
 func loopCycleMembersLabel(members []string) string {
@@ -5745,7 +5738,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var292 string
 		templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 108}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var292)
 		if templ_7745c5c3_Err != nil {
@@ -5758,7 +5751,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var293 string
 		templ_7745c5c3_Var293, templ_7745c5c3_Err = templ.ResolveAttributeValue(detail.TargetID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 173}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 173}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var293)
 		if templ_7745c5c3_Err != nil {
@@ -5771,7 +5764,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var294 string
 		templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.ResolveAttributeValue(detail.Digest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 242}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 242}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var294)
 		if templ_7745c5c3_Err != nil {
@@ -5784,7 +5777,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var295 string
 		templ_7745c5c3_Var295, templ_7745c5c3_Err = templ.ResolveAttributeValue(detail.PublisherID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 313}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 313}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var295)
 		if templ_7745c5c3_Err != nil {
@@ -5797,7 +5790,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var296 string
 		templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.ResolveAttributeValue(state)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 364}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 364}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var296)
 		if templ_7745c5c3_Err != nil {
@@ -5810,7 +5803,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var297 string
 		templ_7745c5c3_Var297, templ_7745c5c3_Err = templ.ResolveAttributeValue(detail.ExpectedLifecycleDigest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 459}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 459}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var297)
 		if templ_7745c5c3_Err != nil {
@@ -5823,7 +5816,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var298 string
 		templ_7745c5c3_Var298, templ_7745c5c3_Err = templ.ResolveAttributeValue(detail.TargetID + "-" + state + "-" + detail.ExpectedLifecycleDigest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 583}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 583}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var298)
 		if templ_7745c5c3_Err != nil {
@@ -5858,7 +5851,7 @@ func LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string
 		var templ_7745c5c3_Var301 string
 		templ_7745c5c3_Var301, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 807, Col: 698}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 800, Col: 698}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var301))
 		if templ_7745c5c3_Err != nil {
@@ -5900,7 +5893,7 @@ func QueueDetailPage(surface SurfaceModel, record *RecordModel) templ.Component 
 		var templ_7745c5c3_Var303 string
 		templ_7745c5c3_Var303, templ_7745c5c3_Err = templ.ResolveAttributeValue(consoleRoute(DomainQueue, record.Key))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 811, Col: 214}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 804, Col: 214}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var303)
 		if templ_7745c5c3_Err != nil {
@@ -5986,7 +5979,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var306 string
 		templ_7745c5c3_Var306, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.Digest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 182}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 819, Col: 182}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var306))
 		if templ_7745c5c3_Err != nil {
@@ -5999,7 +5992,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var307 string
 		templ_7745c5c3_Var307, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.PreviousDigest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 246}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 819, Col: 246}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var307))
 		if templ_7745c5c3_Err != nil {
@@ -6012,7 +6005,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var308 string
 		templ_7745c5c3_Var308, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.Validation)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 308}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 819, Col: 308}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var308))
 		if templ_7745c5c3_Err != nil {
@@ -6068,7 +6061,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var309 string
 			templ_7745c5c3_Var309, templ_7745c5c3_Err = templ.JoinStringErrs(run.Submission)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var309))
 			if templ_7745c5c3_Err != nil {
@@ -6081,7 +6074,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var310 string
 			templ_7745c5c3_Var310, templ_7745c5c3_Err = templ.JoinStringErrs(run.Snapshot)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 133}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 133}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var310))
 			if templ_7745c5c3_Err != nil {
@@ -6094,7 +6087,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var311 string
 			templ_7745c5c3_Var311, templ_7745c5c3_Err = templ.JoinStringErrs(run.QueueItem)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 178}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 178}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var311))
 			if templ_7745c5c3_Err != nil {
@@ -6107,7 +6100,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var312 string
 			templ_7745c5c3_Var312, templ_7745c5c3_Err = templ.JoinStringErrs(run.GraphRun)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 221}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 221}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var312))
 			if templ_7745c5c3_Err != nil {
@@ -6120,7 +6113,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var313 string
 			templ_7745c5c3_Var313, templ_7745c5c3_Err = templ.JoinStringErrs(run.Authority)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 273}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 273}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var313))
 			if templ_7745c5c3_Err != nil {
@@ -6133,7 +6126,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var314 string
 			templ_7745c5c3_Var314, templ_7745c5c3_Err = templ.JoinStringErrs(run.Mandate)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 313}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 313}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var314))
 			if templ_7745c5c3_Err != nil {
@@ -6146,7 +6139,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var315 string
 			templ_7745c5c3_Var315, templ_7745c5c3_Err = templ.JoinStringErrs(run.Runtime)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 353}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 353}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var315))
 			if templ_7745c5c3_Err != nil {
@@ -6159,7 +6152,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var316 string
 			templ_7745c5c3_Var316, templ_7745c5c3_Err = templ.JoinStringErrs(run.Inputs)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 833, Col: 402}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 826, Col: 402}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var316))
 			if templ_7745c5c3_Err != nil {
@@ -6190,7 +6183,7 @@ func GraphDefinitionDetails(record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var317 string
 			templ_7745c5c3_Var317, templ_7745c5c3_Err = templ.JoinStringErrs(record.JSON)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 838, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 831, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var317))
 			if templ_7745c5c3_Err != nil {
@@ -6237,7 +6230,7 @@ func GraphDetailPage(surface SurfaceModel, record *RecordModel) templ.Component 
 		var templ_7745c5c3_Var319 string
 		templ_7745c5c3_Var319, templ_7745c5c3_Err = templ.ResolveAttributeValue(consoleRoute(DomainGraphs, record.Key))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 844, Col: 220}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 837, Col: 220}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var319)
 		if templ_7745c5c3_Err != nil {
@@ -6288,7 +6281,7 @@ func FieldList(fields []FieldModel, empty string) templ.Component {
 			var templ_7745c5c3_Var321 string
 			templ_7745c5c3_Var321, templ_7745c5c3_Err = templ.JoinStringErrs(empty)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 851, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 844, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var321))
 			if templ_7745c5c3_Err != nil {
@@ -6311,7 +6304,7 @@ func FieldList(fields []FieldModel, empty string) templ.Component {
 				var templ_7745c5c3_Var322 string
 				templ_7745c5c3_Var322, templ_7745c5c3_Err = templ.JoinStringErrs(field.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 855, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 848, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var322))
 				if templ_7745c5c3_Err != nil {
@@ -6324,7 +6317,7 @@ func FieldList(fields []FieldModel, empty string) templ.Component {
 				var templ_7745c5c3_Var323 string
 				templ_7745c5c3_Var323, templ_7745c5c3_Err = templ.JoinStringErrs(field.Value)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 855, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 848, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var323))
 				if templ_7745c5c3_Err != nil {
@@ -6378,7 +6371,7 @@ func RelatedRecords(links []LinkModel) templ.Component {
 				var templ_7745c5c3_Var325 templ.SafeURL
 				templ_7745c5c3_Var325, templ_7745c5c3_Err = templ.JoinURLErrs(link.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 865, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 858, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var325))
 				if templ_7745c5c3_Err != nil {
@@ -6391,7 +6384,7 @@ func RelatedRecords(links []LinkModel) templ.Component {
 				var templ_7745c5c3_Var326 string
 				templ_7745c5c3_Var326, templ_7745c5c3_Err = templ.JoinStringErrs(link.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 865, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 858, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var326))
 				if templ_7745c5c3_Err != nil {
@@ -6404,7 +6397,7 @@ func RelatedRecords(links []LinkModel) templ.Component {
 				var templ_7745c5c3_Var327 string
 				templ_7745c5c3_Var327, templ_7745c5c3_Err = templ.JoinStringErrs(link.Detail)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 865, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 858, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var327))
 				if templ_7745c5c3_Err != nil {
@@ -6462,7 +6455,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 		var templ_7745c5c3_Var329 string
 		templ_7745c5c3_Var329, templ_7745c5c3_Err = templ.JoinStringErrs(credentialOperationTitle(operation.Operation))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 876, Col: 143}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 869, Col: 143}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var329))
 		if templ_7745c5c3_Err != nil {
@@ -6480,7 +6473,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var330 string
 			templ_7745c5c3_Var330, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 879, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 872, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var330))
 			if templ_7745c5c3_Err != nil {
@@ -6498,7 +6491,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 				var templ_7745c5c3_Var331 string
 				templ_7745c5c3_Var331, templ_7745c5c3_Err = templ.JoinStringErrs(operation.ReasonCode)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 881, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 874, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var331))
 				if templ_7745c5c3_Err != nil {
@@ -6554,7 +6547,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var334 string
 			templ_7745c5c3_Var334, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 891, Col: 135}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 884, Col: 135}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var334)
 			if templ_7745c5c3_Err != nil {
@@ -6567,7 +6560,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var335 string
 			templ_7745c5c3_Var335, templ_7745c5c3_Err = templ.ResolveAttributeValue(operation.Receipt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 891, Col: 200}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 884, Col: 200}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var335)
 			if templ_7745c5c3_Err != nil {
@@ -6580,7 +6573,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var336 string
 			templ_7745c5c3_Var336, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 892, Col: 136}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 885, Col: 136}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var336)
 			if templ_7745c5c3_Err != nil {
@@ -6593,7 +6586,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var337 string
 			templ_7745c5c3_Var337, templ_7745c5c3_Err = templ.ResolveAttributeValue(operation.Receipt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 892, Col: 201}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 885, Col: 201}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var337)
 			if templ_7745c5c3_Err != nil {
@@ -6633,7 +6626,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var340 string
 			templ_7745c5c3_Var340, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 895, Col: 172}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 888, Col: 172}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var340)
 			if templ_7745c5c3_Err != nil {
@@ -6646,7 +6639,7 @@ func CredentialOperationPage(csrf string, operation *CredentialOperationModel) t
 			var templ_7745c5c3_Var341 string
 			templ_7745c5c3_Var341, templ_7745c5c3_Err = templ.ResolveAttributeValue(operation.Operation)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 895, Col: 241}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 888, Col: 241}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var341)
 			if templ_7745c5c3_Err != nil {
@@ -6828,7 +6821,7 @@ func CredentialOperationMetadata(operation *CredentialOperationModel) templ.Comp
 		var templ_7745c5c3_Var344 string
 		templ_7745c5c3_Var344, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Operation)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 931, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 924, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var344))
 		if templ_7745c5c3_Err != nil {
@@ -6846,7 +6839,7 @@ func CredentialOperationMetadata(operation *CredentialOperationModel) templ.Comp
 			var templ_7745c5c3_Var345 string
 			templ_7745c5c3_Var345, templ_7745c5c3_Err = templ.JoinStringErrs(operation.RecordID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 933, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 926, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var345))
 			if templ_7745c5c3_Err != nil {
@@ -6865,7 +6858,7 @@ func CredentialOperationMetadata(operation *CredentialOperationModel) templ.Comp
 			var templ_7745c5c3_Var346 string
 			templ_7745c5c3_Var346, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Reference)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 936, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 929, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var346))
 			if templ_7745c5c3_Err != nil {
@@ -6884,7 +6877,7 @@ func CredentialOperationMetadata(operation *CredentialOperationModel) templ.Comp
 			var templ_7745c5c3_Var347 string
 			templ_7745c5c3_Var347, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Version)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 939, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 932, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var347))
 			if templ_7745c5c3_Err != nil {
@@ -6903,7 +6896,7 @@ func CredentialOperationMetadata(operation *CredentialOperationModel) templ.Comp
 			var templ_7745c5c3_Var348 string
 			templ_7745c5c3_Var348, templ_7745c5c3_Err = templ.JoinStringErrs(operation.AgentID + " / " + operation.StanzaID + " / " + operation.DeploymentID + " / " + operation.Scope)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 942, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 935, Col: 147}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var348))
 			if templ_7745c5c3_Err != nil {
@@ -6967,7 +6960,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var350 string
 			templ_7745c5c3_Var350, templ_7745c5c3_Err = templ.JoinStringErrs(stateMessage(surface.State))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 951, Col: 290}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 944, Col: 290}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var350))
 			if templ_7745c5c3_Err != nil {
@@ -6980,7 +6973,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var351 string
 			templ_7745c5c3_Var351, templ_7745c5c3_Err = templ.JoinStringErrs(surface.ReasonCode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 951, Col: 319}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 944, Col: 319}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var351))
 			if templ_7745c5c3_Err != nil {
@@ -6998,7 +6991,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var352 string
 			templ_7745c5c3_Var352, templ_7745c5c3_Err = templ.ResolveAttributeValue(credentialPane(surface))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 953, Col: 119}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 946, Col: 119}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var352)
 			if templ_7745c5c3_Err != nil {
@@ -7041,7 +7034,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var353 string
 			templ_7745c5c3_Var353, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.Query)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 963, Col: 126}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 956, Col: 126}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var353)
 			if templ_7745c5c3_Err != nil {
@@ -7054,7 +7047,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var354 string
 			templ_7745c5c3_Var354, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d matching in bounded collection · %d authoritative total", credentialMatchingCount(surface), surface.TotalCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 965, Col: 175}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 958, Col: 175}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var354))
 			if templ_7745c5c3_Err != nil {
@@ -7087,7 +7080,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var355 string
 					templ_7745c5c3_Var355, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%t", surface.Inspector != nil && surface.Inspector.Key == record.Key))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 109}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 109}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var355)
 					if templ_7745c5c3_Err != nil {
@@ -7100,7 +7093,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var356 string
 					templ_7745c5c3_Var356, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 158}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 158}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var356)
 					if templ_7745c5c3_Err != nil {
@@ -7113,7 +7106,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var357 templ.SafeURL
 					templ_7745c5c3_Var357, templ_7745c5c3_Err = templ.JoinURLErrs(detailRoute(surface, record.Key))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 200}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 200}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var357))
 					if templ_7745c5c3_Err != nil {
@@ -7126,7 +7119,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var358 string
 					templ_7745c5c3_Var358, templ_7745c5c3_Err = templ.ResolveAttributeValue(record.Key)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 248}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 248}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var358)
 					if templ_7745c5c3_Err != nil {
@@ -7139,7 +7132,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var359 string
 					templ_7745c5c3_Var359, templ_7745c5c3_Err = templ.ResolveAttributeValue(credentialCurrent(surface, record.Key))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 304}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 304}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var359)
 					if templ_7745c5c3_Err != nil {
@@ -7152,7 +7145,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var360 string
 					templ_7745c5c3_Var360, templ_7745c5c3_Err = templ.JoinStringErrs(credentialReference(record))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 344}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 344}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var360))
 					if templ_7745c5c3_Err != nil {
@@ -7165,7 +7158,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var361 string
 					templ_7745c5c3_Var361, templ_7745c5c3_Err = templ.JoinStringErrs(record.Key)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 374}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 374}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var361))
 					if templ_7745c5c3_Err != nil {
@@ -7178,7 +7171,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var362 string
 					templ_7745c5c3_Var362, templ_7745c5c3_Err = templ.JoinStringErrs(credentialKind(record))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 421}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 421}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var362))
 					if templ_7745c5c3_Err != nil {
@@ -7213,7 +7206,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var365 string
 					templ_7745c5c3_Var365, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 512}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 512}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var365))
 					if templ_7745c5c3_Err != nil {
@@ -7226,7 +7219,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var366 string
 					templ_7745c5c3_Var366, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 978, Col: 547}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 971, Col: 547}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var366))
 					if templ_7745c5c3_Err != nil {
@@ -7275,7 +7268,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 				var templ_7745c5c3_Var367 templ.SafeURL
 				templ_7745c5c3_Var367, templ_7745c5c3_Err = templ.JoinURLErrs(collectionRoute(surface))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 991, Col: 126}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 984, Col: 126}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var367))
 				if templ_7745c5c3_Err != nil {
@@ -7328,7 +7321,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 		var templ_7745c5c3_Var369 templ.SafeURL
 		templ_7745c5c3_Var369, templ_7745c5c3_Err = templ.JoinURLErrs(collectionRoute(surface))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1003, Col: 122}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 996, Col: 122}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var369))
 		if templ_7745c5c3_Err != nil {
@@ -7351,7 +7344,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var370 string
 			templ_7745c5c3_Var370, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Reference)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1008, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1001, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var370))
 			if templ_7745c5c3_Err != nil {
@@ -7364,7 +7357,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var371 string
 			templ_7745c5c3_Var371, templ_7745c5c3_Err = templ.JoinStringErrs(record.Key)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1008, Col: 129}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1001, Col: 129}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var371))
 			if templ_7745c5c3_Err != nil {
@@ -7399,7 +7392,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var374 string
 			templ_7745c5c3_Var374, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1008, Col: 215}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1001, Col: 215}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var374))
 			if templ_7745c5c3_Err != nil {
@@ -7417,7 +7410,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var375 templ.SafeURL
 				templ_7745c5c3_Var375, templ_7745c5c3_Err = templ.JoinURLErrs(credentialOperationURL("rotate", record.Credential.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1010, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1003, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var375))
 				if templ_7745c5c3_Err != nil {
@@ -7430,7 +7423,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var376 templ.SafeURL
 				templ_7745c5c3_Var376, templ_7745c5c3_Err = templ.JoinURLErrs(credentialOperationURL("revoke", record.Credential.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1010, Col: 215}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1003, Col: 215}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var376))
 				if templ_7745c5c3_Err != nil {
@@ -7443,7 +7436,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var377 templ.SafeURL
 				templ_7745c5c3_Var377, templ_7745c5c3_Err = templ.JoinURLErrs(credentialOperationURL("bind", record.Credential.ID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1010, Col: 316}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1003, Col: 316}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var377))
 				if templ_7745c5c3_Err != nil {
@@ -7489,7 +7482,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var380 string
 			templ_7745c5c3_Var380, templ_7745c5c3_Err = templ.JoinStringErrs(credFallback(record.Credential.ID, record.Key))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1019, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1012, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var380))
 			if templ_7745c5c3_Err != nil {
@@ -7502,7 +7495,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var381 string
 			templ_7745c5c3_Var381, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Reference)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1020, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1013, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var381))
 			if templ_7745c5c3_Err != nil {
@@ -7515,7 +7508,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var382 string
 			templ_7745c5c3_Var382, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Kind)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1021, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1014, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var382))
 			if templ_7745c5c3_Err != nil {
@@ -7550,7 +7543,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var385 string
 			templ_7745c5c3_Var385, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1022, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1015, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var385))
 			if templ_7745c5c3_Err != nil {
@@ -7563,7 +7556,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var386 string
 			templ_7745c5c3_Var386, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("v%d", record.Credential.CurrentVersion))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1023, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1016, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var386))
 			if templ_7745c5c3_Err != nil {
@@ -7576,7 +7569,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var387 string
 			templ_7745c5c3_Var387, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.CreatedAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1024, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1017, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var387))
 			if templ_7745c5c3_Err != nil {
@@ -7589,7 +7582,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var388 string
 			templ_7745c5c3_Var388, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.CreatedBy)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1025, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1018, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var388))
 			if templ_7745c5c3_Err != nil {
@@ -7602,7 +7595,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var389 string
 			templ_7745c5c3_Var389, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d credential binding(s)", record.Credential.BindingCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1026, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1019, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var389))
 			if templ_7745c5c3_Err != nil {
@@ -7620,7 +7613,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var390 string
 				templ_7745c5c3_Var390, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.RevokedAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1028, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1021, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var390))
 				if templ_7745c5c3_Err != nil {
@@ -7633,7 +7626,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var391 string
 				templ_7745c5c3_Var391, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Revocation)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1029, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1022, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var391))
 				if templ_7745c5c3_Err != nil {
@@ -7661,7 +7654,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var392 string
 				templ_7745c5c3_Var392, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Reference)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1037, Col: 167}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1030, Col: 167}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var392))
 				if templ_7745c5c3_Err != nil {
@@ -7679,7 +7672,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var393 string
 					templ_7745c5c3_Var393, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("v%d", version.Version))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1039, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1032, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var393))
 					if templ_7745c5c3_Err != nil {
@@ -7702,7 +7695,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var394 string
 					templ_7745c5c3_Var394, templ_7745c5c3_Err = templ.JoinStringErrs(version.CreatedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1043, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1036, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var394))
 					if templ_7745c5c3_Err != nil {
@@ -7715,7 +7708,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var395 string
 					templ_7745c5c3_Var395, templ_7745c5c3_Err = templ.JoinStringErrs(credFallback(version.CiphertextHash, "Content address unavailable"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1043, Col: 140}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1036, Col: 140}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var395))
 					if templ_7745c5c3_Err != nil {
@@ -7826,7 +7819,7 @@ func RecordLabel(label string) templ.Component {
 		var templ_7745c5c3_Var397 string
 		templ_7745c5c3_Var397, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1095, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1088, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var397))
 		if templ_7745c5c3_Err != nil {
@@ -8031,6 +8024,22 @@ func stateMessage(state string) string {
 	default:
 		return "Fleet state could not be loaded or validated."
 	}
+}
+
+func loopHumanTitle(detail *LoopDetailModel) string {
+	if detail.HumanTitle == "" {
+		return "Human name unavailable"
+	}
+	return detail.HumanTitle
+}
+func loopRequiredInputCount(detail *LoopDetailModel) int {
+	n := 0
+	for _, p := range detail.Inputs {
+		if p.Required {
+			n++
+		}
+	}
+	return n
 }
 
 var _ = templruntime.GeneratedTemplate

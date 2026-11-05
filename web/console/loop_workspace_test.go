@@ -22,17 +22,8 @@ func TestLoopTopologyCyclicBranchingTerminalAndHistoricalCases(t *testing.T) {
 	if len(topology.Issues) == 0 {
 		t.Fatal("cyclic topology should record a display.cycle issue")
 	}
-	if topology.CycleMaxIterations < 5 {
-		t.Fatalf("expected cycle max iterations 5, got %d", topology.CycleMaxIterations)
-	}
-	if topology.CycleExitCondition != "approved" {
-		t.Fatalf("expected exit condition approved, got %q", topology.CycleExitCondition)
-	}
-	if len(topology.CycleMembers) == 0 {
-		t.Fatal("expected at least one cycle member")
-	}
-	if topology.ExhaustionDestination != "Not declared" {
-		t.Fatalf("an ordinary approved/rejected exit is not an exhaustion destination: %q", topology.ExhaustionDestination)
+	if len(topology.Cycles) != 1 || len(topology.Cycles[0].Members) != 2 || len(topology.Cycles[0].Exits) != 2 {
+		t.Fatalf("incomplete cycle facts: %+v", topology.Cycles)
 	}
 	branching := &LoopDetailModel{Steps: []LoopStepModel{
 		{ID: "a", Kind: "action", Entry: true, MaxAttempts: 1},
@@ -115,8 +106,8 @@ func TestLoopTopologyPublishedDoerCycleDrawsExactTransitions(t *testing.T) {
 	if topology.Edges[8].LabelY >= 32 || !strings.Contains(topology.Edges[8].Path, " 13.00") {
 		t.Fatalf("retry label and path must stay above first-row nodes: %+v", topology.Edges[8])
 	}
-	if topology.CycleExhaustionToID != "failed" {
-		t.Fatalf("ordinary success exit mistaken for exhaustion: %q", topology.CycleExhaustionToID)
+	if topology.CycleExhaustionToID != "" {
+		t.Fatalf("opaque condition inferred an exhaustion destination: %q", topology.CycleExhaustionToID)
 	}
 	var out strings.Builder
 	record := &RecordModel{Key: "xander-doer:1", Label: "xander-doer", Revision: "1", Lifecycle: "draft", Loop: model}
@@ -151,14 +142,14 @@ func TestLoopTopologyMalformedParallelSelfEdgeAndAcyclicPreservation(t *testing.
 		{ID: "duplicate", FromStepID: "entry", ToStepID: "exit"},
 	}}
 	topology := buildLoopTopology(model)
-	if len(topology.Edges) != 3 || topology.Edges[0].Index != 0 || topology.Edges[1].Index != 1 || topology.Edges[2].Index != 2 {
+	if len(topology.Edges) != 4 || topology.Edges[0].Index != 0 || topology.Edges[1].Index != 1 || topology.Edges[2].Index != 2 {
 		t.Fatalf("malformed edges drawn or parallel identities dropped: %+v", topology.Edges)
 	}
 	if topology.Edges[0].Path == topology.Edges[1].Path {
 		t.Fatal("parallel edges are geometrically indistinguishable")
 	}
 	for _, edge := range topology.Edges {
-		if edge.Back {
+		if edge.Back && edge.Index != 3 {
 			t.Fatalf("acyclic edge classified as feedback: %+v", edge)
 		}
 	}
@@ -187,7 +178,7 @@ func TestLoopWorkspaceCycleBranchTerminalInvalidAndMaximumFixtures(t *testing.T)
 			if !strings.Contains(html, "data-loop-workspace") {
 				t.Fatal("missing workspace root")
 			}
-			if !strings.Contains(html, "Definition contract") || !strings.Contains(html, "Evidence and outcomes") {
+			if !strings.Contains(html, "Required inputs") || !strings.Contains(html, "Evidence and outcomes") {
 				t.Fatal("missing tabs")
 			}
 			if !strings.Contains(html, "Accessible textual equivalent") {

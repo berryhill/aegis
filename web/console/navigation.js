@@ -56,6 +56,32 @@
   window.addEventListener("hashchange", resolveGraph);
 })();
 
+// Loop fragments reconcile only a bounded read selector on the existing origin.
+// Keep filters/history; switching exact records discards a stale revision query.
+(() => {
+  const resolveLoop = () => {
+    if (location.pathname !== "/console/loops") return;
+    const match = /^#\/loops\/([^?#]+)$/.exec(location.hash);
+    if (!match) return;
+    let key;
+    try { key = decodeURIComponent(match[1]); } catch (_) { return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,275}$/.test(key)) return;
+    const colon = key.lastIndexOf(":");
+    if (colon > 0 && /^[0-9]+$/.test(key.slice(colon+1))) {
+      const revision = key.slice(colon+1);
+      if (!/^[1-9][0-9]{0,19}$/.test(revision) || BigInt(revision) > 18446744073709551615n || key.slice(0,colon).length > 255) return;
+    } else if (key.length > 255) return;
+    const target = new URL(location.href);
+    const current = target.searchParams.get("record_key");
+    if (current === key) return;
+    target.searchParams.set("record_key", key);
+    target.searchParams.delete("revision");
+    location.replace(target.href);
+  };
+  resolveLoop();
+  window.addEventListener("hashchange", resolveLoop);
+})();
+
 // Collection context is presentation-only. It can restore viewport and focus to
 // a rendered record, but it never participates in server decisions.
 (() => {

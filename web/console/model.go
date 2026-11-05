@@ -228,11 +228,12 @@ type LinkModel struct{ Label, Detail, URL string }
 // execution records: this model never carries a run, attempt, artifact,
 // receipt, or disposition.
 type LoopDetailModel struct {
+	HumanTitle                                                             string
 	TargetID, Digest, PreviousDigest, PublisherID, ExpectedLifecycleDigest string
 	EntryStepID, Validation, ValidationDigest                              string
 	Description, LatestVersion, GraphChildSummary                          string
 	CycleSummary, ExitCondition, ExhaustionDestination                     string
-	CanActivate, CanRetire, DoerV4, DoerV5                                 bool
+	CanActivate, CanRetire, DoerV4, DoerV5, HistoricalRevision             bool
 	CanvasWidth, CanvasHeight                                              int
 	Inputs, Outputs                                                        []LoopPortModel
 	Steps                                                                  []LoopStepModel
@@ -494,17 +495,22 @@ type GraphEdgeModel struct {
 // Positioning uses CSS-grid track placement (gridColumn/gridRow) rather than
 // inline pixel styles. This keeps the rendered HTML compatible with the
 // console's strict Content Security Policy (style-src 'self').
+type LoopCycleModel struct {
+	Members            []string
+	Transitions, Exits []LoopTransitionModel
+}
+
 type LoopTopology struct {
-	Nodes                 []LoopPosition
-	Edges                 []LoopLine
-	Issues                []LoopIssueModel
-	Columns               int
-	Rows                  int
-	CycleMembers          []string
-	CycleMaxIterations    uint16
-	CycleExitCondition    string
-	CycleExhaustionToID   string
-	ExhaustionDestination string
+	// Legacy execution-layout compatibility; never inferred from edge bounds.
+	CycleMembers                                                   []string
+	CycleMaxIterations                                             uint16
+	CycleExitCondition, CycleExhaustionToID, ExhaustionDestination string
+	Cycles                                                         []LoopCycleModel
+	Nodes                                                          []LoopPosition
+	Edges                                                          []LoopLine
+	Issues                                                         []LoopIssueModel
+	Columns                                                        int
+	Rows                                                           int
 }
 
 type LoopPosition struct {

@@ -451,6 +451,18 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 					record.AvailabilityHeadDigest = candidate.Revision.Digest
 				}
 			}
+			if record.AvailabilityHeadRevision > 0 {
+				record.Loop.LatestVersion = fmt.Sprintf("r%d", record.AvailabilityHeadRevision)
+				record.Loop.HistoricalRevision = record.AvailabilityHeadRevision > loopView.Revision.Revision
+				if record.Loop.HistoricalRevision {
+					record.Loop.LatestVersion += " · viewing historical revision"
+					record.Loop.CanActivate, record.Loop.CanRetire = false, false
+				} else if record.AvailabilityHeadDigest == loopView.Revision.Digest {
+					record.Loop.LatestVersion += " · viewing latest"
+				} else {
+					record.Loop.LatestVersion = "Unavailable (publication head conflicts)"
+				}
+			}
 		} else if domain == consoleGraphs {
 			graphView, ok := value.(app.GraphView)
 			if !ok {
@@ -598,13 +610,14 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 
 	detail := &consoleweb.LoopDetailModel{
-		DoerV4:   doerV4,
-		DoerV5:   doerV5,
-		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		HumanTitle: revision.Name,
+		DoerV4:     doerV4,
+		DoerV5:     doerV5,
+		TargetID:   loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
 		CanRetire:     view.Lifecycle.State != "retired",
-		LatestVersion: fmt.Sprintf("r%d", revision.Revision),
+		LatestVersion: "Unavailable (publication head not resolved)",
 		Validation:    "Unavailable", ValidationDigest: "Unavailable",
 		Provenance: []consoleweb.FieldModel{
 			{Label: "Publisher Agent", Value: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest)},

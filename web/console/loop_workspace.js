@@ -46,6 +46,23 @@
     activate(0);
   }
   if (!stage) return;
+  const nodeHost = root.querySelector("[data-loop-node-host]");
+  if (!nodeHost) return;
+  // Keep one server-rendered copy of each complete step contract. Native
+  // details provide the no-script equivalent; selection only reparents that
+  // same trusted DOM into the contextual inspector, never constructs HTML.
+  const homes = new Map(panels.map(panel => [panel, {
+    parent: panel.parentNode, next: panel.nextSibling,
+    note: panel.parentNode.querySelector("[data-loop-selected-note]")
+  }]));
+  let activePanel = null;
+  const restorePanel = () => {
+    if (!activePanel) return;
+    const home = homes.get(activePanel);
+    home.parent.insertBefore(activePanel, home.next);
+    if (home.note) home.note.hidden = true;
+    activePanel = null;
+  };
   // Match the accepted workspace's canvas-first entry. Keep the server-rendered
   // definition visible without JavaScript; enhancement makes it contextual.
   if (inspector) inspector.hidden = true;
@@ -53,10 +70,16 @@
   for (const button of definitionButtons) button.setAttribute("aria-expanded", "false");
   const show = (index) => {
     if (index !== null && !panels.some(p => p.dataset.loopNodePanel === index)) return;
+    restorePanel();
     if (inspector) inspector.hidden = false;
     if (split) split.classList.remove("solo");
     if (definition) definition.hidden = index !== null;
-    for (const panel of panels) panel.hidden = panel.dataset.loopNodePanel !== index;
+    if (index !== null) {
+      activePanel = panels.find(panel => panel.dataset.loopNodePanel === index);
+      nodeHost.appendChild(activePanel);
+      const home = homes.get(activePanel);
+      if (home.note) home.note.hidden = false;
+    }
     for (const node of nodes) node.setAttribute("aria-pressed", String(node.dataset.loopNode === index));
     for (const button of definitionButtons) button.setAttribute("aria-expanded", String(index === null));
     title.textContent = index === null ? "Loop definition" : "Node inspector";
@@ -67,6 +90,7 @@
   let lastNode = null;
   for (const node of nodes) node.addEventListener("click", () => { lastNode = node; show(node.dataset.loopNode); });
   const close = () => {
+    restorePanel();
     if (inspector) inspector.hidden = true;
     if (split) split.classList.add("solo");
     for (const node of nodes) node.setAttribute("aria-pressed", "false");
@@ -81,20 +105,22 @@
   // their visual size, and SVG paths are expressed as percentages so the
   // arrows remain attached without inline-style layout.
   let zoom = 1;
+  // The admitted definition can be 256 columns wide. A fixed 30% floor
+  // clips it; derive a finite lower bound from this actual viewport/stage.
+  const fitScale = () => Math.min(1, Math.max(1, viewport.clientWidth-8)/stage.scrollWidth,
+    Math.max(1, viewport.clientHeight-8)/stage.scrollHeight);
   const setZoom = (value, fit = false) => {
     const old = zoom;
     const x = (viewport.scrollLeft + viewport.clientWidth/2)/old;
     const y = (viewport.scrollTop + viewport.clientHeight/2)/old;
-    zoom = Math.max(.3, Math.min(2, value));
+    zoom = Math.max(Math.min(.3, fitScale()), Math.min(2, value));
     stage.style.transform = `scale(${zoom})`;
     viewport.scrollLeft = fit ? 0 : x*zoom - viewport.clientWidth/2;
     viewport.scrollTop = fit ? 0 : y*zoom - viewport.clientHeight/2;
     root.querySelector("[data-loop-scale]").textContent = `${Math.round(zoom*100)}%`;
   };
   const fit = () => {
-    const sw = stage.scrollWidth, sh = stage.scrollHeight;
-    const fitZoom = Math.min(1,(viewport.clientWidth-8)/sw,(viewport.clientHeight-8)/sh);
-    setZoom(Math.max(.3, Math.min(2, fitZoom)), true);
+    setZoom(fitScale(), true);
   };
   const fitBtn = root.querySelector("[data-loop-fit]");
   if (fitBtn) fitBtn.addEventListener("click", fit);

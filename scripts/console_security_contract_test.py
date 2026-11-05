@@ -21,6 +21,7 @@ class FragmentContractTest(unittest.TestCase):
 
     def test_missing_or_duplicate_adapters_rejected(self):
         for marker in ('  const resolveGraph = () => {',
+                       '  const resolveLoop = () => {',
                        '  const resolveAgentFragment = () => {',
                        '  const reconcileFragment = () => {'):
             for changed in (self.source.replace(marker, "", 1), self.source + marker):
@@ -44,6 +45,26 @@ class FragmentContractTest(unittest.TestCase):
                 self.assertIn(old, self.source)
                 with self.assertRaises(AssertionError):
                     bounded_navigation_source(self.source.replace(old, new))
+
+    def test_loop_adapter_mutations_rejected_independently(self):
+        start = '  const resolveLoop = () => {'
+        end = '  window.addEventListener("hashchange", resolveLoop);'
+        begin, finish = self.source.index(start), self.source.index(end) + len(end)
+        block = self.source[begin:finish]
+        for old, new in [
+            ('location.pathname !== "/console/loops"', 'false'),
+            ('{0,275}', '{0,999999}'),
+            ('18446744073709551615n', '999999999999999999999n'),
+            ('key.length > 255', 'false'),
+            ('new URL(location.href)', 'new URL("https://evil.invalid")'),
+            ('target.searchParams.set("record_key", key)', 'target.searchParams.set("authority", key)'),
+            ('target.searchParams.delete("revision")', 'target.searchParams.delete("other")'),
+        ]:
+            with self.subTest(mutation=old):
+                self.assertIn(old, block)
+                changed = self.source[:begin] + block.replace(old, new) + self.source[finish:]
+                with self.assertRaises(AssertionError):
+                    bounded_navigation_source(changed)
 
 
 if __name__ == "__main__":
