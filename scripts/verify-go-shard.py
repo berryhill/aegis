@@ -42,7 +42,7 @@ MANAGER_TESTS = {
     'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
 }
 COMMAND = ROOT + 'internal/command'
-CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld'}
+CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld', 'cli-contribution-host': 'TestPublicRootContributionMissingHostPreflight'}
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
@@ -87,7 +87,12 @@ BUNDLES = {
         # remainder-b previously took 186s. Move that complete existing group
         # to api-b, preserving every partition, alarm, lane and resource bound.
         'api-a': ('api-a', 'persistence'),
-        'api-b': ('api-b', 'cli', 'remainder-b'),
+        # Run 42089450269: missing-host held native cleanup for ~164s before
+        # cli-command's upgrade child could start, exhausting its unchanged
+        # 8m process / 10m job budgets. api-b used 635s of its existing 960s.
+        # Move this exact native root through the existing partition mechanism;
+        # keep all tests, jobs, resource limits and cleanup barriers unchanged.
+        'api-b': ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'),
         # Hosted 41218036692: compile 65s + defaults 444s left too little
         # of 600s for contribution. Keep that group in a separate lane.
         'implementation': ('implementation',),

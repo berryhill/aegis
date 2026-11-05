@@ -62,6 +62,29 @@ retain v0.3.0 release and #235; this delta does not perform either.
 
 ## Launch-asset impact
 
+### Demonstrated exact-head CI deadline
+
+Run `42089450269` passed every executed job except race `cli-command`, which
+exhausted its unchanged ten-minute job limit. Its command test process spent
+about 172 seconds waiting for selected native cleanup; the missing-host
+contribution preflight accounted for about 164 seconds. The upgrade child then
+exhausted its remaining deadline during its serial scenarios. This is cancelled
+coverage, not a product PASS. The optional installed/browser job was skipped.
+
+Move only `TestPublicRootContributionMissingHostPreflight` through the existing
+exact-root partition mechanism into the existing race `api-b` lane (635 seconds
+observed against its existing 960-second cap). Normal mode retains it in the
+existing CLI lane. No CI job, timeout, process budget, test body, assertion,
+authentication, cleanup barrier or resource limit changes. Dynamic inventory
+still assigns all current/future default tests exactly once and denies a missing
+named target. Fresh hosted timing remains necessary; local selector tests alone
+do not prove the aggregate deadline repaired.
+
+Focused diagnostic timing and a test-only race-exit-sleep experiment were
+preserved outside source and not shipped: immutable archive checking was not
+dominant and exit-sleep savings were insufficient. No Chrome repair, broad
+optional acceptance campaign or production optimization is included.
+
 Changed: Loop/Graph advisory skills/references and canonical file inventory,
 focused schema/text regressions, `docs/HERMES_SKILLS.md`, this mapping and the
 Unreleased changelog. No new shipped command, wire schema, authority boundary,
