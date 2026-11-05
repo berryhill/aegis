@@ -84,4 +84,3 @@ Root README, LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, CHANGELOG and thr
   demo/terminal recording, release binaries/checksums and contributor-issue assets
   need no new command/authority/install claim from this change. Release assets were
   not regenerated or published, and their release qualification is not claimed.
-
