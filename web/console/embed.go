@@ -39,6 +39,12 @@ var NavigationJS = append(append(append(append([]byte{}, navigationJS...), graph
 //go:embed execution_debugger.js
 var ExecutionDebuggerJS []byte
 
+// LoopObservationJS repeats authenticated read admission without granting or
+// extending authority. Keep network observation outside NavigationJS.
+//
+//go:embed loop_observation.js
+var LoopObservationJS []byte
+
 // GraphObservationJS performs only authenticated same-origin Graph SSR reads.
 // It is intentionally separate from the no-network presentation navigation.
 //

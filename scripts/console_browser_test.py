@@ -825,7 +825,7 @@ LOOP_GEOMETRY_EXPRESSION = r"""(() => {
   });
   const digestLabel = [...document.querySelectorAll('.loop-contract dt')].find(dt => dt.textContent === 'Revision digest');
   return {nodes, edges, labels:[...document.querySelectorAll('.loop-edge-label')].map(n => n.textContent),
-          legend:[...document.querySelectorAll('.loop-visible-transitions li')].map(n => n.textContent),
+          legend:[...document.querySelectorAll('.loop-visible-transitions > li')].map(n => n.textContent),
           url:location.href, width:innerWidth, digest:digestLabel?.nextElementSibling?.textContent,
           scale:document.querySelector('[data-loop-scale]')?.textContent};
 })()"""
@@ -841,7 +841,7 @@ def validate_loop_geometry(measurement, steps, transitions, feedback=(), conditi
     require(len({edge[0] for edge in transitions}) == len(transitions), "duplicate expected edge")
     require(len(nodes) == len(steps) and {n["id"] for n in nodes} == set(steps), "missing or duplicate geometry nodes")
     require(len(edges) == len(transitions) and {e["id"] for e in edges} == {t[0] for t in transitions}, "missing or duplicate geometry edges")
-    require(len(measurement["labels"]) == len(transitions) and len(measurement["legend"]) == len(transitions), "SVG labels or visible legend omitted stored transitions")
+    require(len(measurement["labels"]) == len(transitions) and len(measurement["legend"]) == len(transitions), "SVG labels or complete textual transition inventory omitted stored transitions")
     for edge in edges:
         require(edge["marker"] == "url(#loop-arrow)" and edge["visible"], "directed arrowhead is not visible")
         require(edge["feedback"] == (edge["id"] in feedback), "return gutter misclassified stored transition")

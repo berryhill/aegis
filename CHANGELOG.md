@@ -6,6 +6,16 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- #235 Loop workspace: details distinguish authored human names from
+  stable Run selectors, show complete cyclic components and transition bounds,
+  retain self edges and overflow textual definitions, expose contextual mappings
+  and stored executable contracts, and pin exact bookmarks through authenticated
+  read routes. Required-input tabs, historical head status, maximum Fit and
+  observed auth-loss clearing retain the existing authority boundaries.
+  Definition grants no execution authority; direct Run and Graph-node admission
+  remain unchanged. Independent acceptance remains separate; see
+  [checkpoint](docs/implementation/235-loop-detail-checkpoint.md).
+
 ## [0.3.0] - 2026-11-05
 
 ### Changed
@@ -37,6 +47,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - This summary preserves the detailed entries and their evidence boundaries;
   release publication, final tag-bound CLI/skill archives and installed release
   verification remain separate actions.
+
 
 ### Added
 

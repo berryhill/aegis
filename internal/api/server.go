@@ -673,6 +673,15 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		}
 		model := consoleweb.PageModel{Authentication: authenticationModel(""), Surface: consoleweb.SurfaceModel{Domain: string(domain)}}
 		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
+			if domain == consoleLoops {
+				target, bookmarkErr := pinConsoleLoopBookmark(c, svc, subject)
+				if bookmarkErr != nil {
+					return bookmarkErr
+				}
+				if target != "" {
+					return c.Redirect(http.StatusSeeOther, target)
+				}
+			}
 			model, err = loadConsole(c, subject, domain)
 			if err != nil {
 				return err
@@ -1377,6 +1386,13 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
 		}
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
+	})
+	e.GET("/console/assets/loop-observation.js", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", consoleweb.LoopObservationJS)
 	})
 	e.GET("/console/assets/execution-debugger.js", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {

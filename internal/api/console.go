@@ -451,6 +451,18 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 					record.AvailabilityHeadDigest = candidate.Revision.Digest
 				}
 			}
+			if record.AvailabilityHeadRevision > 0 {
+				record.Loop.LatestVersion = fmt.Sprintf("r%d", record.AvailabilityHeadRevision)
+				record.Loop.HistoricalRevision = record.AvailabilityHeadRevision > loopView.Revision.Revision
+				if record.Loop.HistoricalRevision {
+					record.Loop.LatestVersion += " · viewing historical revision"
+					record.Loop.CanActivate, record.Loop.CanRetire = false, false
+				} else if record.AvailabilityHeadDigest == loopView.Revision.Digest {
+					record.Loop.LatestVersion += " · viewing latest"
+				} else {
+					record.Loop.LatestVersion = "Unavailable (publication head conflicts)"
+				}
+			}
 		} else if domain == consoleGraphs {
 			graphView, ok := value.(app.GraphView)
 			if !ok {
@@ -598,13 +610,14 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 
 	detail := &consoleweb.LoopDetailModel{
-		DoerV4:   doerV4,
-		DoerV5:   doerV5,
-		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		HumanTitle: revision.Name,
+		DoerV4:     doerV4,
+		DoerV5:     doerV5,
+		TargetID:   loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
 		CanRetire:     view.Lifecycle.State != "retired",
-		LatestVersion: fmt.Sprintf("r%d", revision.Revision),
+		LatestVersion: "Unavailable (publication head not resolved)",
 		Validation:    "Unavailable", ValidationDigest: "Unavailable",
 		Provenance: []consoleweb.FieldModel{
 			{Label: "Publisher Agent", Value: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest)},
@@ -662,6 +675,27 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 	for _, step := range revision.Steps {
 		projected := consoleweb.LoopStepModel{ID: step.ID, Kind: string(step.Kind), MaxAttempts: step.Retry.MaxAttempts, Entry: step.ID == revision.EntryStepID}
+		if binding := step.Executable; binding != nil {
+			projected.Bindings = append(projected.Bindings,
+				consoleweb.FieldModel{Label: "Executable operation", Value: string(binding.Operation)},
+				consoleweb.FieldModel{Label: "Adapter backend", Value: binding.Backend},
+				consoleweb.FieldModel{Label: "Required controller authority binding", Value: binding.Authority})
+		}
+		if implementation := step.Implementation; implementation != nil {
+			projected.Bindings = append(projected.Bindings,
+				consoleweb.FieldModel{Label: "Implementation schema", Value: implementation.SchemaVersion},
+				consoleweb.FieldModel{Label: "Implementation task", Value: implementation.Task},
+				consoleweb.FieldModel{Label: "Implementation acceptance", Value: implementation.Acceptance},
+				consoleweb.FieldModel{Label: "Implementation workspace", Value: implementation.Workspace},
+				consoleweb.FieldModel{Label: "Writable source files", Value: strings.Join(implementation.WritableFiles, ", ")},
+				consoleweb.FieldModel{Label: "Implementation pass bound", Value: strconv.Itoa(int(implementation.MaxPasses))},
+				consoleweb.FieldModel{Label: "Checker policy", Value: implementation.Policy.Kind},
+				consoleweb.FieldModel{Label: "Checker packages", Value: strings.Join(implementation.Policy.Packages, ", ")},
+				consoleweb.FieldModel{Label: "Checker timeout (seconds)", Value: strconv.Itoa(int(implementation.Policy.TimeoutSeconds))})
+			for _, check := range implementation.Policy.RequiredTests {
+				projected.Bindings = append(projected.Bindings, consoleweb.FieldModel{Label: "Required checker test", Value: check.Package + " / " + check.Name})
+			}
+		}
 		if step.Gate != nil {
 			projected.GateMode = step.Gate.Mode
 		}
