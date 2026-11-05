@@ -118,6 +118,8 @@ def main():
                     node.click()
                     selected = page.locator('[data-loop-node-host] [data-loop-node-panel="0"]')
                     expect(selected).to_be_visible()
+                    assert 'Stored executable contract' in selected.inner_text()
+                    assert 'Executable operation' in selected.inner_text()
                     assert page.locator('[data-loop-node-panel="0"]').count() == 1, 'step contract duplicated'
                     assert page.locator('#loop-context-title').evaluate('(n)=>n===document.activeElement')
                     capture(page, f'selected-{width}')

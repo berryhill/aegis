@@ -263,6 +263,8 @@ type LoopPortModel struct {
 }
 
 type LoopStepModel struct {
+	// Bindings are stored definition metadata, never execution admission.
+	Bindings                                    []FieldModel
 	ID, Kind, GateMode, TerminalOutcome         string
 	DisplayName, Description, Instruction, Tool string
 	Capabilities                                []string

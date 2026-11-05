@@ -675,6 +675,27 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 	for _, step := range revision.Steps {
 		projected := consoleweb.LoopStepModel{ID: step.ID, Kind: string(step.Kind), MaxAttempts: step.Retry.MaxAttempts, Entry: step.ID == revision.EntryStepID}
+		if binding := step.Executable; binding != nil {
+			projected.Bindings = append(projected.Bindings,
+				consoleweb.FieldModel{Label: "Executable operation", Value: string(binding.Operation)},
+				consoleweb.FieldModel{Label: "Adapter backend", Value: binding.Backend},
+				consoleweb.FieldModel{Label: "Required controller authority binding", Value: binding.Authority})
+		}
+		if implementation := step.Implementation; implementation != nil {
+			projected.Bindings = append(projected.Bindings,
+				consoleweb.FieldModel{Label: "Implementation schema", Value: implementation.SchemaVersion},
+				consoleweb.FieldModel{Label: "Implementation task", Value: implementation.Task},
+				consoleweb.FieldModel{Label: "Implementation acceptance", Value: implementation.Acceptance},
+				consoleweb.FieldModel{Label: "Implementation workspace", Value: implementation.Workspace},
+				consoleweb.FieldModel{Label: "Writable source files", Value: strings.Join(implementation.WritableFiles, ", ")},
+				consoleweb.FieldModel{Label: "Implementation pass bound", Value: strconv.Itoa(int(implementation.MaxPasses))},
+				consoleweb.FieldModel{Label: "Checker policy", Value: implementation.Policy.Kind},
+				consoleweb.FieldModel{Label: "Checker packages", Value: strings.Join(implementation.Policy.Packages, ", ")},
+				consoleweb.FieldModel{Label: "Checker timeout (seconds)", Value: strconv.Itoa(int(implementation.Policy.TimeoutSeconds))})
+			for _, check := range implementation.Policy.RequiredTests {
+				projected.Bindings = append(projected.Bindings, consoleweb.FieldModel{Label: "Required checker test", Value: check.Package + " / " + check.Name})
+			}
+		}
 		if step.Gate != nil {
 			projected.GateMode = step.Gate.Mode
 		}

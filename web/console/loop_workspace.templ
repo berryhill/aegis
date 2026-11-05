@@ -187,6 +187,9 @@ templ LoopIssues(issues []LoopIssueModel) {
 
 templ LoopNodeDetails(node LoopPosition) {
  <h4>{ node.DisplayName }</h4>
+ if len(node.Step.Bindings) > 0 {
+  <section class="loop-stored-binding"><h5>Stored executable contract</h5>@FieldList(node.Step.Bindings, "")<p class="empty-note">Declared adapter and implementation bindings, not granted tool access or execution authority. Checker timeout and implementation passes are not generic step timeout or cycle iterations.</p></section>
+ }
  <dl class="spec"><dt>Step ID</dt><dd>{ node.Step.ID }</dd><dt>Step type</dt><dd>{ node.Step.Kind }</dd><dt>Entry</dt><dd>{ loopEntryLabel(node.Step.Entry) }</dd>
   if node.Step.DisplayName != "" {
    <dt>Display name</dt><dd>{ node.Step.DisplayName }</dd>
