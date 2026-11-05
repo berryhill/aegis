@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.3.0] - 2026-11-05
+
 ### Changed
 
 - Scope the v0.3.0 release profile to independent non-browser package/fleet proof
