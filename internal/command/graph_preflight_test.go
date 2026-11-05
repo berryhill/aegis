@@ -16,6 +16,17 @@ import (
 // Normal submission must still go through the application service, not treat
 // request-shape success as admission or silently turn malformed input into a
 // preflight-only result.
+func TestGraphSubmissionRootCheckKeepsNormalAdmission(t *testing.T) {
+	for _, args := range [][]string{{"graphs", "submit"}, {"graphs", "submit", "--check=false"}} {
+		var out bytes.Buffer
+		root := NewRoot(Dependencies{Out: &out, Err: &out})
+		root.SetArgs(append([]string{"--config", filepath.Join(t.TempDir(), "absent.yaml")}, append(args, "../../skills/aegis-graph-authoring/references/workspace-submit.v1.json")...))
+		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "manager_not_initialized") {
+			t.Fatalf("normal admission bypassed: %v", err)
+		}
+	}
+}
+
 func TestGraphSubmissionWithoutCheckRetainsServiceBoundary(t *testing.T) {
 	called := false
 	stop := errors.New("service boundary reached")

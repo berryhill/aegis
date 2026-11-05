@@ -235,6 +235,12 @@ func newRoot(deps Dependencies, observe rootServiceObserver) *cobra.Command {
 		if (cmd.Name() == "example" || cmd.Name() == "implementation" || cmd.Name() == "hello" || cmd.Name() == "doer" || cmd.Name() == "doer-reusable" || cmd.Name() == "templates") && cmd.Parent() != nil && cmd.Parent().Name() == "loops" {
 			return nil // Installed typed material requires no configured authority.
 		}
+		if cmd.Name() == "submit" && cmd.Parent() != nil && cmd.Parent().Name() == "graphs" {
+			check, _ := cmd.Flags().GetBool("check")
+			if check {
+				return nil // Offline request-shape validation never opens stores or admits work.
+			}
+		}
 		lifecycleConfig := o.configFile
 		if deps.Profile == ProductionProfile && !cmd.Flags().Changed("config") && !cmd.InheritedFlags().Changed("config") {
 			// Empty selects canonical-plus-legacy artifact discovery. The resolved

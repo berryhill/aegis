@@ -10,11 +10,18 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Changed
 
+- #252 Loop/Graph advisory skills v0.2.1 bundle portable, strict-decoder-tested
+  authoring/publication/submission examples and a literal request-check response.
+  Correct stale Graph online-adapter and pending-state guidance; reuse shipped
+  ownership, Queue, credential and installer behavior. Schema/package evidence
+  remains distinct from actual-agent, provider and public-release qualification.
+
 - Scope the v0.3.0 release profile to independent non-browser package/fleet proof
   while retaining all normal/race, repository, security, signing and exact-source
   gates. Report optional installed/browser failure, cancellation or skip without
   turning it into PASS; other releases remain strict. No Chrome repair or
   installed-workstation qualification is claimed. See [release policy](docs/RELEASE_PIPELINE.md#exact-v030-bounded-release-profile).
+
 
 - Graph detail aligns bounded node/edge geometry, supports full Fit for 128-rank/row definitions, retains textual raw-record fallback above display bounds, and clears protected content on observed authentication loss or unverifiable readback. A separate read-only observation asset preserves presentation-only navigation. Actual frozen-CLI browser fixtures are source coverage pending capacity-gated execution and independent acceptance; no runtime authority or general scheduler is added.
 

@@ -1,7 +1,7 @@
 ---
 name: aegis-loop-authoring
 description: Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.
-version: 0.2.0
+version: 0.2.1
 metadata:
   hermes:
     tags:
@@ -80,6 +80,15 @@ First use `aegis loops --help`. Supported commands in the compatible release are
 - `aegis loops retire LOOP FILE`
 
 The alias `aegis loop` exists, but prefer the canonical plural command in durable instructions. If an operation is absent from installed help, report it unavailable instead of inventing a command, API, validation result, digest, lifecycle event, or receipt.
+
+## Portable authoring recipe
+
+Use the bundled [authoring contract](references/authoring-contract.v1.md) and
+[complete hello builder input](references/hello-draft.v1.json) for a locally
+built, typed fixed-output publication candidate without a source checkout.
+All identities are synthetic; the local builder supplies no authority and no
+execution evidence. For creation-and-execution retain the existing task-execute
+workflow below rather than manually coordinating low-level publication/binding.
 
 ## Author one typed revision
 

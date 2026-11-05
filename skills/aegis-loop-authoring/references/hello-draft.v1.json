@@ -1,0 +1,6 @@
+{
+  "agent_id": "synthetic-agent",
+  "loop_id": "portable-hello",
+  "revision": 1,
+  "idempotency_key": "synthetic-hello-publication-v1"
+}
