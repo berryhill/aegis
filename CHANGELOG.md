@@ -14,7 +14,52 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   remain unchanged. Browser/visual acceptance remains pending; see
   [checkpoint](docs/implementation/235-loop-detail-checkpoint.md).
 
+## [0.3.0] - 2026-11-05
+
+### Changed
+
+- #252 Loop/Graph advisory skills v0.2.1 bundle portable, strict-decoder-tested
+  authoring/publication/submission examples and a literal request-check response.
+  Correct stale Graph online-adapter and pending-state guidance; reuse shipped
+  ownership, Queue, credential and installer behavior. Schema/package evidence
+  remains distinct from actual-agent, provider and public-release qualification.
+
+- Scope the v0.3.0 release profile to independent non-browser package/fleet proof
+  while retaining all normal/race, repository, security, signing and exact-source
+  gates. Report optional installed/browser failure, cancellation or skip without
+  turning it into PASS; other releases remain strict. No Chrome repair or
+  installed-workstation qualification is claimed. See [release policy](docs/RELEASE_PIPELINE.md#exact-v030-bounded-release-profile).
+
+
+- Graph detail aligns bounded node/edge geometry, supports full Fit for 128-rank/row definitions, retains textual raw-record fallback above display bounds, and clears protected content on observed authentication loss or unverifiable readback. A separate read-only observation asset preserves presentation-only navigation. Actual frozen-CLI browser fixtures are source coverage pending capacity-gated execution and independent acceptance; no runtime authority or general scheduler is added.
+
+### Loop iteration release focus
+
+- Prepare v0.3.0 around the merged Loop iteration: immutable publication and
+  separate exact-revision Run, direct Loop Queue admission, retained Doer drafts
+  and protected setup, bounded execution and evidence-gated terminal readback.
+- Include the merged managed-contribution source and controlled qualification
+  described below without promoting them to real-provider, installed-workstation
+  or whole-contribution live acceptance. General scheduling and Graph follow-on
+  work are not part of this release-preparation claim.
+- This summary preserves the detailed entries and their evidence boundaries;
+  release publication, final tag-bound CLI/skill archives and installed release
+  verification remain separate actions.
+
+
 ### Added
+
+- #188 Credential advisory skill v0.2.2 corrects custody defaults and separates
+  structural binding storage from fresh broker authorization. Synthetic owning-
+  service denial/nondisclosure regressions and opt-in extracted-executable skill
+  install/inventory and `secret` command/flag discovery complement structural
+  fixtures; real-account, published-release and Hermes adherence are separate.
+
+- #186 Queue advisory skill v0.3.0: exact direct-source/input readback, distinct
+  exhaustion reason, supported reclaim and unsupported online adapter guidance,
+  plus a portable evaluation ledger. Executable CLI/Serve/Badger regressions and
+  opt-in exact-artifact install/inventory are separate from unchanged structural
+  evaluation; fresh Hermes discovery and provider acceptance are not implied.
 
 - #352 source: packaged `aegis skills install|inventory|update|rollback` thin
   adapters reuse the exact-artifact installer with explicit destination and JSON
@@ -30,6 +75,15 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   live-model recertification and installed acceptance are not claimed.
 
 ### Fixed
+
+- #326 local source corrections: render authoritative normalized JSON inputs in
+  Queue detail for direct Loop and Graph runs without inventing caller/default
+  provenance; mark absent declared Graph inputs missing. Canonicalize the explicit
+  v4 distinct-Run action with an exact-revision redirect retaining the new cookie.
+  Add empty/invalid UTF-8 exact-byte negatives and durable direct snapshot coverage
+  after later Loop publication. Existing direct execution is reused; current
+  provider/browser/installed acceptance and issue closure remain pending. See
+  [launch review](docs/implementation/issue-326-launch-review.md).
 
 - #232 Agent detail: observe exact current provisioning artifact integrity and
   runtime compatibility without issuing authority; retain historical lifecycle

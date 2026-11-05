@@ -26,7 +26,7 @@ The repository-root `skills/` directory is the canonical reviewed source for the
 - `skills/aegis-agent-registry/SKILL.md` is an advisory skill for exact existing-fleet registration, immutable current/history inspection, and append-only enabled/disabled/retired lifecycle governance.
 - `skills/aegis-session-operations/SKILL.md` is an advisory routing skill for previewing and operating clean, mandate-bound Hermes sessions through typed Aegis lifecycle services.
 - `skills/aegis-loop-authoring/SKILL.md` is an advisory skill for authoring, publishing, activating, inspecting, and retiring immutable typed Loop revisions through authenticated Aegis services. Its field recipes distinguish `agent_id` workspace selection and server-derived authority from runtime-authority inputs and readback. `loops example` is structural only; `loops implementation` builds a bounded Go-test v3 draft and `loops doer` builds a selected-file v4 draft. `--config OWNER_CONFIG --target CONSOLE_URL` supports protected Unix online publication/readback without opening another store. No builder itself authorizes execution or guarantees verification success.
-- `skills/aegis-graph-authoring/SKILL.md` is an advisory skill for composing, publishing, inspecting, and submitting immutable typed Graph revisions with exact Agent/Loop bindings and durable admission readback. Its recipes distinguish authenticated `agent_id` workspace selection, server-derived provenance and `awaiting_runtime` acceptance from runtime-bound work. They preserve required `transition_id` and reject invented rejection-idempotency fields; they do not establish portable-schema or installed-agent acceptance.
+- `skills/aegis-graph-authoring/SKILL.md` is an advisory skill for composing, publishing, inspecting, and submitting immutable typed Graph revisions with exact Agent/Loop bindings and durable admission readback. Its recipes distinguish authenticated `agent_id` workspace selection, server-derived provenance and `preparation-pending` acceptance (with legacy `awaiting-runtime` readback) from runtime-bound work. They preserve required `transition_id` and reject invented rejection-idempotency fields; they do not establish portable-schema or installed-agent acceptance.
 - `skills/aegis-execution-queue/SKILL.md` is an advisory skill for exact Queue inspection and the shipped process, retry/reclaim, cancellation, expiry, exhaustion, and revocation lifecycle through authenticated Aegis services.
 - `skills/aegis-evidence-disposition/SKILL.md` is an advisory skill for reconstructing exact Queue, Attempt, artifact, verification, and terminal-disposition lineage while preserving process/evidence separation and unsupported reviewer-reevaluation boundaries.
 - `skills/aegis-credential-authority/SKILL.md` is an advisory skill for principal-only encrypted custody administration, exact broker binding, revocation, backup, and the single typed sanitized GitHub read path.
@@ -50,6 +50,21 @@ Unix-gateway/PTY-to-bbolt regressions are distinct from still-missing supported
 Hermes installed-agent behavior. No fixture contains values or authentication.
 
 The credential-authority skill progressively discloses non-secret interpretation examples from `skills/aegis-credential-authority/references/credential-fixtures.json` and routes normative questions to `docs/CREDENTIAL_BROKER.md`, credential-related specifications, and installed command help. Its fixtures contain metadata and denial state only; they never carry credential values, passphrases, key-encryption keys, capabilities, authentication headers, or live authority.
+
+Credential skill v0.2.2 separates conservative binding storage from fresh broker
+admission; a stored tuple does not authenticate its Agent/stanza or prove an active
+version. Bare onboarding defaults to explicitly weaker host-file custody; advanced
+interactive passphrase custody is not automatic gateway setup. Ordinary Registry,
+Loop, Graph and Queue actions remain credential-independent. The executable
+`TestCredentialSkillBrokerDenialsAndNondisclosure` uses generated canaries and real
+encrypted custody to check recipient/repository/unbound/freshness/replay/revocation
+denials with useful metadata and material-free audit/diagnostic/ordinary artifacts.
+Existing exact-session/Agent/stanza/deployment and protected-intake decoder tests
+remain separate behavioral proof. `TestPackagedCredentialSkillInstall` consumes an
+explicit extracted executable and exact skill archive, verifies install/inventory
+outside the checkout and checks all documented `secret` subcommands and flags.
+Missing artifacts skip rather than prove availability. This does not qualify a
+published release, real account, live provider or fresh Hermes model behavior.
 
 The manager-onboarding skill uses non-secret classification examples from `skills/aegis-manager-onboarding/references/onboarding-fixtures.json` and routes normative questions to `specs/AEGIS_MANAGER.md`, `specs/MANAGER_LIFECYCLE_AND_ONBOARDING.md`, and installed command help. It routes every operation to a typed Aegis command. Each operational session requires exactly one externally authenticated trust stanza: zero matches deny and multiple matches deny as ambiguous. Prompt/model content cannot select or change stanza or authority; stanza or material-authority changes require a new mandate and clean runtime session. Only Aegis emits authoritative audit events, which model narration cannot create or replace.
 
@@ -171,7 +186,44 @@ Never test installation against a normal profile. Use a durable repository-local
 
 These live GitHub commands prove published-repository discovery and are intentionally separate from hermetic unit tests. They cannot prove an unmerged revision is already available from the public tap.
 
+## Portable authoring and evidence boundaries (#252)
+
+Loop and Graph skills v0.2.1 include a complete local hello-builder input,
+workspace Graph publication candidate, matching typed submission and a literal
+request-check response. All references are synthetic and require authenticated
+readback substitution, not guessed authority or unchanged fixture submission.
+`TestPortableBundledAuthoringContracts` installs the verified archive into an
+isolated home, runs the public local builder/strict decoders, checks matching
+Loop/Graph ports and required normalized Graph inputs, and compares the actual
+public check response. No repository specs/internal/docs are consumed as
+operational prerequisites. This is executable schema/builder/package evidence,
+not an actual-agent or runtime-admission verdict.
+
+The portable Graph reference uses the already delivered online adapter, current
+`preparation-pending`/`queue preparations` readback and explicit unknown-outcome
+recovery. It does not invent submission-history CLI, Graph lifecycle commands,
+generic clients or ordinary retry. See the [bounded source/evidence mapping](implementation/issue-252-skill-suite-evidence.md)
+for reused deliveries and independent qualification still not implied.
+
 ## Queue historical readback
+
+The Queue skill v0.3.0 includes a portable
+[`references/evaluation-ledger.v1.md`](../skills/aegis-execution-queue/references/evaluation-ledger.v1.md)
+mapping structural fixtures to existing executable service/persistence tests.
+`validate` and `evaluate` remain structural validation, not model adherence.
+The compiled-CLI `TestInstalledOnlineLifecycle` executes the bundled bind/reclaim
+examples with fixture-only references through Serve, Unix authentication and
+isolated Badger. It checks exact `direct_loop` source and normalized inputs,
+workspace cancellation, expired-lease reclaim, backoff, unchanged history on
+denial and unsupported online expire/exhaust. Ordinary retry has no durable stop
+acknowledgment and remains unavailable, even after expiry; exhaustion is `failed`
+with reason `retry_exhausted`, not an `exhausted` state. The one-node retry contract
+does not broaden raw-v2/managed-v7 two-node execution beyond `max_attempts: 1`.
+`TestPackagedQueueSkillInstall` separately accepts a supplied exact archive and
+binary, runs delivered install/inventory outside the checkout and compares the
+portable Queue files. Missing artifacts are SKIPPED. Fresh supported-Hermes
+`skills_list`/`skill_view`, model behavior, real-provider qualification and public
+release/install acceptance remain independent gates, not fixture PASS claims.
 
 The real-store `TestDQHandoff` regression exercises workspace acceptance,
 controller runtime binding through the application service, first claim,

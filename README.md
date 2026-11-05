@@ -65,11 +65,18 @@ activation and retirement. See [Loop availability](docs/loop-availability.md) fo
 exact CLI/API inputs, Console actions, preserved pinned history and adapter limits.
 
 
+The authenticated Graph detail replaces the collection with exact-revision topology, contextual node/definition inspectors and an accessible textual equivalent. Canvas controls are read-only; a separate same-origin authenticated observation clears protected content when authentication is lost or cannot be verified. This is source behavior, not live-provider or installed-browser acceptance; see [the Graph launch review](docs/implementation/issue-233-launch-review.md).
+
 The authenticated Queue detail includes a read-only [execution debugger](docs/EXECUTION_DEBUGGER.md) for exact pinned Loop control flow and Graph-node drill-down, with live following and historical replay. Its current-outcome summary stays current independently of replay, separates disposition from verification/result availability, and shows stored selected-file content only after exact-owner evidence authorization. Direct native coding acceptance separately reloads exact native history and artifact/receipt custody; corrupt or foreign evidence cannot establish acceptance.
 
 Queue Requeue preserves failed direct Doer pins, inputs and the remaining cumulative implementation budget; it requires fresh execution authentication. Console password login is not local-OS execution authentication. Queue history offers **Review exact Requeue continuation**, which reconstructs the predecessor, disposition, immutable published contract, inputs, checkpoint and consumed/remaining budget without reserving a successor. The existing independent native companion authenticates the human and reviews this browser-session-bound exact intent; only its signed original SO_PEERCRED executor can continue the matching Requeue. Ordinary retained-draft Run approval cannot authorize Requeue. Provisioning, host-write, provider and session prerequisites remain separate gates. Without genuine native approval, direct password POST still reports `independent_setup_required` without successor reservation. Source fixtures exercise supported success and exhaustion with an explicitly mocked human-confirmation boundary and synthetic runtime; they are not live human/provider acceptance.
 
 Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.
+
+Source correction: Queue detail displays normalized snapshot values without
+inferring caller/default origin; the explicit v4 distinct-Run action redirects
+to a clean exact-revision URL retaining the new request cookie. See
+[scope and unexercised acceptance](docs/implementation/issue-326-launch-review.md).
 
 Partial #346 source correction: Queue list/detail show exact per-node pinned participants separately from submission ownership and the runtime product. Missing exact facts remain unavailable; this does not capture runtime sessions or complete #346. [Scope and launch review](docs/implementation/issue-346-participant-provenance.md).
 

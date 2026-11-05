@@ -98,7 +98,7 @@ ROTATE, REVOKE, BIND or BACKUP. The `aegis secret` CLI operations remain separat
 principal-controlled direct-service paths; when the gateway owns stores their
 `control_plane_online` denial must not be bypassed. The #248 general typed
 conversational platform work is not implemented by this credential protocol.
-No HTTP Queue bind-runtime adapter is implied.
+This credential protocol implies no Queue runtime-binding authority or adapter.
 
 Source contracts: internal/managergateway/credential_intake.go,
 internal/api/manager_credential_intake.go and

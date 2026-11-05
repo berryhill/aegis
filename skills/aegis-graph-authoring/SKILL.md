@@ -1,7 +1,7 @@
 ---
 name: aegis-graph-authoring
 description: Compose, publish, inspect, and submit immutable typed Aegis Graph revisions through shipped services without moving identity, authority, or queue admission into the model.
-version: 0.2.0
+version: 0.2.1
 metadata:
   hermes:
     tags:
@@ -37,6 +37,16 @@ First run `aegis graphs --help`. The compatible CLI exposes:
 - `aegis graphs submit --check FILE` (request-shape preflight only; requires this flag in installed help)
 
 The alias `aegis graph` exists, but prefer the canonical plural command in durable instructions. Protected HTTP adapters expose `GET /v1/graphs`, `POST /v1/graphs`, `GET /v1/graphs/:graph/:revision`, and `POST /v1/queue`; authenticated readback additionally exposes `GET /v1/graphs/:graph/lifecycle` and `GET /v1/submissions`. If an operation is absent from installed help, report it unavailable instead of inventing compose, validate, activate, retire, update, delete, latest, scheduler, or completion commands. The browser has a bounded authenticated composer and submit form, but browser fields do not select authority.
+
+## Portable publication recipe
+
+The bundled [workspace publication example](references/workspace-publish.v1.json)
+is a complete strict `PublishGraphInput` candidate, not an authenticated record.
+It matches the Loop skill's hello-builder port interface; replace the Agent and
+active Loop references with exact authenticated readback before an explicitly
+requested publication. Preserve the owning-service selectors and never invent
+policy or authority objects. The [submission contract](references/submission-contract.v1.md)
+provides portable transport, validation and outcome recovery guidance.
 
 ## Compose one typed revision
 

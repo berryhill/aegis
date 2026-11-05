@@ -151,6 +151,22 @@ class ShardTests(unittest.TestCase):
                     shard.test_pattern([n for n in names if n != missing], group)
         self.assertEqual(Counter(seen), Counter(names))
 
+    def test_missing_host_preflight_uses_existing_lane_without_upgrade_barrier(self):
+        target = 'TestPublicRootContributionMissingHostPreflight'
+        group = 'cli-contribution-host'
+        self.assertEqual(shard.CLI_CONTRIBUTION_TESTS[group], target)
+        names = sorted(list(shard.CLI_CONTRIBUTION_TESTS.values()) +
+                       ['TestInstalledUpgradeFullCommand', target + 'Future'])
+        defaults = shard.test_pattern(names, 'cli-command')
+        isolated = shard.test_pattern(names, group)
+        self.assertIsNone(re.fullmatch(defaults, target))
+        self.assertIsNotNone(re.fullmatch(defaults, target + 'Future'))
+        self.assertIsNotNone(re.fullmatch(defaults, 'TestInstalledUpgradeFullCommand'))
+        self.assertEqual([name for name in names if re.fullmatch(isolated, name)], [target])
+        self.assertIn(group, shard.bundle_groups('api-b', True))
+        self.assertIn(group, shard.bundle_groups('cli', False))
+        self.assertNotIn(group, shard.bundle_groups('cli-command', True))
+
     def test_manager_exact_once_current_future_and_missing_heavy(self):
         for count in (0, 1, 47, 48):
             names = sorted(list(shard.MANAGER_TESTS.values()) + ['Example', 'FuzzFuture', 'TestContributionManagerApprovedNativeRepairFuture'] + [f'TestFuture{i}' for i in range(count)])
@@ -402,7 +418,7 @@ class ShardTests(unittest.TestCase):
             },
             'race': {
                 'orchestration': ('orchestration', 'orchestration-contribution'),
-                'api-b': ('api-b', 'cli', 'remainder-b'),
+                'api-b': ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'),
                 'manager-b': ('manager-contribution-restart',),
                 'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
             },
@@ -410,7 +426,7 @@ class ShardTests(unittest.TestCase):
         for mode, lanes in expected.items():
             for lane, groups in lanes.items():
                 self.assertEqual(shard.BUNDLES[mode][lane], groups)
-        self.assertEqual(len(shard.GROUPS), 25)
+        self.assertEqual(len(shard.GROUPS), 26)
         self.assertEqual(shard.BUNDLES['race']['cli-command'],
                          ('cli-command',))
         self.assertNotIn('support', shard.BUNDLES['normal'])
@@ -434,7 +450,7 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
-    def test_race_cli_deadline_reuses_existing_api_lane_without_new_partitions(self):
+    def test_race_cli_deadline_reuses_existing_api_lane_without_new_lanes(self):
         # Exact-head hosted run 41216964277 passed all three CLI contribution
         # selections, then cancelled the unchanged complete remainder group.
         self.assertEqual(shard.bundle_groups('cli', True),
@@ -443,7 +459,7 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence'))
         self.assertEqual(shard.bundle_groups('api-b', True),
-                         ('api-b', 'cli', 'remainder-b'))
+                         ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'))
         self.assertEqual(shard.bundle_groups('support-a', True),
                          ('remainder-a', 'cli-contribution-disconnect'))
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
@@ -466,8 +482,8 @@ class ShardTests(unittest.TestCase):
                              for group in groups), 1)
 
     def test_repacked_modes_preserve_exact_once_group_union_and_only_four_moves(self):
-        # Freeze the pre-repack maps: no new lanes/partitions, no normal-mode
-        # changes, and no accidental movement of an unrelated race group.
+        # Freeze the pre-repack maps, accounting separately for the new exact
+        # missing-host partition in api-b. No lane or unrelated group changes.
         before = {
             'normal': {
                 'api-a': ('api-a', 'remainder-b'),
@@ -480,7 +496,7 @@ class ShardTests(unittest.TestCase):
             },
             'race': {
                 'api-a': ('api-a', 'persistence'),
-                'api-b': ('api-b', 'cli'),
+                'api-b': ('api-b', 'cli', 'cli-contribution-host'),
                 'implementation': ('implementation', 'implementation-contribution'),
                 'orchestration': ('orchestration', 'orchestration-contribution'),
                 'manager-a': ('manager',),

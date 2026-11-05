@@ -1129,6 +1129,7 @@ func consoleQueueRecordWithLoops(view app.QueueExecutionView, loops []app.LoopVi
 		detail.ArtifactState = "Authoritative runtime artifact"
 	}
 	// 7. Inputs / outputs.
+	buildQueueNormalizedInputs(detail, view)
 	if pinnedGraph != nil {
 		buildPinnedQueueInputsOutputs(detail, view, *pinnedGraph)
 	}
@@ -1289,16 +1290,16 @@ func projectedNodeState(view app.QueueExecutionView, exec app.QueueExecutionStat
 // outputs from the exact pinned Graph revision.
 func buildPinnedQueueInputsOutputs(detail *consoleweb.QueueDetailModel, view app.QueueExecutionView, graph app.GraphView) {
 	for _, port := range graph.Revision.Inputs {
-		value := ""
-		source := "default"
-		status := "applicable"
-		detail.Inputs = append(detail.Inputs, consoleweb.QueueInputModel{PortID: port.ID, Type: string(port.Type), Value: value, Source: source, Status: status})
-	}
-	for _, mapping := range graph.Revision.InputMappings {
-		for i, input := range detail.Inputs {
-			if input.PortID == mapping.GraphInput {
-				detail.Inputs[i].Source = "Graph input mapping · node " + mapping.ToNodeID + " · port " + mapping.ToPort
+		present := false
+		for _, input := range detail.Inputs {
+			if input.PortID == port.ID {
+				present = true
+				break
 			}
+		}
+		if !present {
+			// Published Graph ports declare no defaults. Absence is not a value.
+			detail.Inputs = append(detail.Inputs, consoleweb.QueueInputModel{PortID: port.ID, Type: string(port.Type), Source: "absent", Status: "missing"})
 		}
 	}
 	completeness := view.QueueOutputCompleteness()

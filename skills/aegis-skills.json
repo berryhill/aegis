@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:75cc0cbe705b3ac023558b2aba3786946e71a891ff11d03d533bad53d39e8fa7",
+    "content_digest": "sha256:68aabcfaba6c8fec1cd468f249bcea379010444573b2cc405c6b0b20dd7080f7",
     "source_revision": "repository"
   },
   "operations": [
@@ -105,7 +105,7 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:17d4fe500beb2871afe20a98854eff9e2b6805baee602ad449323b4cbecf89c5",
+      "content_digest": "sha256:e4cbc593dfd66dc39f5a7f4591002d868c10d2919c0b8a9468e63aec4a825029",
       "files": [
         {
           "path": "SKILL.md",
@@ -119,8 +119,8 @@
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:a8bf385fcac83eb60fff3996c4c2e7a4f90b879b4ee4e70ce74bee5ac30d33e0",
-          "size": 34642
+          "sha256": "sha256:469dd98309215b1580063bda5424fc87cd4d5775eb69b293ffd11b4f9a4f5da1",
+          "size": 34694
         }
       ]
     },
@@ -314,7 +314,7 @@
     },
     {
       "slug": "aegis-loop-authoring",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "path": "skills/aegis-loop-authoring",
       "description": "Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.",
       "dependencies": [
@@ -330,18 +330,28 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:99f1851dbff1995f81d6a1041eb23a504bb1b87414c6c4c8c3f42e993dca4a40",
+      "content_digest": "sha256:c9b64a08bacfa49bd15839a7b2e972e8baeced9b70deee145d21de504a50cdf6",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:7cd60ce1e763a616fa8f9885ebbe8d86243bce3e957f90480c13f7ab8d2bf1ea",
-          "size": 55480
+          "sha256": "sha256:56dcea7b55e88ebd763f9d2398cb096952c63b3199f28c33d478788e20bc390e",
+          "size": 56853
+        },
+        {
+          "path": "references/authoring-contract.v1.md",
+          "sha256": "sha256:6ba22ae30fd99d9681a5bcd1ed48e49045de64372a6ba2852c4fb761b812607b",
+          "size": 3745
+        },
+        {
+          "path": "references/hello-draft.v1.json",
+          "sha256": "sha256:4a7dd2d7ac0b06d968bd99d601cb7cc20c2f6faf1ecc73d1c12a2323e1c19bb0",
+          "size": 139
         }
       ]
     },
     {
       "slug": "aegis-graph-authoring",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "path": "skills/aegis-graph-authoring",
       "description": "Compose, publish, inspect, and submit immutable typed Aegis Graph revisions through shipped services without moving identity, authority, or queue admission into the model.",
       "dependencies": [
@@ -359,28 +369,38 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:18314c0b8411978161145050a19f97d9597ceed118a52009f3ebdfc0d41f6e18",
+      "content_digest": "sha256:fdf7242f8b4cb41b4accafdea5d1463e7adaad93819d143a0d8756ad6951783f",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:a2731d8f65ded9c46459013150b467e7b4d07391256022a267f1c1390dd5ad5a",
-          "size": 17132
+          "sha256": "sha256:bef195ba4f40a51bf9d585bd75bb7d701dd8eb517b33556de4f36f45624623e5",
+          "size": 17728
+        },
+        {
+          "path": "references/submission-check-result.v1.json",
+          "sha256": "sha256:8383ff6aff62b758b8c830b9fe34f3e42b3898f67e3095af8f908734741c7702",
+          "size": 130
         },
         {
           "path": "references/submission-contract.v1.md",
-          "sha256": "sha256:6b5d7ede218c092891c460ddd18cef1c907b9481759c65f5ef8198b8d62a43a7",
-          "size": 3805
+          "sha256": "sha256:8d00d6025dd6823a4658af69ccbfaf45e401d1bee34417ef878d8a9819019401",
+          "size": 6858
+        },
+        {
+          "path": "references/workspace-publish.v1.json",
+          "sha256": "sha256:5285014b8ae8e668ec0a172825e4b37916c90d0f2ff0f52188671b5fd23a36f4",
+          "size": 2059
         },
         {
           "path": "references/workspace-submit.v1.json",
-          "sha256": "sha256:02cb128c2550dfb8282702436bdc7648f7220dda81a9dfb5e3635e3782e3c5a7",
-          "size": 556
+          "sha256": "sha256:e0dbe817ed3170c7d9ebc77d6d1131a57654a3ac98959b931d757e5cda99d09c",
+          "size": 794
         }
       ]
     },
     {
       "slug": "aegis-execution-queue",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "path": "skills/aegis-execution-queue",
       "description": "Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.",
       "dependencies": [
@@ -396,17 +416,22 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:babd69c4abd877fab052e01d885a7ca7ffed0b62de40763dd72e96fd63684531",
+      "content_digest": "sha256:1b33c1906550367563d07c9813197a12a92f5218763b07a844f8bbe7f5eefaf7",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:3e99fff1fdd16065bf2ff4e6718cdac1710fad5f04850de8aae35fcb0e378811",
-          "size": 27992
+          "sha256": "sha256:3e56f28600b66980a7a02e62cc0b1dfcc317a96f9d8ca6bc86410b0d61a2d099",
+          "size": 29213
         },
         {
           "path": "references/bind-runtime.v1.json",
           "sha256": "sha256:dcfc68dea11ae58765faced32387e68c6c1d33834564f69db2487d92219f8cb9",
           "size": 377
+        },
+        {
+          "path": "references/evaluation-ledger.v1.md",
+          "sha256": "sha256:b33578f28e2295f5d2b74ec7d785aee55471d8bc31c0a5f322e8e2370ad47a16",
+          "size": 9947
         },
         {
           "path": "references/queue-contract.v1.md",
@@ -422,7 +447,7 @@
     },
     {
       "slug": "aegis-credential-authority",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "path": "skills/aegis-credential-authority",
       "description": "Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.",
       "dependencies": [
@@ -439,12 +464,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:29f03303676316ac69972cedbbaa9aa1cf56aa87c55328c9550e8a02b959e908",
+      "content_digest": "sha256:b0172b8bd995b84b454b430737b648b331a2ffd863c6d95f762939600068108b",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:96ff46e8fe1614028bb9b37d9a1859ccd919557c3b8789bdae4e5dfd39c333e9",
-          "size": 19620
+          "sha256": "sha256:6ebdb2cbc9cb659841e3009c2aa54725d9831fa403a94de2505db4a8dced7c57",
+          "size": 21214
         },
         {
           "path": "references/credential-fixtures.json",
@@ -458,8 +483,8 @@
         },
         {
           "path": "references/protected-intake.v1.md",
-          "sha256": "sha256:e1691d7fe6100822bcb68f24bc80f152d2e16ccca2e1e544e5256122531caf0f",
-          "size": 6712
+          "sha256": "sha256:a6cf48fb29b6e7a503fa898acc2a4c6a6cba6c59925ca1464779bafaddb427a7",
+          "size": 6745
         }
       ]
     },
@@ -484,12 +509,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:ae078f8bedfa9638ee7096a08dd5ce07da2d122e594b5a219a140ca2d5791666",
+      "content_digest": "sha256:0148f73f30d640185ca8a585f737308558e66f2cd15e7835862557ed57048d9a",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:53a19303dc3db12baa8c49d3e0a3471a8277f87b16d35870bda212b4e8107c68",
-          "size": 21243
+          "sha256": "sha256:319d331c76c75ed528c0a02319175b1ba707a1b0e0266301368be3168c2fbd06",
+          "size": 21876
         },
         {
           "path": "references/evidence-fixtures.json",

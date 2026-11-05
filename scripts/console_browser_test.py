@@ -143,6 +143,188 @@ class DevTools:
             if opcode == 0x1:
                 return json.loads(payload)
 
+    def pace_fixture_requests(self, origin: str) -> None:
+        """Opt this fixture into request-stage pacing for every origin resource."""
+        parsed = urllib.parse.urlsplit(origin)
+        require(parsed.scheme in ("http", "https") and bool(parsed.netloc)
+                and parsed.username is None and parsed.password is None
+                and not parsed.path and not parsed.query and not parsed.fragment,
+                "Invalid browser fixture origin")
+        self.fixture_origin = (parsed.scheme, parsed.netloc)
+        self.fixture_next_release = time.monotonic()
+        self.command("Fetch.enable", {"patterns": [
+            {"urlPattern": origin + "/*", "requestStage": "Request"},
+        ]})
+
+    def _continue_fixture_request(self, params: dict[str, Any]) -> int:
+        parsed = urllib.parse.urlsplit(params.get("request", {}).get("url", ""))
+        if (parsed.scheme, parsed.netloc) == self.fixture_origin:
+            delay = self.fixture_next_release - time.monotonic()
+            if delay > 0:
+                # Pacing shares the command's original absolute budget.
+                self._remaining()
+                time.sleep(min(delay, max(0, self.deadline - time.monotonic())))
+            self._remaining()
+        identifier = self.next_id
+        self.next_id += 1
+        # Continue the exact interception; never reconstruct request data or call
+        # command recursively (which would consume the outer command's reply).
+        message = {"id": identifier, "method": "Fetch.continueRequest",
+                   "params": {"requestId": params["requestId"]}}
+        self._remaining()
+        self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
+        if (parsed.scheme, parsed.netloc) == self.fixture_origin:
+            # Anchor to actual release, not a stale schedule: no idle catch-up.
+            self.fixture_next_release = time.monotonic() + 0.25
+        return identifier
+
+    def _fixture_request_cancelled(self, paused: dict[str, Any]) -> bool:
+        """Require Chrome's exact terminal cancellation in this request context.
+
+        The retained event ledger already has hard count/byte bounds. Do not
+        infer cancellation merely from navigation, an invalid ID, or another
+        request's failure. Request IDs can span redirects: use the latest start.
+        """
+        network_id, frame_id = paused.get("networkId"), paused.get("frameId")
+        if not network_id or not frame_id:
+            return False
+        start: dict[str, Any] | None = None
+        terminal: dict[str, Any] | None = None
+        pause_start: dict[str, Any] | None = None
+        pause_seen = False
+        late_start_seen = False
+        for event in self.events:
+            params = event.get("params", {})
+            if (event.get("method") == "Fetch.requestPaused"
+                    and params.get("requestId") == paused.get("requestId") and not pause_seen):
+                pause_start, pause_seen = start, True
+            if params.get("requestId") != network_id:
+                continue
+            if event.get("method") == "Network.requestWillBeSent":
+                start, terminal = params, None
+                if pause_seen and pause_start is None and not late_start_seen:
+                    # Fetch and Network are asynchronous CDP domains. Bind only
+                    # the first later start, with the exact original request.
+                    late_start_seen = True
+                    request = params.get("request", {})
+                    original = paused.get("request", {})
+                    if (params.get("frameId") == frame_id and request.get("url")
+                            and request.get("url") == original.get("url")
+                            and request.get("method") and request.get("method") == original.get("method")):
+                        pause_start = params
+            elif event.get("method") in ("Network.loadingFailed", "Network.loadingFinished"):
+                terminal = event
+        return bool(start and start is pause_start and start.get("loaderId") and start.get("frameId") == frame_id
+                    and terminal and terminal.get("method") == "Network.loadingFailed"
+                    and terminal["params"].get("canceled") is True
+                    and terminal["params"].get("errorText") == "net::ERR_ABORTED")
+
+    @staticmethod
+    def _continuation_error(error: dict[str, Any]) -> str:
+        code = error.get("code")
+        code = code if type(code) is int else "unknown"
+        classification = ("invalid_interception_id" if error.get("message") == "Invalid InterceptionId."
+                          else "unknown")
+        return f"DevTools command Fetch.continueRequest failed; code={code}; classification={classification}"
+
+    def _fixture_favicon_superseded(self, paused: dict[str, Any]) -> bool:
+        """Chrome may discard its icon interception without a Network terminal.
+
+        Require the exact fixture icon and disposal of its original document;
+        an invalid ID or an unrelated navigation alone is not sufficient.
+        """
+        network_id, frame_id = paused.get("networkId"), paused.get("frameId")
+        if not network_id or not frame_id or paused.get("resourceType") != "Other":
+            return False
+        start = None
+        pause_start = None
+        pause_seen = False
+        replacement = False
+        terminal = False
+        for event in self.events:
+            params = event.get("params", {})
+            method = event.get("method")
+            if method == "Fetch.requestPaused" and params.get("requestId") == paused.get("requestId") and not pause_seen:
+                pause_start, pause_seen = start, True
+            if params.get("requestId") == network_id:
+                if method == "Network.requestWillBeSent":
+                    start = params
+                elif method in ("Network.loadingFailed", "Network.loadingFinished"):
+                    terminal = True
+            if pause_seen and method == "Page.frameNavigated" and pause_start:
+                frame = params.get("frame", {})
+                if frame.get("id") == frame_id and frame.get("loaderId") and frame["loaderId"] != pause_start.get("loaderId"):
+                    replacement = True
+        if not (pause_seen and start and start is pause_start and not terminal and replacement
+                and start.get("frameId") == frame_id and start.get("loaderId") and start.get("type") == "Other"):
+            return False
+        parsed = urllib.parse.urlsplit(start.get("request", {}).get("url", ""))
+        return ((parsed.scheme, parsed.netloc) == getattr(self, "fixture_origin", None)
+                and parsed.path == "/favicon.ico" and not parsed.query and not parsed.fragment
+                and parsed.username is None and parsed.password is None
+                and paused.get("request", {}).get("url") == start.get("request", {}).get("url")
+                and paused.get("request", {}).get("method") == "GET"
+                and start.get("request", {}).get("method") == "GET")
+
+    def _cancellation_diagnostic(self, paused: dict[str, Any]) -> str:
+        """Closed context flags and public routing only; never raw CDP errors/IDs."""
+        network_id = paused.get("networkId")
+        starts = [event.get("params", {}) for event in self.events
+                  if event.get("method") == "Network.requestWillBeSent"
+                  and network_id and event.get("params", {}).get("requestId") == network_id]
+        start = starts[-1] if starts else {}
+        terminal = [event for event in self.events
+                    if event.get("method") in ("Network.loadingFailed", "Network.loadingFinished")
+                    and network_id and event.get("params", {}).get("requestId") == network_id]
+        try:
+            parsed = urllib.parse.urlsplit(paused.get("request", {}).get("url", ""))
+            route = {"scheme": parsed.scheme if parsed.scheme in ("http", "https") else "unknown",
+                     "host": parsed.hostname, "path": parsed.path}
+        except ValueError:
+            route = {"scheme": "unknown", "host": None, "path": ""}
+        pause_index = next((index for index, event in enumerate(self.events)
+                            if event.get("method") == "Fetch.requestPaused"
+                            and event.get("params", {}).get("requestId") == paused.get("requestId")), None)
+        start_before_pause = bool(start and pause_index is not None and any(
+            event.get("method") == "Network.requestWillBeSent" and event.get("params") is start
+            for event in self.events[:pause_index]))
+        resource_types = ("Document", "Stylesheet", "Image", "Media", "Font", "Script", "TextTrack",
+                          "XHR", "Fetch", "Prefetch", "EventSource", "WebSocket", "Manifest", "Other")
+        resource_type = paused.get("resourceType")
+        original, observed = paused.get("request", {}), start.get("request", {})
+        transitions = []
+        for index, event in enumerate(self.events):
+            if event.get("method") != "Page.frameNavigated":
+                continue
+            params = event.get("params", {})
+            frame = params.get("frame", {})
+            if not paused.get("frameId") or frame.get("id") != paused["frameId"]:
+                continue
+            kind = params.get("type")
+            transitions.append({
+                "type": kind if kind in ("Navigation", "BackForwardCacheRestore") else "unknown",
+                "after_pause": pause_index is not None and index > pause_index,
+                "start_loader_matches": bool(start.get("loaderId") and frame.get("loaderId") == start["loaderId"]),
+            })
+        return json.dumps({
+            "resource_type": resource_type if resource_type in resource_types else "unknown",
+            "request_matches": bool(observed.get("url") and observed.get("method")
+                                    and all(observed.get(key) == original.get(key) for key in ("url", "method"))),
+            "pause_occurrences": sum(event.get("method") == "Fetch.requestPaused"
+                                     and event.get("params", {}).get("requestId") == paused.get("requestId")
+                                     for event in self.events),
+            "start_occurrences": len(starts),
+            # Keep the diagnostic bounded independently of the event ledger.
+            "frame_transitions": transitions[-8:],
+            "pause_seen": pause_index is not None, "start_before_pause": start_before_pause,
+            "network_present": bool(network_id), "frame_present": bool(paused.get("frameId")),
+            "start_seen": bool(starts), "loader_present": bool(start.get("loaderId")),
+            "frame_matches": bool(start and start.get("frameId") == paused.get("frameId")),
+            "terminal": terminal[-1]["method"] if terminal else "none",
+            "exact_cancelled": self._fixture_request_cancelled(paused),
+            "favicon_superseded": self._fixture_favicon_superseded(paused), "route": route,
+        }, sort_keys=True)
+
     def command(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.deadline = time.monotonic() + CDP_TIMEOUT
         self._remaining()
@@ -152,15 +334,50 @@ class DevTools:
         if params is not None:
             message["params"] = params
         self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
-        while True:
-            self._remaining()
-            received = self.receive()
+        response: dict[str, Any] | None = None
+        continuations: dict[int, dict[str, Any]] = {}
+        invalid_acks: dict[int, dict[str, Any]] = {}
+        while response is None or continuations or invalid_acks:
+            try:
+                self._remaining()
+                received = self.receive()
+                self._remaining()
+            except (RuntimeError, TimeoutError) as failure:
+                if invalid_acks:
+                    paused = next(iter(invalid_acks.values()))
+                    raise RuntimeError(self._continuation_error({
+                        "code": -32602, "message": "Invalid InterceptionId."})
+                        + "; cancellation_unverified; context="
+                        + self._cancellation_diagnostic(paused)) from None
+                raise failure
             if received.get("id") == identifier:
                 require("error" not in received, f"DevTools command {method} failed")
-                return received.get("result", {})
+                response = received
+                continue
             self.event_bytes += len(json.dumps(received).encode("utf-8"))
             require(len(self.events) < MAX_EVENTS and self.event_bytes <= MAX_EVENT_BYTES, "DevTools event budget exceeded")
             self.events.append(received)
+            if received.get("id") in continuations:
+                # Each continuation gets exactly one acknowledgement. Invalid-ID
+                # evidence may follow that ack, so move it out of the ack ledger
+                # and keep draining actual events under the ORIGINAL deadline.
+                paused = continuations.pop(received["id"])
+                error = received.get("error")
+                if error is not None:
+                    require(error.get("code") == -32602
+                            and error.get("message") == "Invalid InterceptionId.",
+                            self._continuation_error(error) + "; context="
+                            + self._cancellation_diagnostic(paused))
+                    invalid_acks[received["id"]] = paused
+            elif received.get("method") == "Fetch.requestPaused" and getattr(self, "fixture_origin", None) is not None:
+                paused = received["params"]
+                continuation = self._continue_fixture_request(paused)
+                continuations[continuation] = {key: paused.get(key) for key in ("requestId", "networkId", "frameId", "resourceType")}
+                continuations[continuation]["request"] = {key: paused.get("request", {}).get(key, "") for key in ("url", "method")}
+            for ack, paused in list(invalid_acks.items()):
+                if self._fixture_request_cancelled(paused) or self._fixture_favicon_superseded(paused):
+                    del invalid_acks[ack]
+        return response.get("result", {})
 
     def evaluate(self, expression: str) -> Any:
         result = self.command("Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True})
@@ -191,6 +408,24 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
             pass
         time.sleep(0.05)
     raise RuntimeError("Chrome did not expose a debuggable console page")
+
+
+def chrome_startup_diagnostic(path: pathlib.Path, process: ProcessState) -> dict[str, str]:
+    """Closed startup evidence only: stderr can contain private URLs and paths."""
+    try:
+        with path.open("rb") as stream:
+            stderr = stream.read(65536).lower()
+    except OSError:
+        stderr = b""
+    indicators = {
+        "sandbox": (b"no usable sandbox", b"failed to move to new namespace"),
+        "resource": (b"resource temporarily unavailable", b"cannot allocate memory", b"too many open files"),
+        "profile": (b"singletonlock", b"processsingleton"),
+        "devtools_listening": (b"devtools listening on",),
+    }
+    matches = [name for name, patterns in indicators.items() if any(pattern in stderr for pattern in patterns)]
+    return {"process": "running" if process.poll() is None else "exited",
+            "stderr": ",".join(matches) if matches else "unclassified"}
 
 
 def wait_for_active_port(path: pathlib.Path, deadline: float, process: ProcessState) -> int:
@@ -693,6 +928,45 @@ def validate_reusable_run_copy(copy: str | None, has_browser_run_form: bool) -> 
     require(not has_browser_run_form, "reusable v5 detail added a human launch form")
 
 
+def validate_browser_events(events: list[dict[str, Any]], missing_record_event_start: int,
+                            missing_record_event_end: int) -> None:
+    failures: list[str] = []
+    for event_index, event in enumerate(events):
+        method = event.get("method", "")
+        params = event.get("params", {})
+        if method == "Runtime.exceptionThrown":
+            failures.append("JavaScript exception")
+        elif method == "Log.entryAdded":
+            entry = params.get("entry", {})
+            text = str(entry.get("text", ""))
+            if missing_record_event_start <= event_index < missing_record_event_end and text == "Failed to load resource: the server responded with a status of 400 (Bad Request)":
+                continue
+            if entry.get("level") == "error" or "Content Security Policy" in text or "Refused to" in text:
+                failures.append("console/CSP error: " + text[:160])
+        elif method == "Network.loadingFailed" and not params.get("canceled", False):
+            if params.get("blockedReason") == "inspector" or params.get("errorText") == "net::ERR_BLOCKED_BY_CLIENT":
+                continue
+            failures.append("request failure")
+        elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) == 429:
+            failures.append(rate_limit_diagnostic(params))
+        elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) >= 500:
+            response = params.get("response", {})
+            failures.append(f"unexpected HTTP {int(response.get('status', 0))}: {response.get('url', '')}")
+        elif method == "Audits.issueAdded" and params.get("issue", {}).get("code") == "ContentSecurityPolicyIssue":
+            failures.append("CSP violation")
+    require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
+
+
+def rate_limit_diagnostic(params: dict[str, Any]) -> str:
+    """Only public routing metadata; never query, credentials or response data."""
+    response = params.get("response", {})
+    parsed = urllib.parse.urlsplit(response.get("url", ""))
+    return "unexpected HTTP 429: " + json.dumps({
+        "scheme": parsed.scheme, "host": parsed.hostname, "path": parsed.path,
+        "status": 429, "type": params.get("type", ""),
+    }, sort_keys=True)
+
+
 def main() -> int:
     if len(sys.argv) not in (4, 5, 7):
         raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [registration-readback | register CHARTER_JSON CURRENT_FLEET_JSON]")
@@ -711,7 +985,7 @@ def main() -> int:
     chrome_home = workspace / ("chrome-registration" if registration_only else "chrome-registration-readback" if registration_readback else "chrome-inspection")
     chrome_home.mkdir(mode=0o700)
     chrome_stderr_path = workspace / "chrome.stderr"
-    chrome_stderr = chrome_stderr_path.open("w", encoding="utf-8")
+    chrome_stderr = os.fdopen(os.open(chrome_stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8")
     process = subprocess.Popen(
         [
             "/usr/bin/google-chrome",
@@ -723,7 +997,7 @@ def main() -> int:
             "--remote-debugging-port=0",
             "--remote-allow-origins=http://localhost",
             f"--user-data-dir={chrome_home}",
-            origin + "/console",
+            "about:blank",
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -736,7 +1010,11 @@ def main() -> int:
     try:
         active_port = chrome_home / "DevToolsActivePort"
         startup_deadline = time.monotonic() + CHROME_START_TIMEOUT
-        port = wait_for_active_port(active_port, startup_deadline, process)
+        try:
+            port = wait_for_active_port(active_port, startup_deadline, process)
+        except RuntimeError as error:
+            diagnostic = chrome_startup_diagnostic(chrome_stderr_path, process)
+            raise RuntimeError(str(error) + "; startup=" + json.dumps(diagnostic, sort_keys=True)) from None
         # DevToolsActivePort can appear before Chrome's first page target is
         # queryable. This stage needs a fresh budget, not startup's remainder.
         page_deadline = time.monotonic() + PAGE_TARGET_TIMEOUT
@@ -744,6 +1022,7 @@ def main() -> int:
         for domain in ("Page", "Runtime", "Log", "Network", "Audits"):
             devtools.command(domain + ".enable")
 
+        devtools.pace_fixture_requests(origin)
         navigate(devtools, origin + "/console")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
         insert_text(devtools, "#password", initial_password)
@@ -818,7 +1097,7 @@ def main() -> int:
         click(devtools, 'a[href="/console/agents/charter-import"]')
         wait_for(
             devtools,
-            "location.pathname === '/console/agents/charter-import' && document.title === 'Agent registration · Aegis Console' && document.querySelector('#charter-import-title')?.textContent.trim() === 'Charter-backed Agent registration' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
+            "document.readyState === 'complete' && location.pathname === '/console/agents/charter-import' && document.title === 'Agent registration · Aegis Console' && document.querySelector('#charter-import-title')?.textContent.trim() === 'Charter-backed Agent registration' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
             "dedicated Agent registration page",
         )
         time.sleep(1.5)
@@ -1198,29 +1477,7 @@ def main() -> int:
             "retained Datastar asset was loaded by the console document",
         )
 
-        failures: list[str] = []
-        for event_index, event in enumerate(devtools.events):
-            method = event.get("method", "")
-            params = event.get("params", {})
-            if method == "Runtime.exceptionThrown":
-                failures.append("JavaScript exception")
-            elif method == "Log.entryAdded":
-                entry = params.get("entry", {})
-                text = str(entry.get("text", ""))
-                if missing_record_event_start <= event_index < missing_record_event_end and text == "Failed to load resource: the server responded with a status of 400 (Bad Request)":
-                    continue
-                if entry.get("level") == "error" or "Content Security Policy" in text or "Refused to" in text:
-                    failures.append("console/CSP error: " + text[:160])
-            elif method == "Network.loadingFailed" and not params.get("canceled", False):
-                if params.get("blockedReason") == "inspector" or params.get("errorText") == "net::ERR_BLOCKED_BY_CLIENT":
-                    continue
-                failures.append("request failure")
-            elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) >= 500:
-                response = params.get("response", {})
-                failures.append(f"unexpected HTTP {int(response.get('status', 0))}: {response.get('url', '')}")
-            elif method == "Audits.issueAdded" and params.get("issue", {}).get("code") == "ContentSecurityPolicyIssue":
-                failures.append("CSP violation")
-        require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
+        validate_browser_events(devtools.events, missing_record_event_start, missing_record_event_end)
         print(json.dumps({
             "browser": "Google Chrome",
             "default_six_hour_cookie_and_nonrenewing_navigation": "pass",

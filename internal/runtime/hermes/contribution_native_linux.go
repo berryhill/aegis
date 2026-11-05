@@ -83,7 +83,7 @@ waitLeader:
 			continue
 		}
 		if err != nil {
-			cause = execution.ErrNativeQuiescenceUnavailable
+			cause = execution.NativeQuiescenceFailure(execution.NativeQuiescenceLeaderWait, err)
 			break
 		}
 		if info.Signo != 0 {
@@ -101,19 +101,19 @@ waitLeader:
 	quiescent := false
 	// A waitid failure cannot establish that we still own the group number. Do
 	// not scan/signal that group; kill only the pinned os.Process and deny proof.
-	if cause != execution.ErrNativeQuiescenceUnavailable {
+	if !errors.Is(cause, execution.ErrNativeQuiescenceUnavailable) {
 		// Exact unreaped-child ownership, not a proc inventory, authorizes this
 		// barrier. Stop owned fork publication before the complete fresh scan.
 		// A later observation error still denies proof and retains custody even
 		// though the admitted owned group may already have been killed.
 		if err := barrier(cleanup, group); err != nil {
-			cause = execution.ErrNativeQuiescenceUnavailable
+			cause = execution.NativeQuiescenceFailure(execution.NativeQuiescenceBarrier, err)
 			goto joined
 		}
 		for {
 			empty, err := observe(cleanup, group)
 			if err != nil {
-				cause = execution.ErrNativeQuiescenceUnavailable
+				cause = execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensus, err)
 				break
 			}
 			if empty {
@@ -122,7 +122,7 @@ waitLeader:
 			}
 			select {
 			case <-cleanup.Done():
-				cause = execution.ErrNativeQuiescenceUnavailable
+				cause = execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusDeadline, cleanup.Err())
 				goto joined
 			case <-tick.C:
 			}
@@ -143,7 +143,7 @@ joined:
 		}
 	case <-cleanup.Done():
 		quiescent = false
-		cause = execution.ErrNativeQuiescenceUnavailable
+		cause = execution.NativeQuiescenceFailure(execution.NativeQuiescenceWaitJoin, errors.Join(cause, cleanup.Err()))
 	}
 	if err := ctx.Err(); err != nil && cause == nil {
 		cause = err
@@ -174,7 +174,7 @@ func killPinnedContributionGroup(ctx context.Context, group int, waitid func(int
 			continue
 		}
 		if err != nil {
-			return err
+			return execution.NativeQuiescenceFailure(execution.NativeQuiescenceBarrierWait, err)
 		}
 		break
 	}
@@ -182,7 +182,7 @@ func killPinnedContributionGroup(ctx context.Context, group int, waitid func(int
 		return err
 	}
 	if err := kill(-group, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
-		return err
+		return execution.NativeQuiescenceFailure(execution.NativeQuiescenceBarrierSignal, err)
 	}
 	return nil
 }
@@ -199,12 +199,12 @@ func terminateContributionGroup(ctx context.Context, group int) (bool, error) {
 func terminateContributionGroupFrom(ctx context.Context, group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error), open func(int, int) (int, error), signal func(int, unix.Signal, *unix.Siginfo, int) error, closeFD func(int) error) (bool, error) {
 	entries, err := readDir("/proc")
 	if err != nil {
-		return false, err
+		return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusDirectory, err)
 	}
 	empty := true
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return false, err
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusContext, err)
 		}
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil {
@@ -215,7 +215,7 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 			continue
 		}
 		if err != nil {
-			return false, err
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusStat, err)
 		}
 		if pg != group || state == "Z" || state == "X" || state == "x" {
 			continue
@@ -226,12 +226,12 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 			continue
 		}
 		if err != nil {
-			return false, err
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusOpen, err)
 		}
 		current, currentGroup, currentState, readErr := nativeCensusStatFrom(pid, readFile)
 		if contributionProcDisappeared(readErr) {
 			if err := closeFD(fd); err != nil {
-				return false, err
+				return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusClose, err)
 			}
 			continue
 		}
@@ -239,25 +239,28 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		// live observation keeps empty=false, requiring another complete scan.
 		if readErr == nil && current == start && currentGroup == -1 && nativeTerminalState(currentState) {
 			if err := closeFD(fd); err != nil {
-				return false, err
+				return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusClose, err)
 			}
 			continue
 		}
 		if readErr != nil || current != start || currentGroup != group {
 			closeFD(fd)
-			return false, execution.ErrNativeQuiescenceUnavailable
+			if readErr != nil {
+				return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusRecheck, readErr)
+			}
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusIdentity, nil)
 		}
 		if err := ctx.Err(); err != nil {
 			closeFD(fd)
-			return false, err
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusContext, err)
 		}
 		err = signal(fd, unix.SIGKILL, nil, 0)
 		closeErr := closeFD(fd)
 		if closeErr != nil {
-			return false, closeErr
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusClose, errors.Join(closeErr, err))
 		}
 		if err != nil && !errors.Is(err, unix.ESRCH) {
-			return false, err
+			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusSignal, err)
 		}
 	}
 	return empty, nil

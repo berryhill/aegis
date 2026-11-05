@@ -61,6 +61,9 @@ run = {'id':123,'run_attempt':2,'workflow_id':456,'head_sha':sha,'head_branch':'
 if '/jobs?' in path:
     jobs = [{'id':i+1,'run_id':123,'head_sha':sha,'name':name,'status':'completed','conclusion':'success'}
             for i,name in enumerate(json.loads(os.environ['TEST_CI_JOBS']))]
+    for job in jobs:
+        if job['name'] == 'Release package and installed proof':
+            job['conclusion'] = os.environ.get('TEST_OPTIONAL_CONCLUSION', 'success')
     result = [{'jobs':jobs}]
 elif '/ci.yml/runs?' in path:
     result = [{'workflow_runs':[run]}]
@@ -88,8 +91,8 @@ print(json.dumps(result))
         return tuple(self.run_git(*args) for args in [("rev-parse", "HEAD"), ("status", "--porcelain=v1"),
                                                       ("show-ref",), ("ls-remote", "origin")])
 
-    def release(self):
-        return subprocess.run(["sh", "scripts/release.sh", "1.2.3"], cwd=self.repo, env=self.env,
+    def release(self, version="1.2.3"):
+        return subprocess.run(["sh", "scripts/release.sh", version], cwd=self.repo, env=self.env,
                               capture_output=True, text=True, timeout=30)
 
     def test_verified_canonical_source_avoids_duplicate_suite_without_ref_mutation(self):
@@ -98,6 +101,20 @@ print(json.dumps(result))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("exact source CI reused", result.stdout)
         self.assertEqual(before, self.snapshot())
+
+    def test_v030_release_passes_actual_version_and_reports_optional_failure(self):
+        self.env.update(TEST_CI_CONCLUSION='failure', TEST_OPTIONAL_CONCLUSION='failure')
+        before = self.snapshot()
+        result = self.release('0.3.0')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('"status": "release_eligible"', result.stdout)
+        self.assertIn('"workflow_conclusion": "failure"', result.stdout)
+        self.assertIn('"coverage_complete": false', result.stdout)
+        self.assertEqual(before, self.snapshot())
+        for version in ('0.3.1', '0.2.33'):
+            result = self.release(version)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(before, self.snapshot())
 
     def test_failed_evidence_denies_before_refs_and_ignores_dirty_working_helper(self):
         self.env["TEST_CI_CONCLUSION"] = "failure"

@@ -1,12 +1,15 @@
 {
-  "agent_id": "example-agent",
+  "agent_id": "synthetic-agent",
   "graph": {
     "schema_version": "aegis.reference.revision.v1",
-    "id": "example-graph",
+    "id": "portable-hello-graph",
     "revision": 1,
     "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
-  "inputs": [],
+  "inputs": [
+    {"port_id": "task", "type": "string", "value": "Return exactly hello without a newline."},
+    {"port_id": "acceptance_criteria", "type": "string", "value": "Exact UTF-8 hello matches the precommitted evidence contract."}
+  ],
   "submission_id": "example-submission-1",
   "idempotency_key": "example-submit-1",
   "snapshot_id": "example-snapshot-1",

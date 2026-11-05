@@ -2,6 +2,7 @@ package consoleweb
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/berryhill/aegis/internal/graph"
 )
@@ -12,6 +13,14 @@ import (
 // Positioning uses CSS-grid track placement (gridColumn/gridRow) rather than
 // inline pixel styles. This keeps the rendered HTML compatible with the
 // console's strict Content Security Policy (style-src 'self').
+const (
+	graphNodeWidth    = 212
+	graphNodeHeight   = 102
+	graphColumnGap    = 78
+	graphRowGap       = 30
+	graphStagePadding = 24
+)
+
 type GraphTopology struct {
 	Nodes     []GraphPosition
 	Edges     []GraphLine
@@ -19,6 +28,13 @@ type GraphTopology struct {
 	Columns   int
 	Rows      int
 	LoopCount int
+}
+
+func (t GraphTopology) stageWidth() int {
+	return t.Columns*(graphNodeWidth+graphColumnGap) - graphColumnGap + 2*graphStagePadding
+}
+func (t GraphTopology) stageHeight() int {
+	return t.Rows*(graphNodeHeight+graphRowGap) - graphRowGap + 2*graphStagePadding
 }
 
 type GraphPosition struct {
@@ -32,6 +48,16 @@ type GraphPosition struct {
 type GraphLine struct {
 	Index int
 	Path  string
+}
+
+// Placement rules are trusted bounded integers in the external CSP-approved CSS.
+func graphGridPlacementCSS() []byte {
+	var css strings.Builder
+	for i := 1; i <= graph.MaxNodes; i++ {
+		fmt.Fprintf(&css, ".graph-workspace .graph-node[data-grid-column=\"%d\"]{grid-column:%d}\n", i, i)
+		fmt.Fprintf(&css, ".graph-workspace .graph-node[data-grid-row=\"%d\"]{grid-row:%d}\n", i, i)
+	}
+	return []byte(css.String())
 }
 
 func buildGraphTopology(g *GraphDetailModel) GraphTopology {
@@ -133,18 +159,12 @@ func buildGraphTopology(g *GraphDetailModel) GraphTopology {
 		}
 	}
 	if !cyclic {
-		// Track dimensions match the CSS grid in graph_workspace.css:
-		// 212px nodes with 32px column gap, 102px nodes with 32px row gap,
-		// and 32px padding around the stage. SVG paths use absolute pixel
-		// coordinates inside a viewBox so getPointAtLength/getCTM can resolve
-		// endpoints. CSS-grid places the buttons on the same tracks so SVG
-		// and HTML stay aligned without inline styles.
-		nodeW := 212
-		nodeH := 102
-		gap := 32
-		pad := 32
-		colStride := nodeW + gap
-		rowStride := nodeH + gap
+		// Match the Graph-only CSS tracks and SVG viewBox. This projection is
+		// definition geometry, never runtime scheduling or validity authority.
+		nodeW, nodeH := graphNodeWidth, graphNodeHeight
+		pad := graphStagePadding
+		colStride := graphNodeWidth + graphColumnGap
+		rowStride := graphNodeHeight + graphRowGap
 		for i, e := range g.Edges {
 			if !drawable[i] {
 				continue

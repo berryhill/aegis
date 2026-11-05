@@ -14,7 +14,7 @@ var loopWorkspaceCSS []byte
 //go:embed queue_workspace.css
 var queueWorkspaceCSS []byte
 
-var CSS = append(append(append(append(append([]byte{}, baseCSS...), graphWorkspaceCSS...), loopWorkspaceCSS...), queueWorkspaceCSS...), append(loopGridPlacementCSS(), queueGridPlacementCSS()...)...)
+var CSS = append(append(append(append(append([]byte{}, baseCSS...), graphWorkspaceCSS...), loopWorkspaceCSS...), queueWorkspaceCSS...), append(append(loopGridPlacementCSS(), queueGridPlacementCSS()...), graphGridPlacementCSS()...)...)
 
 // NavigationJS progressively restores collection viewport and focus. Native
 // links remain complete when scripts or session storage are unavailable.
@@ -44,6 +44,13 @@ var ExecutionDebuggerJS []byte
 //
 //go:embed loop_observation.js
 var LoopObservationJS []byte
+
+// GraphObservationJS performs only authenticated same-origin Graph SSR reads.
+// It is intentionally separate from the no-network presentation navigation.
+//
+//go:embed graph_observation.js
+var GraphObservationJS []byte
+
 
 //go:embed vendor/datastar-v1.0.2.js
 var Datastar []byte

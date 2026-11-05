@@ -12,6 +12,39 @@ from scripts.console_browser_test import require
 
 
 class ReceiptTests(unittest.TestCase):
+    def test_native_run_waits_for_a_new_document_before_reading_receipt(self):
+        browser, driver = mock.Mock(), mock.Mock()
+        browser.evaluate.return_value = 12345.5
+        driver.require = require
+        calls = []
+        driver.click.side_effect = lambda *args: calls.append('native-click')
+        def wait(current, expression, description):
+            calls.append('new-document')
+            self.assertIs(current, browser)
+            self.assertEqual(expression, "document.readyState === 'complete' && performance.timeOrigin !== 12345.5")
+            self.assertNotIn('operation-receipt', expression)
+        driver.wait_for.side_effect = wait
+        journey.click_document(browser, 'run', driver)
+        self.assertEqual(calls, ['native-click', 'new-document'])
+        browser.evaluate.assert_called_once_with('performance.timeOrigin')
+
+    def test_same_document_and_missing_document_identity_fail_closed(self):
+        browser, driver = mock.Mock(), mock.Mock()
+        driver.require = require
+        browser.evaluate.return_value = None
+        with self.assertRaisesRegex(RuntimeError, 'missing native document identity'):
+            journey.click_document(browser, 'run', driver)
+        driver.click.assert_not_called()
+        browser.evaluate.return_value = 12345
+        driver.wait_for.side_effect = RuntimeError('new response document not reached')
+        with self.assertRaisesRegex(RuntimeError, 'new response document not reached'):
+            journey.click_document(browser, 'run', driver)
+
+    def test_every_run_and_replay_uses_native_document_barrier(self):
+        source = pathlib.Path(journey.__file__).read_text()
+        self.assertEqual(source.count("click_document(browser, run_form + ' button[type=submit]', driver)"), 3)
+        self.assertNotIn("driver.click(browser, run_form + ' button[type=submit]')", source)
+
     def setUp(self):
         self.form = {"revision": "1", "digest": "sha256:exact", "idempotency_key": "retained-run"}
         self.receipt = {"outcome": "blocked", "facts": {"Reason": journey.BLOCKER, "Operation": "reserved-request"}, "form": self.form.copy(), "queueLinks": 0}

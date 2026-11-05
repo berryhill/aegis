@@ -1,7 +1,7 @@
 ---
 name: aegis-loop-authoring
 description: Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.
-version: 0.2.0
+version: 0.2.1
 metadata:
   hermes:
     tags:
@@ -80,6 +80,15 @@ First use `aegis loops --help`. Supported commands in the compatible release are
 - `aegis loops retire LOOP FILE`
 
 The alias `aegis loop` exists, but prefer the canonical plural command in durable instructions. If an operation is absent from installed help, report it unavailable instead of inventing a command, API, validation result, digest, lifecycle event, or receipt.
+
+## Portable authoring recipe
+
+Use the bundled [authoring contract](references/authoring-contract.v1.md) and
+[complete hello builder input](references/hello-draft.v1.json) for a locally
+built, typed fixed-output publication candidate without a source checkout.
+All identities are synthetic; the local builder supplies no authority and no
+execution evidence. For creation-and-execution retain the existing task-execute
+workflow below rather than manually coordinating low-level publication/binding.
 
 ## Author one typed revision
 
@@ -328,6 +337,19 @@ Loop definitions and examples must contain no authentication material, credentia
 Consult `specs/CANONICAL_DOMAINS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/STORAGE.md`, the root `README.md`, and installed command help for normative and shipped behavior. Installing this advisory skill grants no Aegis identity, authority, publication right, lifecycle right, runtime capability, or filesystem/network access.
 
 ## Single authenticated Loop execution request
+
+For the published selected-file v4 Console journey, preserve the server-issued
+Run key across uncertain responses and use same-key readback/resume. The explicit
+Start a distinct run action rotates the cookie once for that action and redirects
+with HTTP 303 to the clean exact-revision URL; subsequent clean reload/reopen
+retains that new identity. Repeating the action requests another distinct run,
+not recovery. Authentication, exact pins and Run origin/CSRF checks still apply.
+This is not a v5 browser launcher; use typed normalized inputs for v5 Run.
+
+Authenticated Queue inputs show the normalized run snapshot's JSON values for
+direct Loop and Graph sources. They do not establish caller/default provenance;
+absent declared Graph inputs are missing, not invented defaults. This reads only
+the existing authenticated execution view, not private source or credentials.
 
 ## Exact owner-principal Run preparation (source candidate)
 

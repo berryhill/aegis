@@ -62,6 +62,8 @@ phase-boundary continuation holds unknown effects and preserves consumed budget;
 advisory custody does not exclude noncooperating host writers. See
 [qualification](docs/managed-contribution-candidate.md).
 
+Graph detail uses the existing authenticated same-origin SSR GET with `no-store` for read-only session observation (15-second visible-page cadence; immediate focus/visibility return; five-second request deadline). Missing authentication or an unverifiable response removes protected body content, JSON and controls. Unknown transport state is not labelled revocation. Cached restoration requires a new server render. This does not renew authentication or grant execution authority. With scripts disabled, only native authenticated navigation can recheck an already open page; previously disclosed content cannot be recalled.
+
 The authenticated exact-run execution debugger is read-only and excludes raw task/model/cursor/file payloads. Durable interpreter observations are not authority, verification receipts or evidence-backed Queue completion. Auth loss clears the protected browser workspace; legacy boundaries remain unknown. See [debugger boundary](docs/EXECUTION_DEBUGGER.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

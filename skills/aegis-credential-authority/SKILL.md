@@ -1,7 +1,7 @@
 ---
 name: aegis-credential-authority
 description: Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.
-version: 0.2.1
+version: 0.2.2
 metadata:
   hermes:
     tags:
@@ -67,9 +67,9 @@ and `control_plane_online` remain denials, not permission for a workaround.
 
 1. Inspect the exact configured authority mode, database path, deployment identifier, and custody reference without displaying custody bytes. Supported configured modes are passphrase-file, systemd, and the explicitly weaker host-file fallback.
 2. `aegis secret initialize` supports only host-file custody. It prints a redacted plan, requires literal interactive confirmation, creates or opens the deployment-bound bbolt authority, verifies its sentinel, and emits audit evidence. Do not use it to improvise passphrase-file or systemd initialization.
-3. Passphrase-file custody is normally created by the Aegis onboarding flow. Later administrative commands unlock it through protected pinentry or no-echo terminal input with a bounded retry policy; the passphrase is process-local and is not configuration or model input.
+3. Bare onboarding defaults to host-file custody so the rootless gateway can reopen it. Passphrase-file custody is an explicit advanced interactive choice, not the gateway default. Administrative commands unlock it through protected pinentry or no-echo terminal input with a bounded retry policy; the passphrase is process-local and is not configuration or model input. Automatic gateway installation rejects passphrase-file and systemd custody rather than installing a service that cannot unlock it.
 4. Systemd custody resolves the configured credential name only through the service credential directory. Creation and service installation remain separate operator-controlled system operations; do not synthesize them from this skill.
-5. Host-file custody is a development fallback. Preserve owner-only files and safe parent directories, and repeat the warning that the authority database and its key-encryption key must not be backed up together.
+5. Host-file custody is explicitly weaker: the same host account can read its key. Preserve owner-only files and safe parent directories, and repeat the warning that the authority database and its key-encryption key must not be backed up together.
 6. Require successful deployment-bound open and schema/sentinel verification before any mutation. Wrong custody, wrong deployment, malformed state, unsafe permissions, symlink substitution, or failed authentication denies.
 
 ## Store, inspect, and rotate records
@@ -86,9 +86,9 @@ and `control_plane_online` remain denials, not permission for a workaround.
 Use `aegis secret bind RECORD_ID --agent AGENT --stanza STANZA --scope github/read --destination github-api` only after the authenticated principal approves the exact tuple.
 
 - Deployment is derived from configured authority and cannot be supplied by the caller.
-- The shipped runtime mode is `brokered`. Destination must be the exact registered `github-api`; scope must match current charter and mandate authority. Unknown modes, destinations, scopes, agents, or stanzas deny.
+- The shipped runtime mode is `brokered`. At broker use, destination must be the exact registered `github-api` and scope must match current charter and mandate authority. Administrative binding accepts conservative identifiers; it does not authenticate an Agent/stanza, validate charter scope or qualify a destination. A stored tuple with invented identifiers is not evidence those identities exist or can use it. Fresh broker admission and exact resolution must deny mismatches.
 - The default version policy tracks the current active record version. `--pinned-version VERSION` instead selects one exact immutable version. Never translate `0`, `latest`, or prose into a pinned version.
-- Binding validation requires exact conservative identifiers, at least one destination, a valid mode and version policy, an active record/version, and a non-conflicting tuple. Zero or multiple active matches deny at use time.
+- Binding storage requires conservative identifiers, at least one destination, a structurally valid mode and version policy, an existing record and a non-conflicting tuple. It does not prove an active version: revocation and missing pinned versions deny at use time. Zero or multiple active matches must never be resolved by the model.
 - A binding is an administrative allow-list fact, not a capability, session, mandate, or proof that a runtime call succeeded. Require fresh session and broker evidence separately.
 
 ## Revoke and back up safely
@@ -186,5 +186,19 @@ After an interrupted administrative command, inspect exact record metadata and v
 If secret-shaped data reaches a prompt, model response, log, fixture, report, or downstream error surface, do not reproduce it. Stop the affected worker, preserve only non-secret identifiers and exposure location, revoke the affected record/version, binding, mandate, or session as explicitly authorized, rotate the credential outside model context, scrub retained renderings where operationally possible, and resume only after protected intake and sanitized-output paths are verified.
 
 ## Progressive disclosure
+
+Ordinary Registry, Loop, Graph and Queue work is credential-independent; absent,
+locked or unconfigured optional custody must not be treated as a prerequisite
+for those actions. Workspace authority never grants credential rights.
+
+Evidence tiers are distinct: the standalone bundle evaluator validates structural fixtures,
+not behavior; source service tests prove only their exercised synthetic paths;
+an extracted release-shaped executable plus installed skill inventory proves
+packaged availability, not a published release or fresh Hermes model adherence.
+Synthetic credentials never qualify a real account. Repository test names in
+the references are reproducible checks, not completion receipts. In particular,
+check `secret` and each flag in the actual extracted executable, not merely a
+source helper. A tag, process exit, prose or model assertion grants no authority
+and proves no mutation. Exact metadata and verified service/audit readback do.
 
 Use `references/credential-fixtures.json` only as non-secret interpretation examples. Fixtures are not current records, identity, authority, custody, bindings, capabilities, sessions, broker requests, audit evidence, or completion receipts. Consult `docs/CREDENTIAL_BROKER.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/RUNTIME_AND_SESSIONS.md`, `specs/AUDIT.md`, `specs/STORAGE.md`, and installed command help for normative and shipped behavior.

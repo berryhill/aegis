@@ -93,6 +93,15 @@ preparation is nonexecutable and grants no claim/runtime authority.
 
 ## Gather one reconstructable execution view
 
+Authenticated Console Queue inputs render the normalized run snapshot's exact
+JSON values for direct Loop and Graph sources, including false, zero, objects,
+arrays and escaped strings. Persisted inputs do not establish caller/default
+origin. A declared Graph port absent from the snapshot is missing, not defaulted.
+This is existing execution-view disclosure, not workspace/source/credential access
+or proof that execution succeeded. The v4 Console's explicit distinct-Run action
+rotates its cookie then redirects to a clean exact-revision URL; clean reloads
+retain it. Unknown-response recovery must keep the original key instead.
+
 For direct reusable v5, use `queue result ITEM` with the exact owning config/target
 (or protected `GET /v1/queue/:item/result`) after exact Queue readback. The
 application authenticates the reader and requires the pinned stable owner or the

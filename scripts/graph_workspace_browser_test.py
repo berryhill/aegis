@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from graph_workspace_assertions import assert_graph_geometry, assert_graph_zoom_floor, assert_graph_full_fit
 
 ARTIFACTS = Path(__file__).resolve().parents[1] / ".aegis-graph-proof"
 ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -71,13 +72,16 @@ def verify(page, width):
         assert inspector["y"] >= canvas["y"] + canvas["height"] - 1, f"inspector not stacked: {canvas} {inspector}"
     else:
         assert inspector["x"] >= canvas["x"] + canvas["width"] - 1, f"inspector not beside canvas: {canvas} {inspector}"
+    assert_graph_geometry(page)
     for _ in range(25):
         page.locator('[data-graph-zoom="in"]').click()
     assert page.locator('[data-graph-scale]').inner_text() == "200%"
+    assert_graph_geometry(page)
     for _ in range(25):
         page.locator('[data-graph-zoom="out"]').click()
-    assert page.locator('[data-graph-scale]').inner_text() == "30%"
+    assert_graph_zoom_floor(page)
     page.locator('[data-graph-fit]').click()
+    assert_graph_full_fit(page)
 
 
 with sync_playwright() as p:

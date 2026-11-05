@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -86,12 +85,11 @@ func TestGraphWorkspaceConsoleBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	port := os.Getenv("AEGIS_ACCEPTANCE_PORT")
+	if port == "" {
+		t.Fatal("shared acceptance_port.py lifetime port custody required")
 	}
-	address := probe.Addr().String()
-	_ = probe.Close()
+	address := "127.0.0.1:" + port
 	svc.Config.API.Listen = address
 	svc.Config.API.Console.Origin = "http://" + address
 	ctx, cancel := context.WithCancel(context.Background())

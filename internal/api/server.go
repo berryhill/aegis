@@ -697,9 +697,13 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 				model.Surface.Inspector.Queue.RunResult = consoleQueueRunResult(c.Request().Context(), svc, subject, model.Surface.Inspector.Key)
 			}
 			if domain == consoleLoops && model.Surface.Inspector != nil && model.Surface.Inspector.Loop.DoerV4 {
-				model.Surface.LoopRunKey, err = consoleLoopRunKey(c, subject, model.Surface.Inspector)
+				var redirected bool
+				model.Surface.LoopRunKey, redirected, err = consoleLoopRunPageIdentity(c, subject, model.Surface.Inspector)
 				if err != nil {
 					return err
+				}
+				if redirected {
+					return nil
 				}
 			}
 		}
@@ -1395,6 +1399,12 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			return consoleError(err)
 		}
 		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", consoleweb.ExecutionDebuggerJS)
+	})
+	e.GET("/console/assets/graph-observation.js", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", consoleweb.GraphObservationJS)
 	})
 	e.GET("/console/queue/:item/debugger", func(c *echo.Context) error {
 		if err := consoleHeaders(c, true); err != nil {
