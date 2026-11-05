@@ -126,6 +126,68 @@ class EvidenceTests(unittest.TestCase):
                 MODULE.api("repos/berryhill/aegis/actions/workflows/ci.yml")
             self.assertEqual(run.call_count, 1)
 
+    def test_v030_optional_outcomes_are_reported_not_rewritten(self):
+        for conclusion in ('success', 'failure', 'skipped', 'cancelled', 'timed_out'):
+            run, jobs = self.fixture()
+            run['conclusion'] = 'failure' if conclusion != 'success' else 'success'
+            optional = next(j for j in jobs if j['name'] == 'Release package and installed proof')
+            optional['conclusion'] = conclusion
+            receipt = MODULE.validate(run, jobs, SHA, 456, '0.3.0')
+            self.assertEqual(receipt['status'], 'release_eligible')
+            self.assertEqual(receipt['workflow_conclusion'], run['conclusion'])
+            self.assertEqual(receipt['optional_acceptance'], [{'name': optional['name'], 'conclusion': conclusion}])
+            self.assertEqual(receipt['coverage_complete'], conclusion == 'success')
+            for version in (None, '0.2.33', '0.3.1', '1.3.0'):
+                if conclusion != 'success':
+                    with self.subTest(version=version), self.assertRaises(ValueError):
+                        MODULE.validate(run, jobs, SHA, 456, version)
+
+    def test_v030_every_required_job_still_denies_nonsuccess(self):
+        for name in MODULE.REQUIRED_JOBS - {'Release package and installed proof'}:
+            for conclusion in ('failure', 'skipped', 'cancelled', 'timed_out'):
+                run, jobs = self.fixture()
+                run['conclusion'] = 'failure'
+                next(j for j in jobs if j['name'] == name)['conclusion'] = conclusion
+                with self.subTest(name=name, conclusion=conclusion), self.assertRaises(ValueError):
+                    MODULE.validate(run, jobs, SHA, 456, '0.3.0')
+
+    def test_v030_optional_identity_missing_and_running_still_deny(self):
+        for mutation in (lambda j: j.update(head_sha='b' * 40),
+                         lambda j: j.update(run_id=124), lambda j: j.update(status='in_progress'),
+                         lambda j: j.update(conclusion=None)):
+            run, jobs = self.fixture()
+            mutation(next(j for j in jobs if j['name'] == 'Release package and installed proof'))
+            with self.assertRaises(ValueError):
+                MODULE.validate(run, jobs, SHA, 456, '0.3.0')
+        run, jobs = self.fixture()
+        for name in MODULE.REQUIRED_JOBS:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                MODULE.validate(run, [j for j in jobs if j['name'] != name], SHA, 456, '0.3.0')
+
+    def test_version_validation_precedes_api(self):
+        for version in ('v0.3.0', '0.3.0-rc.1', '00.3.0', '0.3.0\n', ''):
+            with mock.patch.object(MODULE, 'api') as api, mock.patch.object(MODULE.sys, 'argv', ['verify-ci-evidence.py', SHA, version]):
+                with self.assertRaises(ValueError):
+                    MODULE.main()
+                api.assert_not_called()
+
+    def test_v030_main_consumes_service_and_denies_final_drift(self):
+        for drift in (False, True):
+            run, jobs = self.fixture()
+            run['conclusion'] = 'failure'
+            next(j for j in jobs if j['name'] == 'Release package and installed proof')['conclusion'] = 'failure'
+            workflow = {'id': 456, 'path': MODULE.WORKFLOW, 'state': 'active'}
+            final = dict(run, run_attempt=3) if drift else run
+            responses = [workflow, [{'workflow_runs': [run]}], run, [{'jobs': jobs}], final]
+            with mock.patch.object(MODULE, 'api', side_effect=responses), mock.patch.object(MODULE.sys, 'argv', ['verify-ci-evidence.py', SHA, '0.3.0']), mock.patch('builtins.print') as output:
+                if drift:
+                    with self.assertRaises(ValueError):
+                        MODULE.main()
+                    output.assert_not_called()
+                else:
+                    MODULE.main()
+                    self.assertIn('"status": "release_eligible"', output.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()

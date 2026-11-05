@@ -124,8 +124,12 @@ The v5 worker additionally requires a separately configured operator digest and 
 CI verifies the exact checked-out revision through parallel, coverage-complete
 package groups in normal and race modes, repository checks, authority denial,
 vulnerability/vet checks, and the complete installed archive proof. The
-`Exact-head release readiness` aggregate requires every constituent to succeed;
-cancelled, skipped or incomplete jobs cannot qualify a release. Each worker
+`Exact-head release readiness` aggregate requires every eligibility constituent to
+succeed. Exactly v0.3.0 has a bounded profile separating independent non-browser
+packaging from optional installed/browser coverage; original optional outcomes
+remain visible and are never relabelled PASS. All required normal/race, repository,
+security and packaging jobs must succeed; cancelled required jobs cannot qualify.
+Every other release and the default evidence verifier remain strict. Each worker
 retains the resource budget above. Feature branches run through PR CI once,
 not duplicate push and PR workflows. See [release timing and evidence](docs/RELEASE_PIPELINE.md).
 
