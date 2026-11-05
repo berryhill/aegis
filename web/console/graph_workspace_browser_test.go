@@ -37,6 +37,10 @@ func TestGraphWorkspaceBrowser(t *testing.T) {
 		case "/app.css":
 			w.Header().Set("Content-Type", "text/css")
 			w.Write(CSS)
+		case "/console/assets/graph-observation.js":
+			// Component geometry fixture has no authenticated Console session.
+			w.Header().Set("Content-Type", "text/javascript")
+			w.Write([]byte("// Auth observation is exercised by the actual CLI fixture.\n"))
 		case "/graph.js":
 			w.Header().Set("Content-Type", "text/javascript")
 			w.Write(graphWorkspaceJS)

@@ -35,6 +35,25 @@ import (
 
 func nativeJSON(s string) string { b, _ := json.Marshal(s); return string(b) }
 
+// Keep readiness observation attached to the owned request, not wall time spent
+// in unrelated baseline compilation. The caller cancels and joins this watcher.
+func waitContributionBuilder(ctx context.Context, root string, disconnect context.CancelFunc) {
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if _, err := os.Stat(filepath.Join(root, "builder-ready")); err == nil {
+				disconnect()
+				_ = os.WriteFile(filepath.Join(root, "builder-release"), []byte("release"), 0600)
+				return
+			}
+		}
+	}
+}
+
 type publicRootContributionReader struct {
 	source contribution.Source
 	calls  int
@@ -310,24 +329,17 @@ exec sleep 240
 	runCtx, disconnect := context.WithCancel(ctx)
 	defer disconnect()
 	if len(disconnected) != 0 && disconnected[0] {
+		// Baseline native checks precede the first builder. A cold stdlib cache
+		// may consume the old independent 90s watcher budget before that marker.
+		// Observe for the request lifetime instead; do not extend any execution,
+		// authentication or HTTP deadline. Join before private state is removed.
+		watchCtx, stopWatch := context.WithCancel(runCtx)
+		watchDone := make(chan struct{})
 		go func() {
-			deadline := time.NewTimer(90 * time.Second)
-			defer deadline.Stop()
-			tick := time.NewTicker(10 * time.Millisecond)
-			defer tick.Stop()
-			for {
-				select {
-				case <-deadline.C:
-					return
-				case <-tick.C:
-					if _, e := os.Stat(filepath.Join(root, "builder-ready")); e == nil {
-						disconnect()
-						_ = os.WriteFile(filepath.Join(root, "builder-release"), []byte("release"), 0600)
-						return
-					}
-				}
-			}
+			defer close(watchDone)
+			waitContributionBuilder(watchCtx, root, disconnect)
 		}()
+		defer func() { stopWatch(); <-watchDone }()
 	}
 	// Snapshot the source repository before the FIRST automatic manager effect.
 	// The owned worktree does not exist yet; its original HEAD/index must match

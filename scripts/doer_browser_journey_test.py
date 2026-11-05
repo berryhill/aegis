@@ -42,6 +42,16 @@ def receipt(browser):
             "queueLinks": browser.evaluate("document.querySelectorAll('.operation-receipt a[href*=\"/console/queue\"]').length")}
 
 
+def click_document(browser, selector, driver):
+    """Do not mistake the prior receipt for completion of a native form POST."""
+    previous = browser.evaluate("performance.timeOrigin")
+    driver.require(type(previous) in (int, float), "missing native document identity")
+    driver.click(browser, selector)
+    driver.wait_for(browser,
+                    "document.readyState === 'complete' && performance.timeOrigin !== " + json.dumps(previous),
+                    "new native Run response document")
+
+
 def capture(browser, proof, phase, require, failures):
     """Keep full-page reviewable PNGs plus accessibility/overflow witnesses."""
     reports = []
@@ -166,13 +176,13 @@ def run_journey(browser, origin, workspace, driver):
         published = values(browser, run_form, ("revision", "digest", "idempotency_key"))
         require(published["digest"] == contract_review["Loop digest"] and published["revision"] == retained["revision"] and bool(published["idempotency_key"]), "publication returned different immutable candidate")
         report["published"] = published
-        driver.click(browser, run_form + ' button[type=submit]')
+        click_document(browser, run_form + ' button[type=submit]', driver)
         settled("document.querySelector('.operation-receipt')?.dataset.outcome === 'blocked'", "explicit Run authoritative blocker")
         first = receipt(browser)
         validate_blocked_receipt(first, published, require)
         require("required_action: review_charter_successor_with_matching_authentication" in browser.evaluate("document.querySelector('.operation-receipt').innerText"), "blocker missing explicit next action")
         report["captures"]["outcome"] = capture(browser, proof, "outcome", require, report["failures"])
-        driver.click(browser, run_form + ' button[type=submit]')
+        click_document(browser, run_form + ' button[type=submit]', driver)
         settled("document.querySelector('.operation-receipt')?.dataset.outcome === 'blocked'", "same-key blocked request replay")
         replay = receipt(browser)
         validate_blocked_receipt(replay, published, require)
@@ -189,7 +199,7 @@ def run_journey(browser, origin, workspace, driver):
         browser.command("Page.reload", {"ignoreCache": True})
         settled("!!document.querySelector('[data-loop-workspace]')", "reloaded published Doer inspector")
         require(values(browser, run_form, ("revision", "digest", "idempotency_key")) == published, "reload created another Run key")
-        driver.click(browser, run_form + ' button[type=submit]')
+        click_document(browser, run_form + ' button[type=submit]', driver)
         settled("document.querySelector('.operation-receipt')?.dataset.outcome === 'blocked'", "inspector exact-key Run replay")
         inspector_replay = receipt(browser)
         validate_blocked_receipt(inspector_replay, published, require)
