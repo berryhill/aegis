@@ -6,6 +6,19 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Loop iteration release focus
+
+- Prepare v0.3.0 around the merged Loop iteration: immutable publication and
+  separate exact-revision Run, direct Loop Queue admission, retained Doer drafts
+  and protected setup, bounded execution and evidence-gated terminal readback.
+- Include the merged managed-contribution source and controlled qualification
+  described below without promoting them to real-provider, installed-workstation
+  or whole-contribution live acceptance. General scheduling and Graph follow-on
+  work are not part of this release-preparation claim.
+- This summary preserves the detailed entries and their evidence boundaries;
+  release publication, final tag-bound CLI/skill archives and installed release
+  verification remain separate actions.
+
 ### Added
 
 - #186 Queue advisory skill v0.3.0: exact direct-source/input readback, distinct
