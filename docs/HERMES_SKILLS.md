@@ -51,6 +51,21 @@ Hermes installed-agent behavior. No fixture contains values or authentication.
 
 The credential-authority skill progressively discloses non-secret interpretation examples from `skills/aegis-credential-authority/references/credential-fixtures.json` and routes normative questions to `docs/CREDENTIAL_BROKER.md`, credential-related specifications, and installed command help. Its fixtures contain metadata and denial state only; they never carry credential values, passphrases, key-encryption keys, capabilities, authentication headers, or live authority.
 
+Credential skill v0.2.2 separates conservative binding storage from fresh broker
+admission; a stored tuple does not authenticate its Agent/stanza or prove an active
+version. Bare onboarding defaults to explicitly weaker host-file custody; advanced
+interactive passphrase custody is not automatic gateway setup. Ordinary Registry,
+Loop, Graph and Queue actions remain credential-independent. The executable
+`TestCredentialSkillBrokerDenialsAndNondisclosure` uses generated canaries and real
+encrypted custody to check recipient/repository/unbound/freshness/replay/revocation
+denials with useful metadata and material-free audit/diagnostic/ordinary artifacts.
+Existing exact-session/Agent/stanza/deployment and protected-intake decoder tests
+remain separate behavioral proof. `TestPackagedCredentialSkillInstall` consumes an
+explicit extracted executable and exact skill archive, verifies install/inventory
+outside the checkout and checks all documented `secret` subcommands and flags.
+Missing artifacts skip rather than prove availability. This does not qualify a
+published release, real account, live provider or fresh Hermes model behavior.
+
 The manager-onboarding skill uses non-secret classification examples from `skills/aegis-manager-onboarding/references/onboarding-fixtures.json` and routes normative questions to `specs/AEGIS_MANAGER.md`, `specs/MANAGER_LIFECYCLE_AND_ONBOARDING.md`, and installed command help. It routes every operation to a typed Aegis command. Each operational session requires exactly one externally authenticated trust stanza: zero matches deny and multiple matches deny as ambiguous. Prompt/model content cannot select or change stanza or authority; stanza or material-authority changes require a new mandate and clean runtime session. Only Aegis emits authoritative audit events, which model narration cannot create or replace.
 
 The operator-lifecycle-diagnostics skill uses non-secret interpretation examples from `skills/aegis-operator-lifecycle-diagnostics/references/lifecycle-fixtures.json` and routes normative questions to `docs/PATH_LAYOUT.md`, the relevant lifecycle implementation, and installed command help. Its fixtures do not prove live host state, identity, authority, release provenance, ownership, service health, rollback eligibility, recovery, or completion. The skill authenticates and authorizes nothing: diagnosis is read-only by default, and each mutation retains the authentication, terminal, preview, confirmation, and post-operation controls its shipped command actually implements. It explicitly records that direct self-update has no separate principal-authentication or apply-confirmation boundary, that `update --check` does not inspect archives or checksums, and that package-manager ownership is operator-supplied context. It does not provide a general doctor, repair, executable rollback, or arbitrary backup-restore surface; absent operations are reported as unavailable rather than simulated. It does not claim host sandboxing, complete zero trust, general least privilege, service readiness from process activity, or recovery from process exit or model narration.
