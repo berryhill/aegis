@@ -26,7 +26,7 @@ The repository-root `skills/` directory is the canonical reviewed source for the
 - `skills/aegis-agent-registry/SKILL.md` is an advisory skill for exact existing-fleet registration, immutable current/history inspection, and append-only enabled/disabled/retired lifecycle governance.
 - `skills/aegis-session-operations/SKILL.md` is an advisory routing skill for previewing and operating clean, mandate-bound Hermes sessions through typed Aegis lifecycle services.
 - `skills/aegis-loop-authoring/SKILL.md` is an advisory skill for authoring, publishing, activating, inspecting, and retiring immutable typed Loop revisions through authenticated Aegis services. Its field recipes distinguish `agent_id` workspace selection and server-derived authority from runtime-authority inputs and readback. `loops example` is structural only; `loops implementation` builds a bounded Go-test v3 draft and `loops doer` builds a selected-file v4 draft. `--config OWNER_CONFIG --target CONSOLE_URL` supports protected Unix online publication/readback without opening another store. No builder itself authorizes execution or guarantees verification success.
-- `skills/aegis-graph-authoring/SKILL.md` is an advisory skill for composing, publishing, inspecting, and submitting immutable typed Graph revisions with exact Agent/Loop bindings and durable admission readback. Its recipes distinguish authenticated `agent_id` workspace selection, server-derived provenance and `awaiting_runtime` acceptance from runtime-bound work. They preserve required `transition_id` and reject invented rejection-idempotency fields; they do not establish portable-schema or installed-agent acceptance.
+- `skills/aegis-graph-authoring/SKILL.md` is an advisory skill for composing, publishing, inspecting, and submitting immutable typed Graph revisions with exact Agent/Loop bindings and durable admission readback. Its recipes distinguish authenticated `agent_id` workspace selection, server-derived provenance and `preparation-pending` acceptance (with legacy `awaiting-runtime` readback) from runtime-bound work. They preserve required `transition_id` and reject invented rejection-idempotency fields; they do not establish portable-schema or installed-agent acceptance.
 - `skills/aegis-execution-queue/SKILL.md` is an advisory skill for exact Queue inspection and the shipped process, retry/reclaim, cancellation, expiry, exhaustion, and revocation lifecycle through authenticated Aegis services.
 - `skills/aegis-evidence-disposition/SKILL.md` is an advisory skill for reconstructing exact Queue, Attempt, artifact, verification, and terminal-disposition lineage while preserving process/evidence separation and unsupported reviewer-reevaluation boundaries.
 - `skills/aegis-credential-authority/SKILL.md` is an advisory skill for principal-only encrypted custody administration, exact broker binding, revocation, backup, and the single typed sanitized GitHub read path.
@@ -185,6 +185,25 @@ Never test installation against a normal profile. Use a durable repository-local
 4. Verify that the ordinary profile was not touched and that no Aegis-managed disposable runtime home received the skill.
 
 These live GitHub commands prove published-repository discovery and are intentionally separate from hermetic unit tests. They cannot prove an unmerged revision is already available from the public tap.
+
+## Portable authoring and evidence boundaries (#252)
+
+Loop and Graph skills v0.2.1 include a complete local hello-builder input,
+workspace Graph publication candidate, matching typed submission and a literal
+request-check response. All references are synthetic and require authenticated
+readback substitution, not guessed authority or unchanged fixture submission.
+`TestPortableBundledAuthoringContracts` installs the verified archive into an
+isolated home, runs the public local builder/strict decoders, checks matching
+Loop/Graph ports and required normalized Graph inputs, and compares the actual
+public check response. No repository specs/internal/docs are consumed as
+operational prerequisites. This is executable schema/builder/package evidence,
+not an actual-agent or runtime-admission verdict.
+
+The portable Graph reference uses the already delivered online adapter, current
+`preparation-pending`/`queue preparations` readback and explicit unknown-outcome
+recovery. It does not invent submission-history CLI, Graph lifecycle commands,
+generic clients or ordinary retry. See the [bounded source/evidence mapping](implementation/issue-252-skill-suite-evidence.md)
+for reused deliveries and independent qualification still not implied.
 
 ## Queue historical readback
 

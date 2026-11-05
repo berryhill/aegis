@@ -1,0 +1,89 @@
+{
+  "agent_id": "synthetic-agent",
+  "idempotency_key": "synthetic-graph-publication-v1",
+  "revision": {
+    "schema_version": "aegis.graph.revision.v1",
+    "graph_id": "portable-hello-graph",
+    "revision": 1,
+    "inputs": [
+      {
+        "id": "task",
+        "type": "string",
+        "required": true
+      },
+      {
+        "id": "acceptance_criteria",
+        "type": "string",
+        "required": true
+      }
+    ],
+    "outputs": [
+      {
+        "id": "report",
+        "type": "string",
+        "required": true
+      }
+    ],
+    "nodes": [
+      {
+        "id": "hello",
+        "participant": {
+          "schema_version": "aegis.reference.revision.v1",
+          "id": "synthetic-agent",
+          "revision": 1,
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "loop": {
+          "schema_version": "aegis.reference.revision.v1",
+          "id": "portable-hello",
+          "revision": 1,
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "inputs": [
+          {
+            "id": "task",
+            "type": "string",
+            "required": true
+          },
+          {
+            "id": "acceptance_criteria",
+            "type": "string",
+            "required": true
+          }
+        ],
+        "outputs": [
+          {
+            "id": "report",
+            "type": "string",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "input_mappings": [
+      {
+        "graph_input": "task",
+        "to_node_id": "hello",
+        "to_port": "task"
+      },
+      {
+        "graph_input": "acceptance_criteria",
+        "to_node_id": "hello",
+        "to_port": "acceptance_criteria"
+      }
+    ],
+    "dependencies": [],
+    "output_mappings": [
+      {
+        "from_node_id": "hello",
+        "from_port": "report",
+        "graph_output": "report"
+      }
+    ],
+    "admission_rules": [],
+    "validator": {
+      "id": "aegis.graph.validator",
+      "version": "1"
+    }
+  }
+}

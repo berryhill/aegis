@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:ce34331b07c9f47e42ab518a75c7b6b0a7cf496b74b7e4277e51cca38141769b",
+    "content_digest": "sha256:68aabcfaba6c8fec1cd468f249bcea379010444573b2cc405c6b0b20dd7080f7",
     "source_revision": "repository"
   },
   "operations": [
@@ -314,7 +314,7 @@
     },
     {
       "slug": "aegis-loop-authoring",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "path": "skills/aegis-loop-authoring",
       "description": "Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.",
       "dependencies": [
@@ -330,18 +330,28 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:75512e3ab27d0c0c9d2cdc7b036040f89770ba06ef582e7cf962364350a7628f",
+      "content_digest": "sha256:c9b64a08bacfa49bd15839a7b2e972e8baeced9b70deee145d21de504a50cdf6",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:5fd411c0165fbb39ba2684a33c93db453bbc3c5781795016a9e9b2ab2d3e63bf",
-          "size": 56355
+          "sha256": "sha256:56dcea7b55e88ebd763f9d2398cb096952c63b3199f28c33d478788e20bc390e",
+          "size": 56853
+        },
+        {
+          "path": "references/authoring-contract.v1.md",
+          "sha256": "sha256:6ba22ae30fd99d9681a5bcd1ed48e49045de64372a6ba2852c4fb761b812607b",
+          "size": 3745
+        },
+        {
+          "path": "references/hello-draft.v1.json",
+          "sha256": "sha256:4a7dd2d7ac0b06d968bd99d601cb7cc20c2f6faf1ecc73d1c12a2323e1c19bb0",
+          "size": 139
         }
       ]
     },
     {
       "slug": "aegis-graph-authoring",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "path": "skills/aegis-graph-authoring",
       "description": "Compose, publish, inspect, and submit immutable typed Aegis Graph revisions through shipped services without moving identity, authority, or queue admission into the model.",
       "dependencies": [
@@ -359,22 +369,32 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:18314c0b8411978161145050a19f97d9597ceed118a52009f3ebdfc0d41f6e18",
+      "content_digest": "sha256:fdf7242f8b4cb41b4accafdea5d1463e7adaad93819d143a0d8756ad6951783f",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:a2731d8f65ded9c46459013150b467e7b4d07391256022a267f1c1390dd5ad5a",
-          "size": 17132
+          "sha256": "sha256:bef195ba4f40a51bf9d585bd75bb7d701dd8eb517b33556de4f36f45624623e5",
+          "size": 17728
+        },
+        {
+          "path": "references/submission-check-result.v1.json",
+          "sha256": "sha256:8383ff6aff62b758b8c830b9fe34f3e42b3898f67e3095af8f908734741c7702",
+          "size": 130
         },
         {
           "path": "references/submission-contract.v1.md",
-          "sha256": "sha256:6b5d7ede218c092891c460ddd18cef1c907b9481759c65f5ef8198b8d62a43a7",
-          "size": 3805
+          "sha256": "sha256:8d00d6025dd6823a4658af69ccbfaf45e401d1bee34417ef878d8a9819019401",
+          "size": 6858
+        },
+        {
+          "path": "references/workspace-publish.v1.json",
+          "sha256": "sha256:5285014b8ae8e668ec0a172825e4b37916c90d0f2ff0f52188671b5fd23a36f4",
+          "size": 2059
         },
         {
           "path": "references/workspace-submit.v1.json",
-          "sha256": "sha256:02cb128c2550dfb8282702436bdc7648f7220dda81a9dfb5e3635e3782e3c5a7",
-          "size": 556
+          "sha256": "sha256:e0dbe817ed3170c7d9ebc77d6d1131a57654a3ac98959b931d757e5cda99d09c",
+          "size": 794
         }
       ]
     },
