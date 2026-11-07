@@ -55,6 +55,10 @@ func TestContributionManagerExpiredFrozenCandidateExplicitFreshResume(t *testing
 	contributionManagerNativeRepair(t, false, true)
 }
 func contributionManagerNativeRepair(t *testing.T, disconnected ...bool) {
+	contributionManagerNativeRepairWithRoles(t, [3]int{0, 1, 2}, disconnected...)
+}
+
+func contributionManagerNativeRepairWithRoles(t *testing.T, sharing [3]int, disconnected ...bool) {
 	ctx := context.Background()
 	root := os.Getenv("AEGIS_RESTART_ROOT")
 	if root == "" {
@@ -161,6 +165,10 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		refs = append(refs, ref)
 		_, err = repository.RegisterAgent(ctx, registry.AgentRegistration{SchemaVersion: registry.AgentRegistrationSchemaVersion, AgentID: id, Source: agent.Source, InitialRevision: ref}, agent, fleet.AuditFact{Event: core.AuditEvent{Type: "fixture.created", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: "succeeded", Reason: "isolated fixture"}})
 		must(err)
+	}
+	registered := append([]reference.RevisionRef(nil), refs...)
+	for i, source := range sharing {
+		refs[i] = registered[source]
 	}
 	effect := "local-only"
 	if nonlocalCancellation {
@@ -493,6 +501,29 @@ if [ "$1" = "--version" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install direc
 	if candidate.Digest != record.Passes[expectedPasses-1].Candidate.Digest {
 		t.Fatal("accepted handoff drift")
 	}
+	for i, role := range []string{"controller", "builder", "tester"} {
+		if continuity.RoleAuthorities[role].Binding.Agent != refs[i] {
+			t.Fatalf("%s exact role ref substituted", role)
+		}
+	}
+	for role, authority := range continuity.RoleAuthorities {
+		for other, prior := range continuity.RoleAuthorities {
+			if other == role {
+				continue
+			}
+			if authority.SessionID == prior.SessionID || authority.Authority == prior.Authority || authority.MandateID == prior.MandateID || authority.RuntimeSessionID == prior.RuntimeSessionID {
+				t.Fatal("role execution bindings shared", role, other)
+			}
+		}
+	}
+	for _, pass := range record.Passes {
+		if pass.Tester.SessionID == pass.Candidate.Builder.SessionID || pass.Tester.AuthorityID == pass.Candidate.Builder.AuthorityID || pass.Tester.RuntimeSessionID == pass.Candidate.Builder.RuntimeSessionID || pass.Tester.TurnID == pass.Candidate.Builder.TurnID {
+			t.Fatal("tester execution reused builder")
+		}
+		if pass.Candidate.Builder.AgentDigest != refs[1].Digest || pass.Tester.AgentDigest != refs[2].Digest {
+			t.Fatal("dispatch/execution evidence substituted registered role")
+		}
+	}
 	controller := continuity.RoleAuthorities["controller"]
 	request := contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: sealed.QueueItemID, Digest: sealed.Digest}, RunID: sealed.RunID, QueueItemID: sealed.QueueItemID, Candidate: candidate.Digest, CandidateEvidence: continuity.CandidateEvidence, Role: "controller", Epoch: controller.Epoch, RoleAuthority: controller.Ref(), Scope: sealed.Effect}
 	if _, e := s.CheckContributionEffectAs(ctx, subject, controller.SessionID, key, request, true); e == nil {
@@ -551,7 +582,7 @@ if [ "$1" = "--version" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install direc
 		t.Fatalf("replay duplicated effects queue=%d reads=%d sessions=%d/%d", len(items), reader.calls, len(before), len(after))
 	}
 	for _, authority := range after {
-		if authority.AgentID != "controller" {
+		if authority.SessionID != controller.SessionID {
 			admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, s.Now())
 			must(err)
 			if admission.Admitted {

@@ -754,5 +754,5 @@ func (e *ManagedContribution) revalidate(ctx context.Context, c loop.VerifiedImp
 }
 
 func independentContributionRole(b, t ContributionRoleIdentity) bool {
-	return validContributionRole(t) && t.AgentDigest != b.AgentDigest && t.CharterDigest != b.CharterDigest && t.AuthorityID != b.AuthorityID && t.SessionID != b.SessionID && t.MandateID != b.MandateID && t.RuntimeSessionID != b.RuntimeSessionID
+	return validContributionRole(t) && t.AuthorityID != b.AuthorityID && t.SessionID != b.SessionID && t.MandateID != b.MandateID && t.RuntimeSessionID != b.RuntimeSessionID
 }

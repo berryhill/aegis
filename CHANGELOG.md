@@ -6,6 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Permit exact shared registered-Agent references for contribution controller,
+  builder and tester roles, including partial sharing. Role labels do not impose
+  different Agent/profile identities; execution sessions remain separate. Keep fresh operation authority, immutable
+  role/evidence bindings, one-shot checks, quiescence and protection gates.
+  Controlled regression proof is not real-provider or installed-live acceptance.
+
 - #235 Loop workspace: details distinguish authored human names from
   stable Run selectors, show complete cyclic components and transition bounds,
   retain self edges and overflow textual definitions, expose contextual mappings

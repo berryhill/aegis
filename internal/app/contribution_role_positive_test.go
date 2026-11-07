@@ -20,6 +20,10 @@ import (
 )
 
 func contributionAuthorityFixture(t *testing.T, alter ...func(*core.Charter)) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
+	return contributionAuthorityFixtureRoles(t, [3]int{0, 1, 2}, alter...)
+}
+
+func contributionAuthorityFixtureRoles(t *testing.T, sharing [3]int, alter ...func(*core.Charter)) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
 	t.Helper()
 	ctx := context.Background()
 	s := testService(t)
@@ -59,6 +63,10 @@ func contributionAuthorityFixture(t *testing.T, alter ...func(*core.Charter)) (*
 		if e != nil {
 			t.Fatal(e)
 		}
+	}
+	registered := append([]reference.RevisionRef(nil), refs...)
+	for i, source := range sharing {
+		refs[i] = registered[source]
 	}
 	c := loop.ImplementationDraft("Implement the approved value behavior", "Real TestValue must pass without changing test code")
 	c.Workspace = t.TempDir()
