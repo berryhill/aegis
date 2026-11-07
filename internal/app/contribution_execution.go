@@ -91,7 +91,7 @@ func (s *Service) executeContributionInRun(ctx context.Context, subject core.Sub
 		ref := role.Charter
 		result.RequiredCharter = &ref
 		agent, e := s.FleetRepository.LatestAgentRevision(ctx, role.Agent.ID)
-		if e != nil || agent.Digest != role.Agent.Digest || agent.Charter != role.Charter || agent.Runtime != role.Runtime || agent.Lifecycle != registry.LifecycleEnabled || agent.Ownership.OwnerID != c.OwnerID {
+		if e != nil || agent.Revision != role.Agent.Revision || agent.Digest != role.Agent.Digest || agent.Charter != role.Charter || agent.Runtime != role.Runtime || agent.Lifecycle != registry.LifecycleEnabled || agent.Ownership.OwnerID != c.OwnerID {
 			return result, ErrDenied
 		}
 		verified, e := s.hasVerifiedReceipt(role.Charter.Digest)
@@ -246,7 +246,7 @@ func (s *Service) resolveContributionRole(ctx context.Context, subject core.Subj
 	}
 	expected := c.Roles[index]
 	agent, err := s.FleetRepository.LatestAgentRevision(ctx, expected.Agent.ID)
-	if err != nil || agent.Digest != expected.Agent.Digest || agent.Charter != expected.Charter || agent.Runtime != expected.Runtime || agent.Lifecycle != registry.LifecycleEnabled || agent.Ownership.OwnerID != c.OwnerID {
+	if err != nil || agent.Revision != expected.Agent.Revision || agent.Digest != expected.Agent.Digest || agent.Charter != expected.Charter || agent.Runtime != expected.Runtime || agent.Lifecycle != registry.LifecycleEnabled || agent.Ownership.OwnerID != c.OwnerID {
 		return orchestration.ContributionRole{}, deny
 	}
 	var continued *core.Session
@@ -349,7 +349,7 @@ func (a contributionRoleAdmission) CheckRuntimeAdmission(ctx context.Context, la
 		return decision, ErrDenied
 	}
 	agent, err := s.FleetRepository.LatestAgentRevision(ctx, expected.Agent.ID)
-	if err != nil || agent.Digest != expected.Agent.Digest || agent.Lifecycle != registry.LifecycleEnabled {
+	if err != nil || agent.Revision != expected.Agent.Revision || agent.Digest != expected.Agent.Digest || agent.Lifecycle != registry.LifecycleEnabled {
 		return decision, ErrDenied
 	}
 	session, err := s.GetSession(launch.AuthorityContext.SessionID)

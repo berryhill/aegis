@@ -275,6 +275,14 @@ proof are distinct tiers. See `docs/BOUNDED_CODING.md` for the source contract.
 
 ## Managed contribution source candidate
 
+Controller, builder and tester may reference the **same exact registered Agent**,
+any partially shared configuration, or distinct Agents. Role labels alone require
+no different Agent, charter or Hermes profile. Separate execution sessions and
+authorities remain required. Resolve each exact reference
+and admit its operation freshly; never union authority. Material authority/stanza
+changes still require a new mandate and clean session. Controller-verified checks
+remain one-shot, candidate-bound and source-read-only; model prose is not evidence.
+
 The managed contribution executor can retain a native candidate without declaring
 whole-contribution success or publication. Continue only the exact same durable
 run/contract/Queue attempt/base/workspace/branch at a recorded quiescent phase

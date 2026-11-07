@@ -45,6 +45,13 @@ vertical, not a denial of this additive source path. General scheduling,
 real-provider qualification and installed acceptance remain separate and unproven.
 
 
+Contribution role identity may be shared exactly, including one registered Agent
+for controller/builder/tester; role labels are not isolation or authority grants.
+Fresh per-operation admission, exact role/epoch/turn witnesses, source-read-only
+one-shot checks and canonical evidence joins enforce the boundary, not differing
+Agent/profile names. Separate role sessions and authorities remain required. Material authority/stanza change still requires a
+new mandate and clean session.
+
 Managed contribution tester model input is a content-free frozen identity;
 complete source remains controller-private. Explicitly admitted builder context
 can contain sensitive approved source: narrow filename/key rejection is not a

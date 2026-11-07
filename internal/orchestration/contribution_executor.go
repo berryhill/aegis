@@ -305,7 +305,7 @@ func validateContributionRole(r ContributionRole, c contribution.Contract, index
 	expected := c.Roles[index]
 	a := r.Agent
 	authority := r.Launch.AuthorityContext
-	if a.Digest != expected.Agent.Digest || a.AgentID != expected.Agent.ID || a.Charter != expected.Charter || a.Runtime != expected.Runtime || a.Ownership.OwnerID != c.OwnerID || authority.AgentID != a.Charter.ID || authority.CharterDigest != a.Charter.Digest || authority.SessionID == c.SessionID || len(authority.Authority.Tools) != 0 || len(authority.Authority.Credentials) != 0 || len(authority.Authority.Capabilities) != 0 {
+	if a.Revision != expected.Agent.Revision || a.Digest != expected.Agent.Digest || a.AgentID != expected.Agent.ID || a.Charter != expected.Charter || a.Runtime != expected.Runtime || a.Ownership.OwnerID != c.OwnerID || authority.AgentID != a.Charter.ID || authority.CharterDigest != a.Charter.Digest || authority.SessionID == c.SessionID || len(authority.Authority.Tools) != 0 || len(authority.Authority.Credentials) != 0 || len(authority.Authority.Capabilities) != 0 {
 		return errors.New("exact tool-free independent role required")
 	}
 	decision, err := r.Admission.CheckRuntimeAdmission(context.Background(), r.Launch, at)

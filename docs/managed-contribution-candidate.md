@@ -7,6 +7,36 @@ Production Git origin checks require exact canonical public GitHub HTTPS. The
 optional trusted fetch seam replaces transport only: origin and fetched base
 checks still execute. It is not model-selected or exposed in a Loop document.
 
+## Role identity and operation evidence
+
+Controller, builder and tester may use the same exact registered Agent reference,
+any partially shared combination, or distinct references. Identity equality is not
+authority equality: each role retains its exact Agent/charter/runtime binding,
+current owner, role/epoch and fresh effect admission. A role label alone imposes no
+Agent, charter or profile separation. Normal separate execution sessions, mandates,
+role authorities and runtime sessions remain mandatory. Material authority or stanza
+changes still require a new mandate and clean session. The normal managed resolver
+owns disposable session lifetimes; callers need not create another Agent or profile.
+
+The tester is an admitted one-shot, source-read-only check in a fresh separate
+session, not necessarily a different registered identity. Exact callback equality,
+current role admission, frozen source/policy, canonical turn witnesses and native
+observations remain required. Session substitution and prior-tester session replay
+deny; replacement still requires acknowledged quiescence and fresh authority.
+
+`TestContributionManagerApprovedNativeRepair` exercises one Agent in all roles through
+authenticated manager intake, actual role dispatch, native RED/repair/GREEN,
+exact acceptance evidence, delivery denials, replay and cancellation disposition,
+with ordinary separate sessions. `TestContributionSharedRoleAgentAdmission`
+exercises all three pair-shared configurations and distinct Agents through actual
+role resolution, session launch and fresh admission. Existing distinct-Agent
+regressions retain the expired-resume path.
+`TestManagedContributionSameAgentSeparateSessions` executes and reloads native
+evidence with shared Agent/charter and distinct session/authority/runtime/turn
+bindings; substitution negatives retain the session boundary. These use synthetic
+Hermes/provider and provisioning fixtures: they are NOT real-provider, GitHub merge
+or installed/live success.
+
 ## Sealed identity
 
 `head_commit` and `head_tree` identify the Git HEAD anchor, **not** a commit of
@@ -30,7 +60,7 @@ This deterministic role/transport fixture uses real Git linked-worktree creation
 real native builds and tests, and invokes the built candidate executable through
 an immutable required test. A two-file defect starts RED; the wrong first patch
 fails a frozen check; a second proposal from the same builder receives prior
-failure output and passes with a new tester identity. Drift checks cover source,
+failure output and passes with a new tester operation. Drift checks cover source,
 new/ignored files, mode, index, toolchain and executable substitution. Same-run
 reservation and restart replay are denied, and corrupt prior failure evidence
 makes readback fail closed.

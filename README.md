@@ -44,7 +44,10 @@ real-provider qualification and installed acceptance remain separate and unprove
 
 Source candidate: [managed contribution candidates](docs/managed-contribution-candidate.md)
 retain bounded native repair/check evidence, exact owned phase-boundary custody
-and content-free tester model input. Candidate acceptance is not GitHub delivery,
+and content-free tester model input. Contribution roles may share the same exact
+registered Agent (or only some roles); role labels require no different Hermes
+profile. Execution sessions remain separate. Fresh operation admission and one-stanza authority still apply.
+Candidate acceptance is not GitHub delivery,
 whole-contribution success, authority renewal or live-provider qualification.
 
 Doer v4 also supports opt-in [bounded repository CODING](docs/BOUNDED_CODING.md):

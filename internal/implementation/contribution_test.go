@@ -28,7 +28,12 @@ func TestManagedContributionProductiveDeliveryRepair(t *testing.T) {
 	testManagedContributionRepairAndCustody(t, true)
 }
 
-func testManagedContributionRepairAndCustody(t *testing.T, productive bool) {
+func TestManagedContributionSameAgentSeparateSessions(t *testing.T) {
+	testManagedContributionRepairAndCustody(t, false, true)
+}
+
+func testManagedContributionRepairAndCustody(t *testing.T, productive bool, shared ...bool) {
+	sharedAgent := len(shared) > 0 && shared[0]
 	ctx := context.Background()
 	kernel, c := fixture(t)
 	repo := c.Workspace
@@ -133,6 +138,11 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 			t.Fatal("unfrozen tester")
 		}
 		identity := roleIdentity(fmt.Sprintf("tester-%d", testers))
+		if sharedAgent {
+			builder := roleIdentity("builder")
+			identity.AgentDigest = builder.AgentDigest
+			identity.CharterDigest = builder.CharterDigest
+		}
 		return identity, execute(checkCtx, identity)
 	}
 	r, err := e.Run(ctx, "run", "contract", "attempt", base, c, policy)
@@ -206,6 +216,47 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 			t.Fatal("native export accepted missing immutable RED baseline")
 		}
 	})
+	for _, replay := range []string{"builder-session", "builder-authority", "builder-mandate", "builder-runtime", "prior-tester-session", "prior-tester-authority", "prior-tester-runtime"} {
+		t.Run("tester-replay-"+replay, func(t *testing.T) {
+			key := contributionKey("run")
+			original, _ := e.DB.Get(key)
+			defer e.DB.Put(key, original)
+			var changed ContributionRecord
+			if err := json.Unmarshal(original, &changed); err != nil {
+				t.Fatal(err)
+			}
+			switch replay {
+			case "builder-session":
+				changed.Passes[1].Tester.SessionID = changed.Passes[1].Candidate.Builder.SessionID
+			case "builder-authority":
+				changed.Passes[1].Tester.AuthorityID = changed.Passes[1].Candidate.Builder.AuthorityID
+			case "builder-mandate":
+				changed.Passes[1].Tester.MandateID = changed.Passes[1].Candidate.Builder.MandateID
+			case "builder-runtime":
+				changed.Passes[1].Tester.RuntimeSessionID = changed.Passes[1].Candidate.Builder.RuntimeSessionID
+			case "prior-tester-session":
+				changed.Passes[1].Tester.SessionID = changed.Passes[0].Tester.SessionID
+			case "prior-tester-authority":
+				changed.Passes[1].Tester.AuthorityID = changed.Passes[0].Tester.AuthorityID
+			case "prior-tester-runtime":
+				changed.Passes[1].Tester.RuntimeSessionID = changed.Passes[0].Tester.RuntimeSessionID
+			}
+			passKey := []byte(fmt.Sprintf("contribution/acceptance/%s/2", digest([]byte("run"))))
+			old, _ := e.DB.Get(passKey)
+			defer e.DB.Put(passKey, old)
+			wire, _ := json.Marshal(changed.Passes[1])
+			if err := e.DB.Put(passKey, wire); err != nil {
+				t.Fatal(err)
+			}
+			wire, _ = json.Marshal(changed)
+			if err := e.DB.Put(key, wire); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.Read("run"); err == nil {
+				t.Fatal("replayed check operation accepted")
+			}
+		})
+	}
 	// The contribution verifier reloads the actual producer records and native
 	for _, mutation := range []string{"immutable-missing", "output-missing", "wrong-tests", "fake-red", "baseline-criteria", "baseline-outcome", "pass-outcome"} {
 		t.Run("baseline-proof-"+mutation, func(t *testing.T) {

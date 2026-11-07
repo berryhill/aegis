@@ -339,8 +339,15 @@ secrets out. A dirty development candidate needs full inventory, not a false cle
 HEAD claim. Before commit and publication, bind accepted inventory/tree to actual
 commit and repeat invalidated proof. Test before release.
 
-Tester is a fresh distinct session/runtime with exact Agent/charter/authority,
-no product-code editing rights, and only isolated test/evidence writes. Verify
+Tester is a fresh distinct session/runtime check operation with exact Agent/charter/authority,
+no product-code editing rights, and only isolated test/evidence writes. Controller,
+builder and tester may name the same exact registered Agent, partially shared
+Agents or distinct Agents. Role labels alone require no different registered
+identity or Hermes profile. Normal separate execution sessions and role authorities remain required.
+Fresh authority admission remains mandatory for every effect;
+a material authority or stanza change still requires a new mandate and clean
+session. Engineering independent acceptance uses a fresh worker; it does not impose
+a product-role identity constraint. Verify
 candidate and executable before **and after** testing. Exercise applicable real
 CLI/API/browser/denial/persistence/restart/recovery journeys. Report criterion,
 commands, exit, environment, expected/observed, evidence and limitations. PASS,

@@ -45,7 +45,7 @@ func (s *Service) validateContributionAgents(ctx context.Context, subject core.S
 	}
 	for _, ref := range []reference.RevisionRef{r.Contribution.Controller, r.Contribution.Builder, r.Contribution.Tester} {
 		a, e := s.FleetRepository.LatestAgentRevision(ctx, ref.ID)
-		if e != nil || a.Digest != ref.Digest || a.Lifecycle != registry.LifecycleEnabled || a.Ownership.OwnerID != subject.PrincipalID {
+		if e != nil || a.Revision != ref.Revision || a.Digest != ref.Digest || a.Lifecycle != registry.LifecycleEnabled || a.Ownership.OwnerID != subject.PrincipalID {
 			return ErrDenied
 		}
 	}
@@ -155,7 +155,7 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 	roles := []contribution.RoleBinding{}
 	for _, ref := range []reference.RevisionRef{p.Controller, p.Builder, p.Tester} {
 		a, e := s.FleetRepository.LatestAgentRevision(ctx, ref.ID)
-		if e != nil || a.Digest != ref.Digest || a.Lifecycle != registry.LifecycleEnabled {
+		if e != nil || a.Revision != ref.Revision || a.Digest != ref.Digest || a.Lifecycle != registry.LifecycleEnabled {
 			return contribution.Contract{}, ErrDenied
 		}
 		roles = append(roles, contribution.RoleBinding{Agent: ref, Charter: a.Charter, Runtime: a.Runtime})
