@@ -35,7 +35,9 @@ import (
 // Deterministic protocol qualification, not real-provider proof.
 func TestContributionManagerApprovedNativeRepair(t *testing.T) {
 	scheduleContributionNativeJourney(t)
-	contributionManagerNativeRepair(t, false, false, false, false, true)
+	// Exercise one registered Agent in all roles in the existing bounded native
+	// journey. Other scheduled journeys retain distinct-Agent coverage.
+	contributionManagerNativeRepairWithRoles(t, [3]int{0, 0, 0}, false, false, false, false, true)
 }
 func TestContributionDeliveryJointNative(t *testing.T) {
 	scheduleContributionNativeJourney(t)

@@ -24,7 +24,7 @@ current role admission, frozen source/policy, canonical turn witnesses and nativ
 observations remain required. Session substitution and prior-tester session replay
 deny; replacement still requires acknowledged quiescence and fresh authority.
 
-`TestContributionSharedRoleAgents` exercises one Agent in all roles through
+`TestContributionManagerApprovedNativeRepair` exercises one Agent in all roles through
 authenticated manager intake, actual role dispatch, native RED/repair/GREEN,
 exact acceptance evidence, delivery denials, replay and cancellation disposition,
 with ordinary separate sessions. `TestContributionSharedRoleAgentAdmission`
