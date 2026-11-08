@@ -96,12 +96,17 @@
         "internal/command/manager.go",
         "internal/command/manager_model.go",
         "internal/command/manager_certify.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/api/presentation_recovery.go",
+        "internal/console/presentation_review.go"
       ],
       "tests": [
         "internal/command/manager_test.go",
         "internal/command/manager_model_test.go",
-        "internal/api/manager_gateway_test.go"
+        "internal/api/manager_gateway_test.go",
+        "internal/api/presentation_browser_test.go",
+        "internal/api/presentation_recovery_test.go",
+        "internal/console/presentation_review_test.go"
       ],
       "cli": [
         "aegis",
@@ -125,6 +130,10 @@
         "POST /console/api/commands/execute",
         "GET /console/api/state",
         "GET /console/reauthenticate",
+        "GET /console/presentation-error",
+        "GET /console/presentation/:token",
+        "POST /console/presentation/:token/reauthenticate",
+        "POST /console/presentation/:token/cancel",
         "POST /console/login",
         "POST /console/password",
         "DELETE /console/session",

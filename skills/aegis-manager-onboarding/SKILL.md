@@ -49,6 +49,24 @@ Check installed help before guidance. The compatible command surface is:
 
 The gateway command alias `aegis service` is accepted, but use the canonical `aegis gateway` spelling. Defer manager conversation syntax and consequences to the built-in typed `/help`; do not reproduce or extend the slash registry. If a command is absent from installed help, label it unavailable rather than inventing it.
 
+## Dashboard presentation-action reauthentication
+
+Browser-only Loop Archive/Restore and terminal Queue Archive/Unarchive use the
+configured live dashboard action policy. A retained exact presentation action may
+move to `GET /console/presentation/:token` when fresh sign-in is required; the
+human alone operates its password and confirmation controls. Its `/reauthenticate`
+and `/cancel` POST forms are not agent approval APIs or CLI adapters. Custody is
+short-lived and cookie/CSRF-bound, not authority; successful login returns to exact
+review without executing. Explicit confirmation repeats current ownership, target,
+freshness, origin, new CSRF and original CAS checks. A stale record is not retargeted.
+Cancellation, expiry and consumed-token replay do not apply an action.
+
+`GET /console/presentation-error` is a bounded browser recovery page distinguishing
+invalid, unauthenticated, denied, conflict and unavailable outcomes. Unknown
+completion requires readback, not blind retry. Do not operate these human controls,
+extract browser proof, widen lifetimes or substitute privileged credentials. These
+routes add no runtime, provisioning, credential or native-host authority.
+
 ## Classify from authoritative artifacts
 
 Run the requested typed inspection or onboarding command and preserve its exact state, reason, checks, and `next_command`. Do not collapse these conditions:
