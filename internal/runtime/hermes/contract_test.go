@@ -28,6 +28,16 @@ func TestParseVersionOutputAcceptsDecoratedHermesVersion(t *testing.T) {
 	if installed.Version != "0.18.2" || installed.Installation != "/home/operator/.hermes/hermes-agent" {
 		t.Fatalf("unexpected parsed installation: %#v", installed)
 	}
+
+	channelOutput := "Hermes Agent v0.23.0+1339.gacdc8f1 (2026.9.24) · stable · local acdc8f1ba65c\n" +
+		"Install directory: /home/silas/.hermes/hermes-agent\n"
+	channelInstalled, err := ParseVersionOutput([]byte(channelOutput))
+	if err != nil {
+		t.Fatalf("channel-decorated Hermes output rejected: %v", err)
+	}
+	if channelInstalled.Version != "0.23.0" || channelInstalled.Installation != "/home/silas/.hermes/hermes-agent" {
+		t.Fatalf("unexpected parsed channel installation: %#v", channelInstalled)
+	}
 }
 
 func TestParseVersionOutputAcceptsBuildQualifiedHermesVersion(t *testing.T) {
