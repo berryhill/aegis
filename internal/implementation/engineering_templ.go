@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -36,6 +37,21 @@ func selectedTemplPairs(paths []string) []string {
 	return out
 }
 func templOutput(p string) string { return strings.TrimSuffix(p, ".templ") + "_templ.go" }
+
+// Match go:generate's package-directory convention: templ embeds its -f value
+// in generated error metadata. Keep module discovery in the private source tree
+// and the caller's pinned offline environment, but select only this basename.
+func scopedTemplCommand(driver, workspace, input string, env []string, check bool) *exec.Cmd {
+	args := []string{"run", templTool, "generate", "-f", filepath.Base(input)}
+	if check {
+		args = append(args, "-check")
+	}
+	args = append(args, "-include-timestamp=false", "-include-version=true")
+	cmd := exec.Command(driver, args...)
+	cmd.Dir = filepath.Join(workspace, filepath.Dir(input))
+	cmd.Env = append([]string(nil), env...)
+	return cmd
+}
 
 func validateTemplSelection(c loop.VerifiedImplementation, p loop.ContributionExecutionPolicy) error {
 	pairs := selectedTemplPairs(c.WritableFiles)
@@ -106,8 +122,7 @@ func checkTemplConsistency(ctx context.Context, driver, workspace string, env []
 		if !loop.SafeRepositoryContextPath(input) || files[input] == nil || files[templOutput(input)] == nil {
 			return errTemplConsistency
 		}
-		cmd := exec.Command(driver, "run", templTool, "generate", "-f", input, "-check", "-include-timestamp=false", "-include-version=true")
-		cmd.Dir, cmd.Env = workspace, append([]string(nil), env...)
+		cmd := scopedTemplCommand(driver, workspace, input, env, true)
 		var output, diagnostic boundedOutput
 		cmd.Stdout, cmd.Stderr = &output, &diagnostic
 		if err := run(ctx, cmd); err != nil {

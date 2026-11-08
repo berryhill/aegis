@@ -3,7 +3,7 @@ package implementation
 import (
 	"context"
 	"errors"
- "fmt"
+	"fmt"
 	"os"
 
 	"github.com/berryhill/aegis/internal/loop"
@@ -27,7 +27,7 @@ func resolveEngineeringHunks(ctx context.Context, c loop.VerifiedImplementation,
 	}
 	defer root.Close()
 	for i, e := range result {
-  reject := func(stage string) error {return fmt.Errorf("%w: %s",deny,stage)}
+		reject := func(stage string) error { return fmt.Errorf("%w: %s", deny, stage) }
 		if len(e.Hunks) == 0 {
 			if e.PreimageDigest != "" || e.PreimageMode != 0 {
 				return nil, reject("orphan-preimage")
@@ -48,7 +48,9 @@ func resolveEngineeringHunks(ctx context.Context, c loop.VerifiedImplementation,
 		if err != nil || !info.Mode().IsRegular() || info.Size() > maxBytes {
 			return nil, reject("type-or-size")
 		}
-        if uint32(info.Mode().Perm()) != e.PreimageMode { return nil, reject("mode") }
+		if uint32(info.Mode().Perm()) != e.PreimageMode {
+			return nil, reject("mode")
+		}
 		original, err := readRepositoryContextFile(root, e.Path, info.Size())
 		if err != nil || digest(original) != e.PreimageDigest {
 			return nil, reject("digest")

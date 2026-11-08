@@ -42,8 +42,7 @@ func generateTemplPairs(ctx context.Context, driver, workspace string, env []str
 		if err := admit(ctx, "generate:"+input+"->"+templOutput(input)); err != nil {
 			return err
 		}
-		cmd := exec.Command(driver, "run", templTool, "generate", "-f", input, "-include-timestamp=false", "-include-version=true")
-		cmd.Dir, cmd.Env = workspace, append([]string(nil), env...)
+		cmd := scopedTemplCommand(driver, workspace, input, env, false)
 		var output, diagnostic boundedOutput
 		cmd.Stdout, cmd.Stderr = &output, &diagnostic
 		if err := run(ctx, cmd); err != nil {

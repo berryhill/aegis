@@ -49,23 +49,29 @@ func TestEngineeringTemplActualRenderedConsistency(t *testing.T) {
 		must(e)
 		write(p, b)
 	}
-	write("web/view.templ", []byte("package fixture\n\ntempl View() {\n <p>old</p>\n}\n"))
+	write("web/view.templ", []byte("package fixture\n\ntempl View() {\n <p>{ string(\"old\") }</p>\n}\n"))
 	generate := func() []byte {
 		t.Helper()
-		cmd := exec.Command(driver, "run", templTool, "generate", "-f", "web/view.templ", "-stdout", "-include-timestamp=false", "-include-version=true")
-		cmd.Dir = workspace
+		cmd := exec.Command(driver, "run", templTool, "generate", "-f", "view.templ", "-stdout", "-include-timestamp=false", "-include-version=true")
+		cmd.Dir = filepath.Join(workspace, "web")
 		cmd.Env = env
 		out, e := cmd.Output()
 		must(e)
 		return out
 	}
 	old := generate()
+	if !bytes.Contains(old, []byte("FileName: `view.templ`")) || bytes.Contains(old, []byte("FileName: `web/view.templ`")) {
+		t.Fatal("fixture does not exercise canonical basename error metadata")
+	}
 	write("web/view_templ.go", old)
-	write("web/view.templ", []byte("package fixture\n\ntempl View() {\n <p>NEW_REQUIRED</p>\n}\n"))
-	write("web/render_test.go", []byte("package fixture\nimport (\"testing\";\"context\";\"bytes\";\"strings\")\nfunc TestActualRender(t *testing.T){var b bytes.Buffer;if e:=View().Render(context.Background(),&b);e!=nil{t.Fatal(e)};if !strings.Contains(b.String(),\"NEW_REQUIRED\"){t.Fatal(\"stale rendered behavior\")}}\n"))
+	run := func(_ context.Context, c *exec.Cmd) error { return c.Run() }
 	source, err := Inventory(ctx, workspace)
 	must(err)
-	run := func(_ context.Context, c *exec.Cmd) error { return c.Run() }
+	must(checkTemplConsistency(ctx, driver, workspace, env, source, []string{"web/view.templ"}, run))
+	write("web/view.templ", []byte("package fixture\n\ntempl View() {\n <p>{ string(\"NEW_REQUIRED\") }</p>\n}\n"))
+	write("web/render_test.go", []byte("package fixture\nimport (\"testing\";\"context\";\"bytes\";\"strings\")\nfunc TestActualRender(t *testing.T){var b bytes.Buffer;if e:=View().Render(context.Background(),&b);e!=nil{t.Fatal(e)};if !strings.Contains(b.String(),\"NEW_REQUIRED\"){t.Fatal(\"stale rendered behavior\")}}\n"))
+	source, err = Inventory(ctx, workspace)
+	must(err)
 	if e := checkTemplConsistency(ctx, driver, workspace, env, source, []string{"web/view.templ"}, run); !errors.Is(e, errTemplConsistency) {
 		t.Fatalf("stale generated source accepted: %v", e)
 	}
@@ -78,7 +84,34 @@ func TestEngineeringTemplActualRenderedConsistency(t *testing.T) {
 	if out, e := render(); e == nil || !bytes.Contains(out, []byte("stale rendered behavior")) {
 		t.Fatalf("actual stale render did not fail: %v %s", e, out)
 	}
-	write("web/view_templ.go", generate())
+	var admitted []string
+	must(generateTemplPairs(ctx, driver, workspace, env, source, []string{"web/view.templ"}, run, func(_ context.Context, effect string) error {
+		admitted = append(admitted, effect)
+		return nil
+	}))
+	if len(admitted) != 1 || admitted[0] != "generate:web/view.templ->web/view_templ.go" {
+		t.Fatalf("generation authority target drift: %v", admitted)
+	}
+	generated, e := os.ReadFile(filepath.Join(workspace, "web/view_templ.go"))
+	must(e)
+	if !bytes.Contains(generated, []byte("FileName: `view.templ`")) || bytes.Contains(generated, []byte("FileName: `web/view.templ`")) {
+		t.Fatal("product generation did not preserve canonical basename error metadata")
+	}
+	// A metadata-only path drift must fail the exact comparison, not merely
+	// compile/render successfully. The checker must leave the rejected bytes alone.
+	wrong := bytes.ReplaceAll(generated, []byte("FileName: `view.templ`"), []byte("FileName: `web/view.templ`"))
+	write("web/view_templ.go", wrong)
+	source, err = Inventory(ctx, workspace)
+	must(err)
+	if e := checkTemplConsistency(ctx, driver, workspace, env, source, []string{"web/view.templ"}, run); !errors.Is(e, errTemplConsistency) {
+		t.Fatalf("root-prefixed metadata accepted: %v", e)
+	}
+	rejected, e := Inventory(ctx, workspace)
+	must(e)
+	if rejected.Digest != source.Digest {
+		t.Fatal("failed read-only consistency changed source")
+	}
+	write("web/view_templ.go", generated)
 	source, err = Inventory(ctx, workspace)
 	must(err)
 	must(checkTemplConsistency(ctx, driver, workspace, env, source, []string{"web/view.templ"}, run))

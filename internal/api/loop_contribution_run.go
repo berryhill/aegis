@@ -9,8 +9,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/console"
-	"github.com/berryhill/aegis/internal/contribution"
-	"github.com/berryhill/aegis/internal/reference"
+
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -49,7 +48,7 @@ func decodeContributionRunForm(r *http.Request) (contributionRunForm, error) {
 	if err != nil || out.Revision == 0 || out.CSRF == "" || out.Digest == "" {
 		return out, deny
 	}
-	if _, err = contribution.ParseIssueURL(out.Issue); err != nil {
+	if err = app.ValidateContributionIssueURL(out.Issue); err != nil {
 		return out, deny
 	}
 	switch out.Action {
@@ -94,7 +93,10 @@ func consoleContributionRunHandler(svc *app.Service, manager *console.Manager) e
 		if lv.Revision.Digest != f.Digest || lv.Revision.Contribution == nil {
 			return app.ErrDenied
 		}
-		selected := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: lv.Revision.LoopID, Revision: f.Revision, Digest: f.Digest}
+		selected, err := app.NewContributionLoopReference(lv.Revision.LoopID, f.Revision, f.Digest)
+		if err != nil {
+			return app.ErrDenied
+		}
 		key := app.ContributionIntentKey(selected, f.Issue, "")
 		outcome, reason, queueID := "observed", "durable_contribution_readback", ""
 		switch f.Action {
@@ -152,8 +154,8 @@ func consoleContributionRunHandler(svc *app.Service, manager *console.Manager) e
 			}
 			outcome, reason = "blocked", "contribution_preparation_held"
 			run.Delivery, run.Stopped = status.Control.Delivery, status.Control.Stop
-			if status.Decision != nil {
-				run.Decision = contributionDecisionProjection(*status.Decision, svc.Now())
+			if decision := status.DecisionView(); decision != nil {
+				run.Decision = contributionDecisionProjection(*decision, svc.Now())
 			}
 		}
 		if control, e := svc.ReadContributionControlAs(ctx, sub, key); e == nil {

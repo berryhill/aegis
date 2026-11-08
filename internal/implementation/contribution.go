@@ -719,7 +719,9 @@ func (e *ManagedContribution) nativeOperation(ctx context.Context, c loop.Verifi
 			if _, err = e.verifyToolchain(ctx); err != nil {
 				return nil, err
 			}
-            if _, err = dependencyBundleBytes(*e.dependencies); err != nil { return nil,err }
+			if _, err = dependencyBundleBytes(*e.dependencies); err != nil {
+				return nil, err
+			}
 			return json.Marshal(edits)
 		}
 		if err := checkTemplConsistency(ctx, e.GoBinary, workspace, cmd.Env, source, pairs, run); err != nil {

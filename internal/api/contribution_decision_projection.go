@@ -1,14 +1,13 @@
 package api
 
 import (
-	"fmt"
-	"github.com/berryhill/aegis/internal/contribution"
+	"github.com/berryhill/aegis/internal/app"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"time"
 )
 
-func contributionDecisionProjection(d contribution.Decision, now time.Time) *consoleweb.ContributionDecisionModel {
-	m := &consoleweb.ContributionDecisionModel{Purpose: d.Stage, Role: d.Role, Agent: fmt.Sprintf("%s revision %d · %s", d.Binding.Agent.ID, d.Binding.Agent.Revision, d.Binding.Agent.Digest), Charter: fmt.Sprintf("%s revision %d · %s", d.Binding.Charter.ID, d.Binding.Charter.Revision, d.Binding.Charter.Digest), Plan: d.PlanID, PlanDigest: d.PlanDigest, Candidate: d.Candidate, Contract: d.ContractDigest, Status: d.Status, Expires: d.ExpiresAt.UTC().Format(time.RFC3339)}
+func contributionDecisionProjection(d app.ContributionPreparationDecisionView, now time.Time) *consoleweb.ContributionDecisionModel {
+	m := &consoleweb.ContributionDecisionModel{Purpose: d.Stage, Role: d.Role, Agent: d.Agent, Charter: d.Charter, Plan: d.PlanID, PlanDigest: d.PlanDigest, Candidate: d.Candidate, Contract: d.ContractDigest, Status: d.Status, Expires: d.ExpiresAt.UTC().Format(time.RFC3339)}
 	switch d.Status {
 	case "unavailable":
 		m.Message = "Protected decision delivery unavailable. No human approval request was delivered; this is not a human denial or pending approval. Restore the independently authenticated protected setup transport before continuing. Resume does not repeat this retained decision."

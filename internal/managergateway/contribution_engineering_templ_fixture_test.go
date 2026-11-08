@@ -18,6 +18,21 @@ func hugeAssetExpected(path, original string) string {
 	}
 	return "Issue-specific reviewed asset update.\n" + original
 }
+
+// Exercise fixture definition separately from the expensive joined journey:
+// a product-only compiler cache does not contain the pinned templ tool closure.
+func TestEngineeringTemplFixtureCanonicalOfflineGeneration(t *testing.T) {
+	files := map[string]string{
+		"web/feature.templ": "package web\n\ntempl Feature() {\n <p>{ string(\"before\") }</p>\n}\n",
+		"main_test.go":      "package main\nimport \"testing\"\nfunc TestBehavior(t *testing.T){}\n",
+	}
+	prepareHugeTemplFixture(t, t.TempDir(), "", files)
+	generated := files["web/feature_templ.go"]
+	if !strings.Contains(generated, "FileName: `feature.templ`") || strings.Contains(generated, "FileName: `web/feature.templ`") {
+		t.Fatal("fixture generation does not match package-directory metadata")
+	}
+}
+
 func hugeTemplBundle(t *testing.T, root string) *loop.DependencyBundle {
 	t.Helper()
 	repository, e := filepath.Abs("../..")
@@ -76,8 +91,8 @@ func prepareHugeTemplFixture(t *testing.T, root, repo string, files map[string]s
 	if e != nil {
 		t.Fatal(e)
 	}
-	cmd = exec.Command(driver, "run", "github.com/a-h/templ/cmd/templ", "generate", "-f", "web/feature.templ", "-include-timestamp=false", "-include-version=true")
-	cmd.Dir = seed
+	cmd = exec.Command(driver, "run", "github.com/a-h/templ/cmd/templ", "generate", "-f", "feature.templ", "-include-timestamp=false", "-include-version=true")
+	cmd.Dir = filepath.Join(seed, "web")
 	cmd.Env = append(os.Environ(), "GOPROXY=file://"+strings.TrimSpace(string(cache))+"/cache/download", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off", "GOMODCACHE="+filepath.Join(root, "seed-modules"), "GOFLAGS=-mod=readonly -modcacherw -p=1 -buildvcs=false", "GOMAXPROCS=2")
 	if out, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("actual initial templ: %s %v", out, e)
