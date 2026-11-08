@@ -95,6 +95,8 @@ type AuthenticationModel struct {
 }
 
 type SurfaceModel struct {
+	// ExactLoopRecords retains immutable revision inspection outside discovery.
+	ExactLoopRecords                         []RecordModel
 	QueueVisibility, QueuePreferenceRevision string
 	Domain                                   string
 	CSRF                                     string
@@ -242,6 +244,9 @@ type ContributionDecisionModel struct {
 }
 
 type LoopDetailModel struct {
+	PublicationRevision                                                    uint64
+	StableID, ActiveVersion, LogicalLifecycle                              string
+	RevisionHistory                                                        []LinkModel
 	HumanTitle                                                             string
 	TargetID, Digest, PreviousDigest, PublisherID, ExpectedLifecycleDigest string
 	EntryStepID, Validation, ValidationDigest                              string

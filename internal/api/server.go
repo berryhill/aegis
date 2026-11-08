@@ -570,6 +570,11 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		}
 		if domain == consoleLoops || domain == consoleGraphs {
 			if domain == consoleLoops {
+				if key := c.QueryParam("record_key"); key != "" {
+					if err = selectConsoleRecord(&model, key); err != nil {
+						return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Loop revision")
+					}
+				}
 				if err = filterConsoleLoopAvailability(&model, c.QueryParam("availability"), c.QueryParam("record_key")); err != nil {
 					return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid availability filter")
 				}
@@ -1435,7 +1440,8 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 	}
 	e.POST("/console/loops/contribution", consoleContributionRunHandler(svc, consoleManager))
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
-	e.POST("/console/loops/availability", consoleLoopAvailabilityHandler(svc, consoleManager))
+	registerPresentationRecovery(e, svc, consoleManager)
+	e.POST("/console/loops/availability", presentationHandler(svc, consoleManager, "/console/loops", consoleLoopAvailabilityHandler(svc, consoleManager)))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput

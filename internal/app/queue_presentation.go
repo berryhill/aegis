@@ -29,7 +29,7 @@ type SetQueuePreferencesInput struct {
 func (s *Service) queuePresentationRepository(subject core.Subject, mutation bool) (fleet.QueuePresentationRepository, error) {
 	var err error
 	if mutation {
-		err = s.requireFleetPrincipal(subject)
+		err = s.requireFleetDashboardPrincipal(subject)
 	} else {
 		err = s.requireFleetPrincipalIdentity(subject)
 	}

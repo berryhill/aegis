@@ -33,7 +33,7 @@ def collection(page, state, query=""):
     keys = page.locator('a[data-detail-link][data-record-key]').evaluate_all(
         "links => links.map(link => link.dataset.recordKey)"
     )
-    expected = (["filter-archived:1", "filter-archived:2"]
+    expected = (["filter-archived:2"]
                 if state == "archived" else ["filter-published:1"])
     assert keys == expected, keys
     assert page.locator("[data-loop-workspace]").count() == 0
@@ -147,7 +147,7 @@ with sync_playwright() as playwright:
                     page.locator('a[data-record-key="filter-archived:2"]').click()
                     expect(page.locator("[data-loop-workspace]")).to_be_visible()
                     assert parse_qs(urlsplit(page.url).query)["availability"] == ["archived"]
-                    expect(page.locator("[data-loop-workspace]").get_by_role("button", name="Restore", exact=True)).to_be_visible()
+                    assert page.locator("[data-loop-workspace] form[action^='/console/loops/availability']").count() == 0
                     page.locator("#close-inspector").click()
                     collection(page, "archived", "filter-")
                     assert "record_key" not in parse_qs(urlsplit(page.url).query)
@@ -167,21 +167,20 @@ with sync_playwright() as playwright:
                     collection(page, "archived", "filter-")
                     state = context.storage_state()
                     assert not mutations, mutations
-                    # Real row clicks: restoring r1 must also restore its r2
-                    # successor, because availability is logical-Loop scoped.
+                    # Real logical row clicks restore every immutable revision.
                     before = page.locator('#surface-list form').evaluate_all(
                         "forms => forms.map(form => [form.querySelector('[name=revision]').value, form.querySelector('[name=digest]').value])")
                     durable_before = exact_readback()
                     lifecycle_phase = True
                     row = page.locator("#surface-list li").filter(
-                        has=page.locator('a[data-record-key="filter-archived:1"]'))
+                        has=page.locator('a[data-record-key="filter-archived:2"]'))
                     row.get_by_role("button", name="Restore", exact=True).click()
                     expect(page).to_have_url(BASE + "/console/loops?availability=published&record_key=filter-archived%3A2")
                     expect(page.locator("[data-loop-workspace]")).to_be_visible()
                     page.locator("#close-inspector").click()
                     keys = page.locator('a[data-detail-link][data-record-key]').evaluate_all(
                         "links => links.map(link => link.dataset.recordKey)")
-                    assert sorted(keys) == ["filter-archived:1", "filter-archived:2", "filter-published:1"], keys
+                    assert sorted(keys) == ["filter-archived:2", "filter-published:1"], keys
                     row = page.locator("#surface-list li").filter(
                         has=page.locator('a[data-record-key="filter-archived:2"]'))
                     row.get_by_role("button", name="Archive", exact=True).click()

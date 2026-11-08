@@ -495,6 +495,9 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			}
 		}
 	}
+	if domain == consoleLoops {
+		groupConsoleLoops(&model)
+	}
 	return model, nil
 }
 
@@ -610,11 +613,14 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 
 	detail := &consoleweb.LoopDetailModel{
-		HumanTitle:   revision.Name,
-		DoerV4:       doerV4,
-		DoerV5:       doerV5,
-		Contribution: revision.Contribution != nil,
-		TargetID:     loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		PublicationRevision: revision.Revision,
+		StableID:            revision.LoopID, LogicalLifecycle: string(view.Lifecycle.State),
+		ActiveVersion: consoleLoopActiveVersion(view),
+		HumanTitle:    revision.Name,
+		DoerV4:        doerV4,
+		DoerV5:        doerV5,
+		Contribution:  revision.Contribution != nil,
+		TargetID:      loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
 		CanRetire:     view.Lifecycle.State != "retired",
@@ -1974,7 +1980,7 @@ func paginateConsoleCollection(model *consoleweb.SurfaceModel, rawPage, recordKe
 	}
 	// Queue history may intentionally be absent from the saved collection view.
 	// Its already-authorized inspector must not change the collection's page.
-	exactQueueDetail := model.Domain == string(consoleQueue) && model.InspectorOpen && model.Inspector != nil && model.Inspector.Key == recordKey
+	exactQueueDetail := (model.Domain == string(consoleQueue) || model.Domain == string(consoleLoops)) && model.InspectorOpen && model.Inspector != nil && model.Inspector.Key == recordKey
 	if recordKey != "" && !exactQueueDetail {
 		found := -1
 		for index := range model.Records {
@@ -2298,6 +2304,15 @@ func fallback(value, replacement string) string {
 }
 
 func selectConsoleRecord(model *consoleweb.SurfaceModel, raw string) error {
+	if model.Domain == string(consoleLoops) {
+		for index := range model.ExactLoopRecords {
+			if model.ExactLoopRecords[index].Key == raw {
+				model.Inspector = &model.ExactLoopRecords[index]
+				model.InspectorOpen = true
+				return nil
+			}
+		}
+	}
 	if model.Domain == string(consoleQueue) && model.InspectorOpen && model.Inspector != nil && model.Inspector.Key == raw {
 		return nil
 	}

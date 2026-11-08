@@ -1,0 +1,16 @@
+package consoleweb
+
+import "fmt"
+
+templ LoopRevisionHistory(record *RecordModel) {
+ if len(record.Loop.RevisionHistory) > 0 {
+  <details class="loop-revision-history"><summary>{ fmt.Sprintf("Revision history · %d immutable revisions", len(record.Loop.RevisionHistory)) }</summary>
+   <p>Publishing an update to this stable Loop ID adds a revision, not another logical Loop. Each link opens its exact diagram, validation and publication provenance.</p>
+   <ul>
+    for _, revision := range record.Loop.RevisionHistory {
+     <li><a href={ revision.URL }>{ revision.Label }</a><p>{ revision.Detail }</p></li>
+    }
+   </ul>
+  </details>
+ }
+}

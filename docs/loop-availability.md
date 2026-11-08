@@ -77,12 +77,19 @@ owner admission and replay checks remain mandatory.
 
 ## Console
 
-The Loops Console offers Published and Archived discovery views, with direct
-Archive/Restore actions. These reuse authenticated same-origin CSRF-protected
+The Loops Console offers Published and Archived discovery views with one entry
+per logical Loop ID, nested exact-revision history, and separate latest-publication
+and active-revision information. Archive/Restore controls belong to that logical
+entry, not its revision rows. Their explanation states that discovery changes for
+all revisions, history is preserved, and execution is not stopped. See
+[logical Loop discovery](LOOP_DISCOVERY.md). These reuse authenticated same-origin CSRF-protected
 forms and server-derived owning-Agent context; they do not introduce a draft,
 new setup journey or runtime prerequisite. Exact historical selection remains
 readable regardless of its discovery view. Restore does not imply active lifecycle
 or run readiness.
+Signed-in authentication failures and retained exact-action review are described
+in [dashboard Archive recovery](DASHBOARD_ARCHIVE_RECOVERY.md). No configured
+authentication lifetime, ownership, origin/CSRF or CAS check is relaxed.
 
 ## Evidence and limits
 

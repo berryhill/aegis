@@ -67,17 +67,19 @@ type reviewReceipt struct {
 }
 
 type Manager struct {
-	mu            sync.Mutex
-	rotationMu    sync.Mutex
-	origin        *url.URL
-	config        Config
-	now           func() time.Time
-	sessions      map[[32]byte]session
-	loginFailures map[string][]time.Time
-	loginInFlight map[string]int
-	generation    uint64
-	receipts      map[[32]byte]reviewReceipt
-	pending       map[[32]byte][32]byte
+	mu                          sync.Mutex
+	rotationMu                  sync.Mutex
+	origin                      *url.URL
+	config                      Config
+	now                         func() time.Time
+	sessions                    map[[32]byte]session
+	loginFailures               map[string][]time.Time
+	loginInFlight               map[string]int
+	generation                  uint64
+	receipts                    map[[32]byte]reviewReceipt
+	pending                     map[[32]byte][32]byte
+	presentation                map[[32]byte]PresentationReview
+	expiredPresentationSessions map[[32]byte]session
 }
 
 func New(config Config, now func() time.Time) (*Manager, error) {
@@ -511,6 +513,12 @@ func (m *Manager) RevokeSessionValue(value string) {
 		delete(m.pending, digest)
 	}
 	delete(m.sessions, digest)
+	delete(m.expiredPresentationSessions, digest)
+	for key, value := range m.presentation {
+		if value.session == digest {
+			delete(m.presentation, key)
+		}
+	}
 	m.mu.Unlock()
 }
 
@@ -586,6 +594,7 @@ func (m *Manager) deleteReceipt(key [32]byte) {
 }
 
 func (m *Manager) prune(now time.Time) {
+	m.prunePresentation(now)
 	for key, value := range m.sessions {
 		if !now.Before(value.expires) || !now.Before(value.subject.ExpiresAt) {
 			if receipt, ok := m.pending[key]; ok {
