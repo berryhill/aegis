@@ -6,6 +6,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Fix signed-in Loop and terminal Queue Archive controls using the existing live
+  dashboard action policy, without changing authentication lifetimes or checks.
+  Expired action authentication retains an exact bounded presentation action for
+  explicit password reauthentication and review, never automatic replay. Browser
+  denial/conflict/unavailable paths provide safe recovery navigation. See
+  [dashboard Archive recovery](docs/DASHBOARD_ARCHIVE_RECOVERY.md).
+
 - Console Loop discovery now counts and lists stable logical Loops once in both
   Published and Archived, with authored names, latest publication, active revision
   and immutable revision-history links. Archive/Restore is a collection-level

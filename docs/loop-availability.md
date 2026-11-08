@@ -87,6 +87,9 @@ forms and server-derived owning-Agent context; they do not introduce a draft,
 new setup journey or runtime prerequisite. Exact historical selection remains
 readable regardless of its discovery view. Restore does not imply active lifecycle
 or run readiness.
+Signed-in authentication failures and retained exact-action review are described
+in [dashboard Archive recovery](DASHBOARD_ARCHIVE_RECOVERY.md). No configured
+authentication lifetime, ownership, origin/CSRF or CAS check is relaxed.
 
 ## Evidence and limits
 

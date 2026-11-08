@@ -1439,7 +1439,8 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		composed(doerPortal)
 	}
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
-	e.POST("/console/loops/availability", consoleLoopAvailabilityHandler(svc, consoleManager))
+	registerPresentationRecovery(e, svc, consoleManager)
+	e.POST("/console/loops/availability", presentationHandler(svc, consoleManager, "/console/loops", consoleLoopAvailabilityHandler(svc, consoleManager)))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput

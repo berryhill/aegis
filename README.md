@@ -69,6 +69,9 @@ exact CLI/API inputs, Console actions, preserved pinned history and adapter limi
 The [Loops collection](docs/LOOP_DISCOVERY.md) groups revisions under one logical
 Loop, distinguishes latest publication from active revision, and places discovery
 Archive/Restore controls at the logical-Loop level.
+Signed-in presentation actions honor the live dashboard action policy; when fresh
+authentication is required, [Archive recovery](docs/DASHBOARD_ARCHIVE_RECOVERY.md)
+retains the exact action for reauthentication and explicit review, not automatic replay.
 
 
 The authenticated Graph detail replaces the collection with exact-revision topology, contextual node/definition inspectors and an accessible textual equivalent. Canvas controls are read-only; a separate same-origin authenticated observation clears protected content when authentication is lost or cannot be verified. This is source behavior, not live-provider or installed-browser acceptance; see [the Graph launch review](docs/implementation/issue-233-launch-review.md).

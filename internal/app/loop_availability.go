@@ -59,7 +59,7 @@ func (s *Service) GetLoopAvailability(ctx context.Context, id string) (loop.Avai
 }
 
 func (s *Service) SetLoopAvailabilityAs(ctx context.Context, subject core.Subject, id string, input SetLoopAvailabilityInput) (LoopAvailabilityResult, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return LoopAvailabilityResult{}, err
 	}
 	if input.Head.ID != id || input.Head.Validate() != nil {

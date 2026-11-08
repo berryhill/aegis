@@ -69,8 +69,8 @@ func applyConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub co
 
 func registerConsoleQueuePresentation(e *echo.Echo, svc *app.Service, manager *console.Manager, portals ...*DoerContinuationPortal) {
 	e.POST("/console/queue/preferences", consoleQueuePreferencesHandler(svc, manager))
-	e.POST("/console/queue/:item/archive", consoleQueuePresentationHandler(svc, manager, "archive", portals...))
-	e.POST("/console/queue/:item/unarchive", consoleQueuePresentationHandler(svc, manager, "unarchive", portals...))
+	e.POST("/console/queue/:item/archive", presentationHandler(svc, manager, "/console/queue", consoleQueuePresentationHandler(svc, manager, "archive", portals...)))
+	e.POST("/console/queue/:item/unarchive", presentationHandler(svc, manager, "/console/queue", consoleQueuePresentationHandler(svc, manager, "unarchive", portals...)))
 	e.POST("/console/queue/:item/requeue", consoleQueuePresentationHandler(svc, manager, "requeue", portals...))
 	e.POST("/console/queue/:item/requeue-review", consoleQueuePresentationHandler(svc, manager, "requeue-review", portals...))
 }
