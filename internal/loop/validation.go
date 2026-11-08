@@ -206,7 +206,7 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 		}
 	}
 	if revision.SchemaVersion == ContributionRevisionSchemaVersion {
-		if revision.Contribution == nil || revision.Contribution.Validate() != nil || len(revision.Inputs) != 0 {
+		if revision.Contribution == nil || revision.Contribution.Validate() != nil || !validContributionInputs(revision) {
 			add("contribution.invalid", "contribution", "v6 requires exact independently authorized contribution profile and no caller inputs")
 		}
 	} else if revision.Contribution != nil {
@@ -218,6 +218,9 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 			continue
 		}
 		implementationCount++
+		if step.Implementation.SchemaVersion == RepositoryEngineeringSchema {
+			add("implementation.resolved_only", "steps."+step.ID, "engineering scope must be resolved from a sealed v6 issue, not published as executable input")
+		}
 		if !IsImplementationSchema(revision.SchemaVersion) || step.Kind != StepAction || step.Retry.MaxAttempts != 1 || step.Implementation.Validate() != nil {
 			add("implementation.invalid", "steps."+step.ID, "verified implementation requires v3, one action attempt and an exact validated contract")
 		}

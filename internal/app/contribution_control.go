@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
@@ -10,6 +11,10 @@ import (
 func (s *Service) ReadContributionControlAs(ctx context.Context, subject core.Subject, key string) (contribution.Control, error) {
 	c, _, err := s.ReadContributionAs(ctx, subject, key)
 	if err != nil {
+		if errors.Is(err, fleet.ErrNotFound) {
+			status, e := s.ReadContributionEngineeringAs(ctx, subject, key)
+			return status.Control, e
+		}
 		return contribution.Control{}, err
 	}
 	repo, ok := s.FleetRepository.(fleet.ContributionRepository)
@@ -22,6 +27,9 @@ func (s *Service) ReadContributionControlAs(ctx context.Context, subject core.Su
 func (s *Service) ControlContributionAs(ctx context.Context, subject core.Subject, session, key string, stop bool, delivery string) error {
 	c, _, e := s.ReadContributionAs(ctx, subject, key)
 	if e != nil {
+		if errors.Is(e, fleet.ErrNotFound) {
+			return s.controlEngineeringPreparation(ctx, subject, session, key, stop, delivery)
+		}
 		return e
 	}
 	repo, ok := s.FleetRepository.(fleet.ContributionRepository)

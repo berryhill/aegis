@@ -2,6 +2,8 @@ package orchestration
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/berryhill/aegis/internal/contribution"
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/graph"
@@ -56,6 +58,21 @@ func (service *FleetService) PrepareLoopRun(ctx context.Context, request SubmitL
 	}
 	if participant.AgentID != request.Participant.ID || participant.Revision != request.Participant.Revision || participant.Digest != request.Participant.Digest {
 		return deny("participant_unavailable", "exact registered participant unavailable")
+	}
+	if revision.Contribution != nil {
+		c := request.Contribution
+		if c == nil {
+			return deny("contribution_required", "sealed owning-service contribution intake required")
+		}
+		if _, err := contribution.BindLoop(revision, *c); err != nil {
+			return deny("contribution_invalid", "exact sealed contribution required")
+		}
+		if len(revision.Inputs) != 0 {
+			var issue string
+			if len(request.Inputs) != 1 || request.Inputs[0].PortID != "github_issue_url" || request.Inputs[0].Type != "string" || json.Unmarshal(request.Inputs[0].Value, &issue) != nil || issue != c.Source.URL.URL {
+				return deny("contribution_input_mismatch", "issue URL must match sealed intake")
+			}
+		}
 	}
 	node := graph.Node{ID: request.NodeID, Participant: request.Participant, Loop: request.Loop}
 	for _, p := range revision.Inputs {

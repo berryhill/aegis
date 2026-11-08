@@ -80,6 +80,9 @@ func (s *Service) cancelContributionInSession(ctx context.Context, sub core.Subj
 	}
 	c, view, err := s.ReadContributionAs(ctx, sub, key)
 	if err != nil {
+		if errors.Is(err, fleet.ErrNotFound) {
+			return s.controlEngineeringPreparation(ctx, sub, session, key, true, "")
+		}
 		return err
 	}
 	repo, ok := s.FleetRepository.(fleet.ContributionContinuityRepository)

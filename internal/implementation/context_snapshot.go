@@ -45,6 +45,9 @@ func contractSnapshot(c loop.VerifiedImplementation) ([]byte, error) {
 	var size int64
 	for i, f := range m.Files {
 		info, err := root.Lstat(f.Path)
+		if errors.Is(err, os.ErrNotExist) && f.Absent && c.SchemaVersion == loop.RepositoryEngineeringSchema && verifyAbsentRegression(root, f.Path) == nil {
+			continue
+		}
 		if err != nil || !DoerTargetHasSingleLink(info) || info.Size() < 0 || info.Size() > m.MaxFileBytes || info.Size() > m.MaxTotalBytes-size {
 			return nil, reject
 		}
@@ -63,6 +66,9 @@ func contractSnapshot(c loop.VerifiedImplementation) ([]byte, error) {
 			return nil, errors.New("repository context rejected")
 		}
 		info := infos[i]
+		if info == nil {
+			continue
+		}
 		if info.Size() > m.MaxTotalBytes-total {
 			return nil, errors.New("repository context rejected")
 		}

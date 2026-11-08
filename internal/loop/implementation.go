@@ -58,7 +58,7 @@ func (v VerifiedImplementation) Validate() error {
 			return err
 		}
 	}
-	if v.SchemaVersion != VerifiedImplementationSchema || strings.TrimSpace(v.Task) == "" || strings.TrimSpace(v.Acceptance) == "" || len(v.Task) > 32768 || len(v.Acceptance) > 32768 {
+	if (v.SchemaVersion != VerifiedImplementationSchema && v.SchemaVersion != RepositoryEngineeringSchema) || strings.TrimSpace(v.Task) == "" || strings.TrimSpace(v.Acceptance) == "" || len(v.Task) > 32768 || len(v.Acceptance) > 32768 {
 		return errors.New("exact version, bounded task and acceptance are required")
 	}
 	maxPasses := uint8(2)
@@ -75,10 +75,39 @@ func (v VerifiedImplementation) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, p := range v.WritableFiles {
-		if !filepath.IsLocal(p) || filepath.Clean(p) != p || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") || strings.Contains(p, "\\") || seen[p] {
+		if !filepath.IsLocal(p) || filepath.Clean(p) != p || (!strings.HasSuffix(p, ".go") && !(v.SchemaVersion == RepositoryEngineeringSchema && EngineeringTextAsset(p))) || (strings.HasSuffix(p, "_test.go") && v.SchemaVersion != RepositoryEngineeringSchema) || strings.Contains(p, "\\") || seen[p] {
 			return errors.New("only unique local non-test Go source paths are writable")
 		}
 		seen[p] = true
+	}
+	if v.SchemaVersion == RepositoryEngineeringSchema {
+		if v.RepositoryContext == nil {
+			return errors.New("engineering requires immutable acceptance and explicit source context")
+		}
+		production, regression, trusted := false, false, false
+		for _, f := range v.RepositoryContext.Files {
+			if f.Role == "trusted_test" {
+				trusted = true
+			}
+			if !seen[f.Path] {
+				continue
+			}
+			if strings.HasSuffix(f.Path, "_test.go") {
+				if f.Role != "regression_test" {
+					return errors.New("editable regression is not trusted acceptance")
+				}
+				regression = true
+			} else {
+				if f.Role != "source" {
+					return errors.New("explicit engineering source required")
+				}
+				production = true
+			}
+			delete(seen, f.Path)
+		}
+		if len(seen) != 0 || !production || !regression || !trusted {
+			return errors.New("disjoint production, regression and trusted acceptance required")
+		}
 	}
 	if v.Policy.Kind != "go-test.v1" || v.Policy.TimeoutSeconds < 1 || v.Policy.TimeoutSeconds > 120 || len(v.Policy.Packages) == 0 || len(v.Policy.Packages) > 32 {
 		return errors.New("bounded typed Go test policy required")

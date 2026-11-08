@@ -1,5 +1,14 @@
 # Aegis MVP Threat Model
 
+Issue-derived engineering treats prose, selected source and builder proposals as
+untrusted data under independently approved prefixes, immutable checks and
+cumulative budgets. [Pinned templ generation](issue-derived-engineering.md#large-assets-and-generated-templates)
+additionally needs explicit paired-output write permission: the controller retains
+complete preimages, literal tool/module/offline-bundle identity and output custody,
+rejects extra source/mode changes and rechecks after refreeze. A pinned compiler
+and private source copies do not sandbox native code or supply human approval.
+
+
 Retained publication history does not grant active repository/base custody.
 See [#423 custody and original-intent recovery](contribution-publication-custody.md)
 for exact terminal/quiescence release and UNKNOWN-effect takeover denial.

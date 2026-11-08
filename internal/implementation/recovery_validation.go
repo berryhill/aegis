@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -23,6 +24,21 @@ func VerifyRecoveryRecord(db Store, k, b []byte) error {
 	}
 	s := string(k)
 	switch {
+	case strings.HasPrefix(s, "contribution/generation-intent/"):
+		var v templGenerationIntent
+		if canonical(&v) != nil || v.Pass == 0 || v.Run == "" || v.Tool != templTool || len(v.Inputs) == 0 || len(v.Inputs) != len(v.Outputs) || s != fmt.Sprintf("contribution/generation-intent/%s/%d", digest([]byte(v.Run)), v.Pass) {
+			return bad
+		}
+		wire, e := db.Get(blobKey(digest(b)))
+		if e != nil || !bytes.Equal(wire, b) {
+			return bad
+		}
+		for i, input := range v.Inputs {
+			if templOutput(input) != v.Outputs[i] {
+				return bad
+			}
+		}
+		return nil
 	case strings.HasPrefix(s, "contribution/base-integration/"):
 		var v ContributionBaseIntegration
 		if canonical(&v) != nil || s != "contribution/base-integration/"+digest(b) {

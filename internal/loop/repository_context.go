@@ -24,6 +24,8 @@ type RepositoryContext struct {
 }
 
 type RepositoryContextFile struct {
+	// Absent commits a new regression file's negative preimage, never empty bytes.
+	Absent bool   `json:"absent,omitempty"`
 	Path   string `json:"path"`
 	Bytes  int64  `json:"bytes"`
 	Digest string `json:"digest"`
@@ -35,7 +37,7 @@ var contextDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 // SafeRepositoryContextPath deliberately limits this Go-context slice to explicit
 // source/test files. Denied names must never be opened or echoed in diagnostics.
 func SafeRepositoryContextPath(p string) bool {
-	if p == "" || len(p) > 4096 || strings.ContainsAny(p, "\\\x00\r\n	:") || path.IsAbs(p) || path.Clean(p) != p || p == ".." || strings.HasPrefix(p, "../") || (!strings.HasSuffix(p, ".go") && p != "go.mod") {
+	if p == "" || len(p) > 4096 || strings.ContainsAny(p, "\\\x00\r\n	:") || path.IsAbs(p) || path.Clean(p) != p || p == ".." || strings.HasPrefix(p, "../") || (!strings.HasSuffix(p, ".go") && p != "go.mod" && p != "go.sum" && !EngineeringTextAsset(p)) {
 		return false
 	}
 	for _, part := range strings.Split(strings.ToLower(p), "/") {
@@ -57,14 +59,17 @@ func (m RepositoryContext) Validate(task string, writable []string) error {
 		if !SafeRepositoryContextPath(f.Path) || seen[f.Path] || f.Bytes < 0 || f.Bytes > m.MaxFileBytes || f.Bytes > m.MaxTotalBytes-total || !contextDigestPattern.MatchString(f.Digest) {
 			return reject
 		}
-		if f.Path == "go.mod" {
+		if f.Absent && (f.Role != "regression_test" || f.Bytes != 0 || f.Digest != sha256Digest(nil)) {
+			return reject
+		}
+		if f.Path == "go.mod" || f.Path == "go.sum" {
 			if f.Role != "checker_input" {
 				return reject
 			}
-		} else if f.Role != "source" && f.Role != "trusted_test" {
+		} else if f.Role != "source" && f.Role != "trusted_test" && f.Role != "regression_test" {
 			return reject
 		}
-		if strings.HasSuffix(f.Path, "_test.go") != (f.Role == "trusted_test") {
+		if strings.HasSuffix(f.Path, "_test.go") != (f.Role == "trusted_test" || f.Role == "regression_test") {
 			return reject
 		}
 		if f.Role == "trusted_test" {
@@ -72,6 +77,15 @@ func (m RepositoryContext) Validate(task string, writable []string) error {
 				if p == f.Path {
 					return reject
 				}
+			}
+		}
+		if f.Role == "regression_test" {
+			writableRegression := false
+			for _, p := range writable {
+				writableRegression = writableRegression || p == f.Path
+			}
+			if !writableRegression {
+				return reject
 			}
 		}
 		seen[f.Path] = true

@@ -1,5 +1,14 @@
 # Security Policy
 
+Issue engineering admits ordinary issue prose only as untrusted task data.
+Optional [deterministic templ generation](docs/issue-derived-engineering.md#large-assets-and-generated-templates)
+requires independently approved offline tool/dependency policy and explicit
+generated-write permission; exact paired outputs, full preimages/modes and fresh
+effect admission are retained before refreeze and independent checks. No model
+generator commands, editable trusted checks, network or authority union are added.
+Native repository/tool execution remains host-trusted code, not a sandbox.
+
+
 Agent-detail [precondition observations](docs/AGENT_DETAIL.md) verify current
 bounded provisioning bytes against the exact plan/consumed approval/receipt and
 charter, separately from authenticated operator authority. They issue no mandate

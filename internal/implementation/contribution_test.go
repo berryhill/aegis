@@ -32,8 +32,18 @@ func TestManagedContributionSameAgentSeparateSessions(t *testing.T) {
 	testManagedContributionRepairAndCustody(t, false, true)
 }
 
+func TestManagedContributionEngineeringRegressionRepair(t *testing.T) {
+	testManagedContributionRepairAndCustody(t, false, true, true)
+}
+
+func TestManagedContributionEngineeringNewRegressionRepair(t *testing.T) {
+	testManagedContributionRepairAndCustody(t, false, true, true, true)
+}
+
 func testManagedContributionRepairAndCustody(t *testing.T, productive bool, shared ...bool) {
 	sharedAgent := len(shared) > 0 && shared[0]
+	engineering := len(shared) > 1 && shared[1]
+	newRegression := len(shared) > 2 && shared[2]
 	ctx := context.Background()
 	kernel, c := fixture(t)
 	repo := c.Workspace
@@ -52,6 +62,9 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		".gitignore": "ignored\n",
 	}
 	os.Remove(filepath.Join(repo, "value_test.go"))
+	if engineering && !newRegression {
+		files["regression_test.go"] = "package main\n"
+	}
 	files["README.md"] = "Controlled fixture prints 40; arguments are rejected with exit 2.\n"
 	files["SECURITY.md"] = "No credentials or network; unexpected arguments are denied.\n"
 	files["generated.txt"] = "fixture output contract: 40\n"
@@ -94,6 +107,13 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: p, Role: r, Bytes: int64(len(files[p])), Digest: digest([]byte(files[p]))})
 	}
 	c.RepositoryContext.SourceDigest = RepositorySourceDigest(c.RepositoryContext)
+	if engineering {
+		c.SchemaVersion = loop.RepositoryEngineeringSchema
+		c.WritableFiles = append(c.WritableFiles, "regression_test.go")
+		text := files["regression_test.go"]
+		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: "regression_test.go", Role: "regression_test", Absent: newRegression, Bytes: int64(len(text)), Digest: digest([]byte(text))})
+		c.RepositoryContext.SourceDigest = RepositorySourceDigest(c.RepositoryContext)
+	}
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -103,6 +123,15 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	e := &ManagedContribution{DB: kernel.DB, GoBinary: kernel.GoBinary, StateRoot: t.TempDir(), Repository: "fixture/controlled", Admit: kernel.Admit}
+	if engineering {
+		policy.Kind = loop.EngineeringExecutionKind
+		policy.ReviewMode = "issue-journeys.v1"
+		for i := range policy.ReviewAssets {
+			a := &policy.ReviewAssets[i]
+			a.ApprovedDigest = ""
+			a.CriterionID = a.Scope
+		}
+	}
 	e.Native = stdlibSeededNative(t, e.GoBinary)
 	e.Fetch = func(context.Context, loop.ContributionExecutionPolicy) error {
 		runGit("fetch", "--no-tags", repo, "main")
@@ -130,7 +159,11 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 			}
 			return []Edit{{Path: "offset.go", Content: []byte("package main\nfunc Offset() int{return 2+0}\n")}}, roleIdentity("builder"), nil
 		}
-		return []Edit{{Path: "value.go", Content: []byte("package main\nfunc Value() int{return 40}\n")}, {Path: "offset.go", Content: []byte(fmt.Sprintf("package main\nfunc Offset() int{return %d}\n", n))}}, roleIdentity("builder"), nil
+		edits := []Edit{{Path: "value.go", Content: []byte("package main\nfunc Value() int{return 40}\n")}, {Path: "offset.go", Content: []byte(fmt.Sprintf("package main\nfunc Offset() int{return %d}\n", n))}}
+		if engineering {
+			edits = append(edits, Edit{Path: "regression_test.go", Content: []byte("package main\nimport \"testing\"\nfunc TestRegression(t *testing.T){if Value()+Offset()!=42{t.Fatal(\"expected 42\")}}\n")})
+		}
+		return edits, roleIdentity("builder"), nil
 	}
 	e.Test = func(checkCtx context.Context, v ContributionCandidate, execute func(context.Context, ContributionRoleIdentity) error) (ContributionRoleIdentity, error) {
 		testers++

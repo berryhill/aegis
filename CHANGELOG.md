@@ -6,6 +6,21 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add opt-in issue-derived Go contribution scope, separate editable regressions
+  from immutable trusted acceptance, pinned offline dependency bundle resolution,
+  and candidate-bound security/launch journey ledgers. Legacy fixed-file profiles
+  retain their behavior. Add exact negative preimages for new regression files
+  and owning-service retained prose-to-scope preparation with bounded large-file
+  inspection and cumulative turn accounting. Add typed `loops contribution`
+  authoring and native Console issue-URL Run with truthful independent decision
+  readback. Optional explicitly approved generated-write policy derives exact
+  existing templ output pairs, executes the pinned offline compiler in private
+  native state, retains input/tool/dependency/output custody, applies only admitted
+  output bytes with preserved preimages/modes, and refreezes before independent
+  check/render acceptance. No live-provider, protected-merge or installed-target
+  qualification is inferred. See
+  [contract and limits](docs/issue-derived-engineering.md).
+
 - Update Echo v5 to 5.4.0 and klauspost/compress to 1.20.2 to resolve
   called vulnerabilities reported by the mandatory delivery scan.
 

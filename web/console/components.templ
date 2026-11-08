@@ -42,6 +42,9 @@ templ Document(model PageModel) {
 								@CommandPreviewPage(*model.CommandPreview, model.CSRF)
 							} else if model.CommandReceipt != nil {
 								@CommandReceiptPage(*model.CommandReceipt)
+								if model.ContributionRun != nil {
+ @ContributionRecovery(model.CSRF, *model.ContributionRun)
+ }
 							} else if model.CharterImport || model.AgentOperation != nil {
 								@CharterImportPage(model.CSRF, model.Surface.CharterImportProposal, model.AgentOperation)
 							} else if model.CredentialOperation != nil {

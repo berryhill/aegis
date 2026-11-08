@@ -34,6 +34,14 @@ func ValidateImplementationContext(v loop.VerifiedImplementation, c *Contract) e
 	}
 	original := v
 	original.Contribution = nil
+	if c.Engineering != nil {
+		expected, err := c.Engineering.Digest()
+		actual, actualErr := original.Digest()
+		if err != nil || actualErr != nil || expected != actual {
+			return deny
+		}
+		return nil
+	}
 	// Oversized bindings keep the original approved Task, not a rewritten summary.
 	d, err := original.Digest()
 	if err != nil || d != c.TemplateDigest || v.Task != c.Outcome || v.Acceptance != c.Acceptance || v.Workspace != c.Worktree || v.MaxPasses != c.CandidateBudget {

@@ -255,16 +255,8 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 	if err != nil || revision.Digest != c.Loop.Digest || revision.Contribution == nil || revision.Contribution.Managed == nil {
 		return out, delivery.ErrDenied
 	}
-	var files []string
-	for _, step := range revision.Steps {
-		if step.Implementation != nil {
-			if files != nil {
-				return out, delivery.ErrDenied
-			}
-			files = slices.Clone(step.Implementation.WritableFiles)
-		}
-	}
-	if len(files) == 0 {
+	files, err := contributionDeliveryFiles(revision, c)
+	if err != nil {
 		return out, delivery.ErrDenied
 	}
 	ref := delivery.Reference{Run: c.RunID, Contract: c.Digest, Candidate: state.CandidateEvidence.Digest}

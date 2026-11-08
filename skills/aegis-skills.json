@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:6c95f28b561914111d67823f72c762f4c04d245d1cc0672962f4ccba8f48413f",
+    "content_digest": "sha256:5d043aabc686af4379ae6811e1657ab8cca1c206107b38e8c112f23f8fc03e7d",
     "source_revision": "repository"
   },
   "operations": [
@@ -105,7 +105,7 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:69dd37a4af862f29d6e00056d58fab5c80856758d597f61596b9e17094c4de9b",
+      "content_digest": "sha256:b30d5bcc04cda51da44682dae12e917d3c7ce95702be7c5bef765bc65f69bbf0",
       "files": [
         {
           "path": "SKILL.md",
@@ -114,13 +114,13 @@
         },
         {
           "path": "references/contribution-continuity.md",
-          "sha256": "sha256:775ecaf84ca677400344d9d4ea3bd244be589240681137c3da6c3d86cf3c1e92",
-          "size": 6986
+          "sha256": "sha256:e1993179da881db0035d37e5d62df707f9ee75c8c5c2201740799498936b956a",
+          "size": 8484
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:468411e059bf7cb30c18cc12a69c958a5526f93473741306ee9b0b1f12491ecd",
-          "size": 34745
+          "sha256": "sha256:76bb8d46410fe7d7199ae5b958c01a424863994d8ef2b5643472f6e55f5e9049",
+          "size": 35000
         }
       ]
     },
@@ -330,12 +330,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:c353229e71b601553bcb8d6353a2d0ce536690f16549817adb9c7003bfa0c0f3",
+      "content_digest": "sha256:edfced88f7b92d79f74d8c512a8b2488e9091a5b1d20594620971ad2b6c03ab0",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:d311a96bb2912989698d703ef3668d5b0d2e32c1500ffa225efe69108917efec",
-          "size": 57403
+          "sha256": "sha256:e2ebd8f64d0dd3a2105738a35e2ba70c522023c02f34bb153f7da7f20a524353",
+          "size": 59875
         },
         {
           "path": "references/authoring-contract.v1.md",

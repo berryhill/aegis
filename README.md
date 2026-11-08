@@ -1,5 +1,14 @@
 # Aegis
 
+Source candidate: [issue-derived Go engineering](docs/issue-derived-engineering.md)
+adds owning-service preparation from ordinary issue prose, retained independent
+decisions, bounded large-asset inspection/patching, new-regression preimages and
+opt-in deterministic pinned templ generation with exact output custody. The
+`loops contribution` authoring proposal and native Console detail support a
+single issue-URL runtime input under an independently approved definition-time
+profile. Controlled source tests are not live-provider, protected-merge or
+installed-target qualification.
+
 Source correction: [bounded contribution intake](docs/contribution-intake.md#bounded-issue-data-and-executor-delivery)
 preserves complete issue/discussion context beyond the Task bound through exact
 controller-resolved contract references. The full runtime input remains bounded;

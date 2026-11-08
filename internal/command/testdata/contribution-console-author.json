@@ -1,0 +1,128 @@
+{
+  "agent_id": "agent",
+  "idempotency_key": "independent-authoring",
+  "implementation": {
+    "schema_version": "aegis.loop.verified-implementation.v1",
+    "task": "task",
+    "acceptance": "acceptance",
+    "workspace": "/tmp/TestContributionURLOnlySuccessorAndHistoricalBytes540084835/001",
+    "writable_files": [
+      "value.go"
+    ],
+    "policy": {
+      "required_tests": [
+        {
+          "package": "fixture",
+          "name": "TestValue"
+        }
+      ],
+      "kind": "go-test.v1",
+      "packages": [
+        "./..."
+      ],
+      "timeout_seconds": 60
+    },
+    "max_passes": 2
+  },
+  "loop_id": "independent-url-only",
+  "profile": {
+    "engineering": {
+      "writable_prefixes": [
+        "internal"
+      ],
+      "max_writable_files": 4
+    },
+    "final_verification": "aegis.contribution.final.v1",
+    "managed": {
+      "review_mode": "issue-journeys.v1",
+      "review_assets": [
+        {
+          "criterion_id": "security",
+          "id": "security",
+          "scope": "security",
+          "path": "trusted_test.go",
+          "baseline_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "approved_digest": ""
+        },
+        {
+          "criterion_id": "launch",
+          "id": "launch",
+          "scope": "launch",
+          "path": "trusted_test.go",
+          "baseline_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "approved_digest": ""
+        }
+      ],
+      "criteria": [
+        {
+          "id": "behavior",
+          "kind": "behavior",
+          "test": {
+            "package": "fixture",
+            "name": "TestBehavior"
+          }
+        },
+        {
+          "id": "security",
+          "kind": "security",
+          "test": {
+            "package": "fixture",
+            "name": "TestSecurity"
+          }
+        },
+        {
+          "id": "launch",
+          "kind": "launch",
+          "test": {
+            "package": "fixture",
+            "name": "TestLaunch"
+          }
+        },
+        {
+          "id": "denial",
+          "kind": "denial",
+          "test": {
+            "package": "fixture",
+            "name": "TestDenial"
+          }
+        }
+      ],
+      "kind": "go-repository-engineering.v1",
+      "repository_path": "/tmp/TestContributionURLOnlySuccessorAndHistoricalBytes540084835/001",
+      "base_branch": "main",
+      "git_binary": "/usr/bin/git",
+      "build_package": "."
+    },
+    "controller": {
+      "schema_version": "aegis.reference.revision.v1",
+      "id": "agent",
+      "revision": 1,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "builder": {
+      "schema_version": "aegis.reference.revision.v1",
+      "id": "agent",
+      "revision": 1,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "tester": {
+      "schema_version": "aegis.reference.revision.v1",
+      "id": "agent",
+      "revision": 1,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "repository": "owner/repo",
+    "repository_id": 7,
+    "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "read_action": "github.read_contribution_issue.v1",
+    "effect": "",
+    "deadline_seconds": 60,
+    "invariants": [
+      "preserve"
+    ],
+    "exclusions": [
+      "no widening"
+    ]
+  },
+  "revision": 1
+}

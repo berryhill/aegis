@@ -48,6 +48,9 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	}
 	if r.Frozen != nil {
 		v := *r.Frozen
+		if e.validateTemplGeneration(r, v) != nil {
+			return bad
+		}
 		if e.validateBuilderInput(r, v) != nil {
 			return bad
 		}
@@ -78,6 +81,9 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 			return bad
 		}
 		v := p.Candidate
+		if e.validateTemplGeneration(r, v) != nil {
+			return bad
+		}
 		if e.validateBuilderInput(r, v) != nil {
 			return bad
 		}
@@ -121,7 +127,7 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 		if p.Check.Outcome == "passed" && !requiredTestsPassed(output, p.Check.RequiredTests) {
 			return bad
 		}
-		if p.Check.Outcome == "passed" && e.validateReview(p.Candidate, r.Policy, p.Check.Review) != nil {
+		if p.Check.Outcome == "passed" && e.validateReview(p.Candidate, r.Policy, p.Check.Review, p.Check.OutputDigest) != nil {
 			return bad
 		}
 		if previousBytes(e.DB, v.Toolchain) == nil {

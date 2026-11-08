@@ -187,7 +187,7 @@ func (e *ManagedContribution) integrateAdvancingBase(ctx context.Context, c loop
 	if err = source.Materialize(dest); err != nil {
 		return out, err
 	}
-	inventory, err := Inventory(ctx, dest)
+	inventory, err := InventoryWithPolicy(ctx, dest, e.sourcePolicy)
 	if err != nil {
 		return out, err
 	}
@@ -234,7 +234,7 @@ func (e *ManagedContribution) applyBaseIntegration(ctx context.Context, c loop.V
 	if err := e.admit(ctx, "base-integration-apply"); err != nil {
 		return err
 	}
-	current, err := Inventory(ctx, c.Workspace)
+	current, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func (e *ManagedContribution) applyBaseIntegration(ctx context.Context, c loop.V
 			}
 		}
 	}
-	actual, err := Inventory(ctx, c.Workspace)
+	actual, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 	if err != nil {
 		return err
 	}

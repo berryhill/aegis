@@ -53,6 +53,29 @@ are operation-specific. No per-operation schema fields or operation-matrix
 columns are added. Recheck actual release ancestry when a future release is
 published; never silently promote this table to live/provider qualification.
 
+## Native Console issue-URL entry (matching source candidate)
+
+The published engineering contribution detail accepts only the GitHub issue URL
+for Run. Definition-time repository/policy/checks/roles are not invoker inputs;
+ordinary issue prose is prepared internally. Native Console Run, manager intake
+and offline `loops contribution` authoring are distinct adapters: probe the actual
+executable/service and do not infer one from another or from an old archive.
+
+On a retained prerequisite block, inspect the actual stage, role, reason and
+independent decision projection: purpose, exact Agent/charter, plan digest,
+contract/candidate binding, status and expiry. Use only the supported protected
+review control and existing independent human authentication. Console inspection
+cannot approve/apply a plan. `unavailable` transport means no delivered pending
+request and no approval; denial, expiry, cancellation, unknown delivery and pending
+remain distinct. Never automate approval or substitute conversation for it.
+
+Read the retained run's actual checkpoints and gates, not merely a healthy
+listener, accepted intake or model PASS. Preparation, builder, freeze, fresh
+independent tester, repair/review, publication, exact-head checks, protected merge
+and final joined disposition need their own evidence. Narrow local-only/no-publish
+results do not establish protected merge. Source tests and built-candidate Console
+acceptance are separate from live-provider and installed 8448 qualification.
+
 ## Same retained invocation
 
 `/contribute status [issue-url]` and `/contribute resume [issue-url]` discover the

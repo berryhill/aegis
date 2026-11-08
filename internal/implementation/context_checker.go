@@ -36,12 +36,13 @@ func materializeCheckerContext(ctx context.Context, c loop.VerifiedImplementatio
 			return reject
 		}
 		if writable[f.Path] {
-			if f.Role != "source" {
+			if f.Role != "source" && !(c.SchemaVersion == loop.RepositoryEngineeringSchema && f.Role == "regression_test") {
 				return reject
 			}
 		} else if f.Digest != entry.Digest || int64(len(f.Text)) != entry.Bytes {
 			return reject
 		}
+		candidate.RepositoryContext.Files[i].Absent = f.Absent
 		candidate.RepositoryContext.Files[i].Bytes = int64(len(f.Text))
 		candidate.RepositoryContext.Files[i].Digest = f.Digest
 		module = module || f.Path == "go.mod"
@@ -76,6 +77,9 @@ func materializeCheckerContext(ctx context.Context, c loop.VerifiedImplementatio
 	for _, f := range current.Files {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if f.Absent {
+			continue
 		}
 		target := filepath.Join(workspace, filepath.FromSlash(f.Path))
 		if err = os.MkdirAll(filepath.Dir(target), 0700); err != nil {

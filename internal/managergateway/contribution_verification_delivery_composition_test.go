@@ -64,6 +64,8 @@ func retainedDeliveryNativeComposition(t *testing.T, finalization bool, lateMode
 	if finalQualificationFactory == nil && finalQualificationProtection == nil {
 		scheduleContributionNativeJourney(t)
 	}
+	engineeringJourney := strings.Contains(t.Name(), "EngineeringProse")
+	hugeEngineering := strings.Contains(t.Name(), "EngineeringProseHuge")
 	advancingBaseJourney := strings.Contains(t.Name(), "AdvancingBase")
 	repairJourney := strings.Contains(t.Name(), "CIRepair") || advancingBaseJourney
 	ctx := context.Background()
@@ -83,9 +85,23 @@ func TestSecurity(t *testing.T){if Value()<0{t.Fatal("negative")}}
 func TestLaunch(t *testing.T){if Value()==-1{t.Fatal("launch")}}
 func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 `, "README.md": "Fixture value contract\n", "SECURITY.md": "Fixture denial contract\n"}
+	if engineeringJourney {
+		files["value.go"] = "package main\nimport \"synthetic/feature\"\nfunc Value() int{return feature.Value()}\n"
+		files["feature/value.go"] = "package feature\nfunc Value() int{return 0}\n"
+		files["feature/regression_test.go"] = "package feature\n"
+		must(os.Mkdir(filepath.Join(repoPath, "feature"), 0700))
+	}
 	if advancingBaseJourney {
 		files["offset.go"] = "package main\nfunc Offset() int{return 0}\n"
 		files["main_test.go"] = strings.Replace(files["main_test.go"], "Value()!=42", "Value()+Offset()!=42", 1)
+	}
+	if hugeEngineering {
+		files["README.md"] = strings.Repeat("Full README original bytes must survive unchanged.\n", 4096)
+		files["docs/feature.md"] = "Feature documentation before.\n"
+		files["web/feature.templ"] = "package web\n\ntempl Feature() {\n <p>before</p>\n}\n"
+		prepareHugeTemplFixture(t, root, repoPath, files)
+		must(os.Mkdir(filepath.Join(repoPath, "docs"), 0700))
+		must(os.Mkdir(filepath.Join(repoPath, "web"), 0700))
 	}
 	for p, b := range files {
 		must(os.WriteFile(filepath.Join(repoPath, p), []byte(b), 0600))
@@ -118,6 +134,11 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 		c.Policy.RequiredTests = append(c.Policy.RequiredTests, loop.RequiredGoTest{Package: "synthetic", Name: name})
 	}
 	c.RepositoryContext = &loop.RepositoryContext{TaskDigest: contribution.Digest([]byte(c.Task)), MaxFiles: 8, MaxFileBytes: 4096, MaxTotalBytes: 16384}
+	if hugeEngineering {
+		c.RepositoryContext.MaxFiles = 16
+		c.RepositoryContext.MaxFileBytes = 1 << 20
+		c.RepositoryContext.MaxTotalBytes = 1 << 20
+	}
 	for _, p := range []string{"go.mod", "main.go", "value.go", "main_test.go"} {
 		role := "source"
 		if p == "go.mod" {
@@ -128,18 +149,34 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 		}
 		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: p, Role: role, Bytes: int64(len(files[p])), Digest: contribution.Digest([]byte(files[p]))})
 	}
+	if hugeEngineering {
+		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: "go.sum", Role: "checker_input", Bytes: int64(len(files["go.sum"])), Digest: contribution.Digest([]byte(files["go.sum"]))})
+	}
 	c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
 	if advancingBaseJourney {
 		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: "offset.go", Role: "source", Bytes: int64(len(files["offset.go"])), Digest: contribution.Digest([]byte(files["offset.go"]))})
 		c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
 	}
 	policy := loop.ContributionExecutionPolicy{Kind: "go-stdlib-behavior.v1", RepositoryPath: repoPath, GitBinary: git, BaseBranch: "main", BuildPackage: "."}
+	if hugeEngineering {
+		policy.Dependencies = hugeTemplBundle(t, root)
+		policy.TemplConsistency = loop.TemplModuleConsistency
+		policy.TemplGeneratedWrites = true
+	}
 	for i, k := range []string{"behavior", "security", "launch", "denial"} {
 		policy.Criteria = append(policy.Criteria, loop.ContributionCriterion{ID: k, Kind: k, Test: c.Policy.RequiredTests[i]})
 	}
 	for _, a := range []struct{ path, scope string }{{"README.md", "launch"}, {"SECURITY.md", "security"}} {
 		d := contribution.Digest([]byte(files[a.path]))
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: a.path, Path: a.path, Scope: a.scope, BaselineDigest: d, ApprovedDigest: d})
+	}
+	if engineeringJourney {
+		policy.Kind = loop.EngineeringExecutionKind
+		policy.ReviewMode = "issue-journeys.v1"
+		for i := range policy.ReviewAssets {
+			policy.ReviewAssets[i].CriterionID = policy.ReviewAssets[i].Scope
+			policy.ReviewAssets[i].ApprovedDigest = ""
+		}
 	}
 	s := contributionApp(t)
 	if finalization {
@@ -198,7 +235,16 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	if late {
 		deadline = 600
 	} // admitted fixture deadline, normal 300s mandate unchanged.
-	lr, validation, e := loop.NewContributionRevision("assessment", 1, "", c, loop.ContributionProfile{FinalVerification: finalPolicy, Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "fixture/controlled", RepositoryID: 7, Base: base, ReadAction: contribution.ReadIssueAction, Effect: scope, DeadlineSeconds: deadline, Invariants: []string{"preserve tests"}, Exclusions: []string{"no external network effects"}, Managed: &policy})
+	profile := loop.ContributionProfile{FinalVerification: finalPolicy, Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "fixture/controlled", RepositoryID: 7, Base: base, ReadAction: contribution.ReadIssueAction, Effect: scope, DeadlineSeconds: deadline, Invariants: []string{"preserve tests"}, Exclusions: []string{"no external network effects"}, Managed: &policy}
+	if engineeringJourney {
+		profile.Engineering = &loop.IssueEngineeringPolicy{WritablePrefixes: []string{"feature"}, MaxWritableFiles: 4}
+		if hugeEngineering {
+			profile.Engineering.WritablePrefixes = []string{"feature", "docs", "web"}
+			profile.Engineering.WritableAssets = []string{"README.md"}
+			profile.Engineering.MaxWritableFiles = 8
+		}
+	}
+	lr, validation, e := loop.NewContributionRevision("assessment", 1, "", c, profile)
 	if e != nil {
 		t.Fatalf("loop: %v %+v", e, validation)
 	}
@@ -232,6 +278,9 @@ while read rest; do :; done
 		}
 		script = strings.Replace(script, "text='", "if [ -f '"+filepath.Join(root, "first-proposal")+"' ]; then text='"+nativeJSON(string(successor))+"'; else touch '"+filepath.Join(root, "first-proposal")+"'; text='", 1)
 		script = strings.Replace(script, "printf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", "fi\nprintf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", 1)
+	}
+	if engineeringJourney {
+		script = engineeringProseGateway(t, script, root, files)
 	}
 	must(os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(script), 0700))
 	adapter := hermes.New(executable, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -273,6 +322,9 @@ while read rest; do :; done
 	must(e)
 	issue, _ := contribution.ParseIssueURL("https://github.com/fixture/controlled/issues/1")
 	s.ContributionReader = &fixedContributionReader{source: contribution.Source{URL: issue, RepositoryID: 7, IssueID: 9, Author: contribution.Author{ID: 1, Login: "fixture"}, State: "open", CreatedAt: s.Now(), UpdatedAt: s.Now(), ObservedAt: s.Now(), ContentDigest: contribution.Digest([]byte("fixture")), Discussion: []contribution.Comment{}}}
+	if engineeringJourney {
+		s.ContributionReader = &fixedContributionReader{source: contribution.Source{URL: issue, RepositoryID: 7, IssueID: 9, Author: contribution.Author{ID: 1, Login: "fixture"}, State: "open", Body: "Fix the feature value to return 42 and add a regression; preserve trusted acceptance and security behavior.", CreatedAt: s.Now(), UpdatedAt: s.Now(), ObservedAt: s.Now(), ContentDigest: contribution.Digest([]byte("ordinary prose")), Discussion: []contribution.Comment{}}}
+	}
 	if strings.Contains(t.Name(), "ManagerJoined") {
 		// This early-return journey bypasses the shared path's later cleanup.
 		// Revoke actual fixture-owned roles while both repositories are open;
@@ -310,6 +362,9 @@ while read rest; do :; done
 	}
 	sealed, e := s.AdmitContributionAs(ctx, subject, "assessment-session", lrRef, issue.URL, intentKey, scope)
 	must(e)
+	if hugeEngineering {
+		assertEngineeringLargeAdmission(t, ctx, s, subject, sealed)
+	}
 	nativeStarted := time.Now()
 	result, e := s.ExecuteContributionAs(ctx, subject, sealed.Key)
 	t.Logf("contribution-stage=native-execution elapsed=%s error=%v", time.Since(nativeStarted), e)
@@ -317,9 +372,29 @@ while read rest; do :; done
 	if result.Candidate == nil || result.Candidate.State != "candidate_accepted" {
 		t.Fatalf("actual native execution: %+v", result)
 	}
+	if engineeringJourney {
+		assertEngineeringProseRepair(t, result)
+		if hugeEngineering {
+			assertEngineeringLargeCandidate(t, sealed, result, files)
+		}
+	}
 	v, e := s.AcceptedContributionCandidateAs(ctx, subject, sealed.Key)
 	must(e)
 	p := app.ContributionDeliveryPolicy{Binding: fleetbadger.ContributionDeliveryBinding{QueueItemID: sealed.QueueItemID, OwnerID: subject.PrincipalID, Key: sealed.Key, Reference: delivery.Reference{Run: sealed.RunID, Contract: sealed.Digest, Candidate: v.Digest}, FenceEpoch: 1, RoleBinding: contribution.Digest([]byte("qualification role")), Base: "main"}, Loop: sealed.Loop, Workspace: sealed.Worktree, Source: v.Source.Digest, Tree: v.CandidateTree, BaseHead: sealed.Base, CandidatePolicy: v.Policy, Toolchain: v.Toolchain, QueueAttempt: v.QueueAttempt, Actor: "fixture", Branch: "delivery/assessment", Timestamp: "2026-10-25T00:00:00Z", Message: "Reviewed local repair\n", Author: delivery.Identity{Name: "Reviewed Author", Email: "author@example.invalid"}, Committer: delivery.Identity{Name: "Controller", Email: "controller@example.invalid"}, AllowedFiles: []string{"value.go"}}
+	if engineeringJourney {
+		// Delivery must use the sealed controller-derived scope, including exact
+		// generated pairs, not the planner's pre-generation path selection.
+		p.AllowedFiles = append([]string(nil), sealed.Engineering.WritableFiles...)
+		if hugeEngineering {
+			// Preserve a causal negative: omitting the generated output must still
+			// deny even though native acceptance and the full inventory are valid.
+			withoutGenerated := []string{"feature/value.go", "feature/regression_test.go", "README.md", "docs/feature.md", "web/feature.templ"}
+			_, _, denied := (&delivery.Git{Binary: git, Directory: sealed.Worktree}).ProjectAccepted(ctx, v, delivery.CommitSpec{Parent: sealed.Base, Tree: v.CandidateTree, Branch: p.Branch, Author: p.Author, Committer: p.Committer, Timestamp: p.Timestamp, Message: p.Message}, withoutGenerated)
+			if denied == nil {
+				t.Fatal("delivery accepted changed generated output outside sealed policy")
+			}
+		}
+	}
 	policies := &nativeDeliveryPolicies{policy: p}
 	authorities, e := s.Authority.ListAuthorityContexts(ctx)
 	must(e)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/implementation"
+	"github.com/berryhill/aegis/internal/loop"
 	hermesruntime "github.com/berryhill/aegis/internal/runtime/hermes"
 	"io"
 	"strings"
@@ -42,6 +43,9 @@ func (p HermesPatchProposer) propose(ctx context.Context, request implementation
 	instruction := patchResponseInstruction(false)
 	if reported {
 		instruction = patchResponseInstruction(true)
+	}
+	if request.Contract.SchemaVersion == loop.RepositoryEngineeringSchema {
+		instruction += engineeringHunkInstruction
 	}
 	wire, err := implementationInput(request, instruction)
 	if err != nil {
@@ -88,7 +92,11 @@ func (p HermesPatchProposer) propose(ctx context.Context, request implementation
 			return implementation.Proposal{}, err
 		}
 	}
-	proposal, err := decodePatch([]byte(result.Output), reported)
+	decode := decodePatch
+	if request.Contract.SchemaVersion == loop.RepositoryEngineeringSchema {
+		decode = decodeEngineeringPatch
+	}
+	proposal, err := decode([]byte(result.Output), reported)
 	if err != nil && request.FailureObserver != nil {
 		var closed *doerFailure
 		if errors.As(err, &closed) {

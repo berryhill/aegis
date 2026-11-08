@@ -58,6 +58,12 @@ func verifyContext(ctx context.Context, c loop.VerifiedImplementation, expected 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if f.Absent {
+			if c.SchemaVersion != loop.RepositoryEngineeringSchema || f.Role != "regression_test" || f.Text != "" || f.Digest != digest(nil) || verifyAbsentRegression(root, f.Path) != nil {
+				return errors.New("repository context rejected")
+			}
+			continue
+		}
 		size := int64(len(f.Text))
 		total += size
 		if size > c.RepositoryContext.MaxFileBytes || total > c.RepositoryContext.MaxTotalBytes {
@@ -78,6 +84,7 @@ func advanceContext(c loop.VerifiedImplementation, state *CollectedRepositoryCon
 	for _, edit := range edits {
 		for i := range state.Files {
 			if state.Files[i].Path == edit.Path {
+				state.Files[i].Absent = false
 				state.Files[i].Text = string(edit.Content)
 				state.Files[i].Digest = digest(edit.Content)
 			}
@@ -134,7 +141,7 @@ func (e *Executor) revalidateContext(c loop.VerifiedImplementation, r Record) er
 	}
 	for i, f := range initial.Files {
 		entry := m.Files[i]
-		if f.Path != entry.Path || f.Role != entry.Role || f.Digest != entry.Digest || digest([]byte(f.Text)) != entry.Digest || int64(len(f.Text)) != entry.Bytes {
+		if f.Absent != entry.Absent || f.Path != entry.Path || f.Role != entry.Role || f.Digest != entry.Digest || digest([]byte(f.Text)) != entry.Digest || int64(len(f.Text)) != entry.Bytes {
 			return reject
 		}
 	}

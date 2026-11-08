@@ -20,13 +20,24 @@ func BindLoop(r loop.LoopRevision, c Contract) (loop.VerifiedImplementation, err
 		return loop.VerifiedImplementation{}, deny
 	}
 	p := r.Contribution
-	if c.Loop != (reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: r.LoopID, Revision: r.Revision, Digest: r.Digest}) || c.Controller != p.Controller || c.Builder != p.Builder || c.Tester != p.Tester || c.Repository != p.Repository || c.Source.RepositoryID != p.RepositoryID || c.Base != p.Base || !DeliveryNarrows(p.Effect, c.Effect) || !reflect.DeepEqual(c.Invariants, p.Invariants) || !reflect.DeepEqual(c.Exclusions, p.Exclusions) || c.Deadline.Sub(c.AdmittedAt).Seconds() != float64(p.DeadlineSeconds) || c.PayloadDigest != Payload(c.Loop, c.Source.URL.URL, c.NarrowerScope) {
+	if c.Loop != (reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: r.LoopID, Revision: r.Revision, Digest: r.Digest}) || c.Controller != p.Controller || c.Builder != p.Builder || c.Tester != p.Tester || c.Repository != p.Repository || c.Source.RepositoryID != p.RepositoryID || c.Base != p.Base || !DeliveryNarrows(p.Effect, c.Effect) || !reflect.DeepEqual(c.Invariants, p.Invariants) || (p.Engineering == nil && !reflect.DeepEqual(c.Exclusions, p.Exclusions)) || c.Deadline.Sub(c.AdmittedAt).Seconds() != float64(p.DeadlineSeconds) || c.PayloadDigest != Payload(c.Loop, c.Source.URL.URL, c.NarrowerScope) {
 		return loop.VerifiedImplementation{}, deny
 	}
 	for _, step := range r.Steps {
 		if step.Implementation != nil {
 			v := *step.Implementation
 			d, e := v.Digest()
+			if p.Engineering != nil {
+				if e != nil || d != c.TemplateDigest || validateEngineeringBinding(v, *p, c) != nil {
+					return loop.VerifiedImplementation{}, deny
+				}
+				v = *c.Engineering
+				v.Contribution = &reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.RunID, Digest: c.Digest}
+				return v, v.Validate()
+			}
+			if c.Engineering != nil {
+				return loop.VerifiedImplementation{}, deny
+			}
 			if v.Contribution != nil || e != nil || d != c.TemplateDigest || v.Workspace != c.Worktree || v.MaxPasses != c.CandidateBudget || v.Task != c.Outcome || v.Acceptance != c.Acceptance {
 				return loop.VerifiedImplementation{}, deny
 			}

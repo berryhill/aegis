@@ -30,7 +30,7 @@ func (e *ManagedContribution) resumeBoundary(ctx context.Context, r Contribution
 	if err != nil || e.Repository == "" || strings.TrimSpace(string(origin)) != "https://github.com/"+e.Repository+".git" {
 		return errors.Join(bad, err)
 	}
-	source, err := Inventory(ctx, c.Workspace)
+	source, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 	if err != nil || source.Digest != r.BoundarySource {
 		return bad
 	}
