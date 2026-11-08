@@ -36,14 +36,14 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<form method=\"post\" action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<p>Discovery only · ALL revisions of this logical Loop. Preserves history; does not stop execution.</p><form method=\"post\" action=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 templ.SafeURL
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs("/console/loops/availability?loop_id=" + url.QueryEscape(record.Label))
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs("/console/loops/availability?loop_id=" + url.QueryEscape(record.Loop.StableID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 12, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 13, Col: 108}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -54,9 +54,9 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue("Change availability of " + record.Label)
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue("Change availability of logical Loop " + record.Loop.StableID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 12, Col: 156}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 13, Col: 185}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -69,7 +69,7 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.CSRF)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 13, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 14, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
@@ -82,7 +82,7 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(record.AvailabilityHeadRevision))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 14, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 15, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -95,7 +95,7 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(record.AvailabilityHeadDigest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 15, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 16, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
@@ -108,7 +108,7 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(record.AvailabilitySequence + 1))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 16, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 17, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
@@ -121,7 +121,7 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(record.AvailabilityDigest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 17, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 18, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {
@@ -134,7 +134,7 @@ func LoopAvailabilityForm(surface SurfaceModel, record RecordModel) templ.Compon
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(record.Availability)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 18, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_availability.templ`, Line: 19, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {

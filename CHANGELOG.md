@@ -6,6 +6,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Console Loop discovery now counts and lists stable logical Loops once in both
+  Published and Archived, with authored names, latest publication, active revision
+  and immutable revision-history links. Archive/Restore is a collection-level
+  discovery action for all revisions, preserves history and does not stop execution.
+  Exact revision diagrams, provenance, raw API inventory and Graph/Queue history
+  remain revision-oriented. See [presentation boundary](docs/LOOP_DISCOVERY.md).
+
 - Update Echo v5 to 5.4.0 and klauspost/compress to 1.20.2 to resolve
   called vulnerabilities reported by the mandatory delivery scan.
 

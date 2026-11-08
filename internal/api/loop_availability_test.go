@@ -278,7 +278,7 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 			return string(body)
 		}
 		publishedPage := getPage("", `name="availability"`)
-		getPage("?record_key="+rev.LoopID+":1", `name="csrf" value="`+csrf+`"`, ">Archive</button>")
+		getPage("?record_key="+rev.LoopID+":1", "Archive/Restore all revisions")
 		post := func(values url.Values, origin string, authenticated bool, want int) {
 			t.Helper()
 			request, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/availability?loop_id="+rev.LoopID, strings.NewReader(values.Encode()))
@@ -372,12 +372,12 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 			t.Fatal("archived Loop remains in published collection")
 		}
 		archivedPage := getPage("?availability=archived", ">Restore</button>", `name="csrf" value="`+csrf+`"`)
-		getPage("?record_key="+rev.LoopID+":1", ">Restore</button>", rev.Digest, "Exact provenance", "Immutable lifecycle history", retired.Event.EventID, retired.Event.Digest)
+		getPage("?record_key="+rev.LoopID+":1", "Archive/Restore all revisions", rev.Digest, "Exact provenance", "Immutable lifecycle history", retired.Event.EventID, retired.Event.Digest)
 		apiRequest(t, client, http.MethodGet, path+"/availability", nil, &status, http.StatusOK)
 		form = renderedLoopRowForm(t, archivedPage, rev.LoopID, rev.LoopID+":1", "Restore")
 		post(form, origin, true, http.StatusSeeOther)
 		compose(true)
-		getPage("?record_key="+rev.LoopID+":1", ">Archive</button>")
+		getPage("?record_key="+rev.LoopID+":1", "Archive/Restore all revisions")
 	})
 }
 

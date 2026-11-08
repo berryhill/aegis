@@ -9,7 +9,8 @@ import (
 // LoopAvailabilityForm carries only exact references and CAS preconditions.
 // Ownership and authority remain server-derived by the existing handler.
 templ LoopAvailabilityForm(surface SurfaceModel, record RecordModel) {
- <form method="post" action={ "/console/loops/availability?loop_id=" + url.QueryEscape(record.Label) } aria-label={ "Change availability of " + record.Label }>
+ <p>Discovery only · ALL revisions of this logical Loop. Preserves history; does not stop execution.</p>
+ <form method="post" action={ "/console/loops/availability?loop_id=" + url.QueryEscape(record.Loop.StableID) } aria-label={ "Change availability of logical Loop " + record.Loop.StableID }>
   <input type="hidden" name="csrf" value={ surface.CSRF }/>
   <input type="hidden" name="revision" value={ fmt.Sprint(record.AvailabilityHeadRevision) }/>
   <input type="hidden" name="digest" value={ record.AvailabilityHeadDigest }/>

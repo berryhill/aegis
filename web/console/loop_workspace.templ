@@ -13,13 +13,12 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
   <div class="record-head loop-record-head">
    <div><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ loopHumanTitle(record.Loop) }</h2><p>{ record.Label } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>Stored validation · { record.Loop.Validation }</span></div>
     <p>Latest publication · { loopLatestVersion(record) }</p>
+    <p>Logical lifecycle · { record.Loop.LogicalLifecycle } · Active revision · { record.Loop.ActiveVersion }</p>
+    @LoopRevisionHistory(record)
     <dl class="meta-strip"><div><dt>Control-flow steps</dt><dd>{ fmt.Sprint(len(record.Loop.Steps)) }</dd></div><div><dt>Declared inputs</dt><dd>{ fmt.Sprint(len(record.Loop.Inputs)) } · { fmt.Sprint(loopRequiredInputCount(record.Loop)) } required</dd></div><div><dt>Evidence contract</dt><dd>{ fmt.Sprint(len(record.Loop.RequiredEvidence)) } requirements</dd></div><div><dt>Iteration bound</dt><dd>Not declared globally</dd></div></dl>
    </div>
    <div class="loop-record-actions">
-	if record.Availability != "" {
-	 @LoopAvailabilityForm(surface, *record)
-	 <p>Availability: { record.Availability }. Applies to all current and future revisions; runtime lifecycle and historical references are unchanged.</p>
-	}
+	<p>Logical Loop discovery: { record.Availability }. Archive/Restore all revisions from the <a href={ "/console/loops?availability=" + url.QueryEscape(record.Availability) }>logical Loop collection</a>; history is preserved and execution is not stopped.</p>
     if !record.Loop.DoerV4 && !record.Loop.DoerV5 {
      <a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a>
     }

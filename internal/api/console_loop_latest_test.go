@@ -19,10 +19,10 @@ func TestConsoleLoopLatestUsesAuthoritativeInventoryNotViewedRevision(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(model.Records) != 2 {
+	if len(model.Records) != 1 || len(model.ExactLoopRecords) != 2 {
 		t.Fatalf("inventory lost exact revisions: %d", len(model.Records))
 	}
-	for _, record := range model.Records {
+	for _, record := range model.ExactLoopRecords {
 		want := "r2 · viewing historical revision"
 		if record.Revision == "r2" {
 			want = "r2 · viewing latest"

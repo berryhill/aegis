@@ -37,6 +37,10 @@ func TestLoopDetailFrozenSeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if os.Getenv("AEGIS_LOGICAL_LOOP_BROWSER") == "1" {
+		revision, _ = loopDetailBranchFixture(t)
+		revision.LoopID = "loop-detail"
+	}
 	revision.Name = "Authored Loop detail fixture"
 	revision, _, err = loop.NewRevision(revision)
 	if err != nil {
@@ -66,8 +70,19 @@ func TestLoopDetailFrozenSeed(t *testing.T) {
 		}
 		record(value, kind)
 	}
+	if os.Getenv("AEGIS_LOGICAL_LOOP_BROWSER") == "1" {
+		if _, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, app.SetLoopLifecycleInput{AgentID: owner.AgentID, Loop: app.RevisionReference(revision.LoopID, 1, revision.Digest), State: loop.LifecycleActive, EventID: "logical-browser-active-one"}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	record(revision, "doer")
-	newer, _, err := loop.NewDoerRevision(revision.LoopID, 2, revision.Digest, *revision.Doer)
+	var newer loop.LoopRevision
+	if os.Getenv("AEGIS_LOGICAL_LOOP_BROWSER") == "1" {
+		newer = revision
+		newer.Revision, newer.PreviousDigest = 2, revision.Digest
+	} else {
+		newer, _, err = loop.NewDoerRevision(revision.LoopID, 2, revision.Digest, *revision.Doer)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +172,11 @@ func TestLoopDetailFrozenBrowser(t *testing.T) {
 	if python == "" {
 		python = "python3"
 	}
-	browser := exec.Command(python, "../../scripts/loop_detail_console_browser_test.py")
+	script := "../../scripts/loop_detail_console_browser_test.py"
+	if os.Getenv("AEGIS_LOGICAL_LOOP_BROWSER") == "1" {
+		script = "../../scripts/logical_loop_console_browser_test.py"
+	}
+	browser := exec.Command(python, script)
 	browser.Env = append(os.Environ(), "AEGIS_CONSOLE_PASSWORD="+principalTestSecret())
 	if out, err := browser.CombinedOutput(); err != nil {
 		t.Fatalf("browser: %v %s", err, out)

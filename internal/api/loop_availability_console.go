@@ -15,7 +15,7 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-func filterConsoleLoopAvailability(model *consoleweb.SurfaceModel, state, exact string) error {
+func filterConsoleLoopAvailability(model *consoleweb.SurfaceModel, state, _ string) error {
 	if state == "" {
 		state = "published"
 	}
@@ -25,8 +25,8 @@ func filterConsoleLoopAvailability(model *consoleweb.SurfaceModel, state, exact 
 	model.Availability = state
 	records := make([]consoleweb.RecordModel, 0, len(model.Records))
 	for _, record := range model.Records {
-		// Explicit exact historical links remain readable regardless of discoverability.
-		if record.Availability == state || record.Key == exact {
+		// Exact inspection is selected independently before discovery filtering.
+		if record.Availability == state {
 			records = append(records, record)
 		}
 	}
