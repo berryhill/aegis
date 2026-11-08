@@ -610,10 +610,11 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 
 	detail := &consoleweb.LoopDetailModel{
-		HumanTitle: revision.Name,
-		DoerV4:     doerV4,
-		DoerV5:     doerV5,
-		TargetID:   loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		HumanTitle:   revision.Name,
+		DoerV4:       doerV4,
+		DoerV5:       doerV5,
+		Contribution: revision.Contribution != nil,
+		TargetID:     loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
 		CanRetire:     view.Lifecycle.State != "retired",
@@ -681,7 +682,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 				consoleweb.FieldModel{Label: "Adapter backend", Value: binding.Backend},
 				consoleweb.FieldModel{Label: "Required controller authority binding", Value: binding.Authority})
 		}
-		if implementation := step.Implementation; implementation != nil {
+		if implementation := step.Implementation; implementation != nil && revision.Contribution == nil {
 			projected.Bindings = append(projected.Bindings,
 				consoleweb.FieldModel{Label: "Implementation schema", Value: implementation.SchemaVersion},
 				consoleweb.FieldModel{Label: "Implementation task", Value: implementation.Task},

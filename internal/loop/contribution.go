@@ -15,6 +15,16 @@ func NewContributionRevision(id string, revision uint64, previous string, implem
 	}
 	r.SchemaVersion = ContributionRevisionSchemaVersion
 	r.Contribution = &profile
+	// Historical v6 profiles keep their canonical zero-input definition.
+	// Engineering successors bind one public datum to the sealed intake.
+	if profile.Engineering != nil {
+		r.Inputs = []Port{{ID: "github_issue_url", Type: "string", Required: true}}
+		for i := range r.Steps {
+			if r.Steps[i].ID == r.EntryStepID {
+				r.Steps[i].InputPorts = append([]Port(nil), r.Inputs...)
+			}
+		}
+	}
 	r.Digest = ""
 	return NewRevision(r)
 }
@@ -23,6 +33,7 @@ func NewContributionRevision(id string, revision uint64, previous string, implem
 // profile. It does not grant runtime, host, GitHub write or merge authority.
 // GitHub-effect profiles are deliberately not accepted by this local executor.
 type ContributionProfile struct {
+	Engineering       *IssueEngineeringPolicy      `json:"engineering,omitempty"`
 	FinalVerification string                       `json:"final_verification,omitempty"`
 	Managed           *ContributionExecutionPolicy `json:"managed,omitempty"`
 	Controller        reference.RevisionRef        `json:"controller"`
@@ -39,6 +50,11 @@ type ContributionProfile struct {
 }
 
 func (p ContributionProfile) Validate() error {
+	if p.Engineering != nil {
+		if p.Engineering.Validate() != nil || p.Managed == nil || p.Managed.Kind != EngineeringExecutionKind || p.Managed.ReviewMode != "issue-journeys.v1" || p.FinalVerification != "aegis.contribution.final.v1" {
+			return errors.New("qualified engineering execution and final verification required")
+		}
+	}
 	if p.FinalVerification != "" && p.FinalVerification != "aegis.contribution.final.v1" {
 		return errors.New("unknown contribution final verification policy")
 	}
@@ -59,6 +75,29 @@ func (p ContributionProfile) Validate() error {
 	}
 	return nil
 }
+
+// validContributionInputs retains immutable historical v6 acceptance, while
+// the additive URL-only form is closed to Engineering and cannot accept scope,
+// workspace, authority or executable data through a Graph adapter.
+func validContributionInputs(r LoopRevision) bool {
+	if len(r.Inputs) == 0 {
+		return true
+	}
+	if r.Contribution == nil || r.Contribution.Engineering == nil || len(r.Inputs) != 1 {
+		return false
+	}
+	p := r.Inputs[0]
+	if p.ID != "github_issue_url" || p.Type != "string" || !p.Required {
+		return false
+	}
+	for _, step := range r.Steps {
+		if step.ID == r.EntryStepID {
+			return len(step.InputPorts) == 1 && step.InputPorts[0] == p
+		}
+	}
+	return false
+}
+
 func IsImplementationSchema(s string) bool {
 	return s == ImplementationRevisionSchemaVersion || s == ContributionRevisionSchemaVersion
 }

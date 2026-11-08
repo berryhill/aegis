@@ -1,5 +1,16 @@
 # Aegis MVP Architecture
 
+[Issue engineering](issue-derived-engineering.md) prepares ordinary prose through
+bounded clean-session role turns and seals exact context in existing contribution
+custody. Optional explicit templ generated-write policy derives only approved
+existing pairs, records the generation intent before a literal pinned offline
+compiler runs in a private native copy, validates its output allowlist, then
+freshly authorizes exact worktree replacements. Generation receipts join the
+refrozen source/toolchain/dependency/executable before independent testing. The
+Console exposes issue-URL entry and retained decision/gate readback; it cannot
+approve authority. No new store, daemon or general command runner is introduced.
+
+
 Contribution intake retains complete issue context in the existing sealed Fleet
 contract. Oversized inline Tasks bind its exact run/digest; the authorized Queue
 controller resolves and transports the complete contract to the tool-free builder

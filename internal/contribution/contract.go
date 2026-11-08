@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 )
 
@@ -20,37 +21,45 @@ func ValidKey(k string) bool { return keyPattern.MatchString(k) }
 // Contract is sealed at authenticated admission, not constructed by a model.
 // It binds one issue writer to the existing Queue, not a second execution queue.
 type Contract struct {
-	SchemaVersion   string                `json:"schema_version"`
-	OwnerID         string                `json:"owner_id"`
-	SessionID       string                `json:"session_id"`
-	Key             string                `json:"key"`
-	PayloadDigest   string                `json:"payload_digest"`
-	QueueItemID     string                `json:"queue_item_id"`
-	SubmissionID    string                `json:"submission_id"`
-	RunID           string                `json:"run_id"`
-	Loop            reference.RevisionRef `json:"loop"`
-	Controller      reference.RevisionRef `json:"controller"`
-	Builder         reference.RevisionRef `json:"builder"`
-	Tester          reference.RevisionRef `json:"tester"`
-	Source          Source                `json:"source"`
-	NarrowerScope   string                `json:"narrower_scope"`
-	Outcome         string                `json:"outcome"`
-	Acceptance      string                `json:"acceptance"`
-	Invariants      []string              `json:"invariants"`
-	Exclusions      []string              `json:"exclusions"`
-	Repository      string                `json:"repository"`
-	Base            string                `json:"base"`
-	Worktree        string                `json:"worktree"`
-	Effect          string                `json:"effect"`
-	Roles           []RoleBinding         `json:"roles"`
-	TemplateDigest  string                `json:"template_digest"`
-	CandidateBudget uint8                 `json:"candidate_budget"`
-	AdmittedAt      time.Time             `json:"admitted_at"`
-	Deadline        time.Time             `json:"deadline"`
-	Digest          string                `json:"digest"`
+	Preparation     *EngineeringPreparation      `json:"engineering_preparation,omitempty"`
+	Engineering     *loop.VerifiedImplementation `json:"engineering,omitempty"`
+	SchemaVersion   string                       `json:"schema_version"`
+	OwnerID         string                       `json:"owner_id"`
+	SessionID       string                       `json:"session_id"`
+	Key             string                       `json:"key"`
+	PayloadDigest   string                       `json:"payload_digest"`
+	QueueItemID     string                       `json:"queue_item_id"`
+	SubmissionID    string                       `json:"submission_id"`
+	RunID           string                       `json:"run_id"`
+	Loop            reference.RevisionRef        `json:"loop"`
+	Controller      reference.RevisionRef        `json:"controller"`
+	Builder         reference.RevisionRef        `json:"builder"`
+	Tester          reference.RevisionRef        `json:"tester"`
+	Source          Source                       `json:"source"`
+	NarrowerScope   string                       `json:"narrower_scope"`
+	Outcome         string                       `json:"outcome"`
+	Acceptance      string                       `json:"acceptance"`
+	Invariants      []string                     `json:"invariants"`
+	Exclusions      []string                     `json:"exclusions"`
+	Repository      string                       `json:"repository"`
+	Base            string                       `json:"base"`
+	Worktree        string                       `json:"worktree"`
+	Effect          string                       `json:"effect"`
+	Roles           []RoleBinding                `json:"roles"`
+	TemplateDigest  string                       `json:"template_digest"`
+	CandidateBudget uint8                        `json:"candidate_budget"`
+	AdmittedAt      time.Time                    `json:"admitted_at"`
+	Deadline        time.Time                    `json:"deadline"`
+	Digest          string                       `json:"digest"`
 }
 
 func (c Contract) validate() error {
+	if (c.Engineering == nil) != (c.Preparation == nil) {
+		return errors.New("engineering preparation and scope must be retained together")
+	}
+	if c.Engineering != nil && (c.Engineering.SchemaVersion != loop.RepositoryEngineeringSchema || c.Engineering.Contribution != nil || c.Engineering.Validate() != nil || c.Engineering.Task != c.Outcome || c.Engineering.Acceptance != c.Acceptance || c.Engineering.Workspace != c.Worktree || c.Engineering.MaxPasses != c.CandidateBudget) {
+		return errors.New("invalid sealed engineering scope")
+	}
 	if c.SchemaVersion != Schema || c.OwnerID == "" || c.SessionID == "" || !ValidKey(c.Key) || c.QueueItemID == "" || c.SubmissionID == "" || c.RunID == "" || c.PayloadDigest == "" || c.Source.RepositoryID == 0 || c.Source.IssueID == 0 || c.Source.ContentDigest == "" || c.Outcome == "" || c.Acceptance == "" || c.TemplateDigest == "" || c.CandidateBudget < 1 || c.CandidateBudget > 2 || !ValidDelivery(c.Effect) || c.Worktree == "" || c.Base == "" || c.Repository == "" || c.AdmittedAt.IsZero() || !c.Deadline.After(c.AdmittedAt) || c.Deadline.Sub(c.AdmittedAt) > 24*time.Hour || len(c.NarrowerScope) > 4096 {
 		return errors.New("invalid contribution contract")
 	}

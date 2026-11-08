@@ -20,7 +20,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
 	 @LoopAvailabilityForm(surface, *record)
 	 <p>Availability: { record.Availability }. Applies to all current and future revisions; runtime lifecycle and historical references are unchanged.</p>
 	}
-    if !record.Loop.DoerV4 && !record.Loop.DoerV5 {
+    if !record.Loop.Contribution && !record.Loop.DoerV4 && !record.Loop.DoerV5 {
      <a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a>
     }
     <button class="secondary" type="button" data-loop-definition aria-controls="loop-context" aria-expanded="true">Definition details</button>
@@ -28,7 +28,11 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
   </div>
   <section class="loop-admission" aria-label="Loop admission and Graph-child execution">
    <p>{ record.Readiness }</p>
-   if record.Loop.DoerV4 {
+   if record.Loop.Contribution {
+    <p>One issue URL starts the complete closed contribution journey for this exact revision. Definition and role references grant no host, runtime, publication or merge authority. Independent prerequisite decisions retain their existing protected review journey.</p>
+    @ContributionIssueForm(surface.CSRF, record.Label, strings.TrimPrefix(record.Revision, "r"), record.Digest)
+    <details><summary>Ordered contribution operations and evidence checkpoints</summary><p>Resolve issue and ownership → seal policy and roles → prepare owned fresh-base worktree → builder and regression → freeze complete candidate → independent tester → bounded same-builder repair → security and launch review → scoped publication and exact-head CI/review → protected merge and independently joined final disposition. Narrower targets omit forbidden effects. These are operations inside the closed contribution executor, not independently executable Graph steps; the implementation node below is an inner primitive, not the whole journey.</p></details>
+   } else if record.Loop.DoerV4 {
     <p>This published definition is not executable authority. A native authenticated Run request asks the existing bounded Queue controller for prerequisite admission and explicit activation. A mismatched runtime authentication stanza is denied; this page does not authorize host writes or prove runtime readiness.</p>
     <form method="post" action={ "/console/loops/run?loop_id=" + url.QueryEscape(record.Label) }>
      <input type="hidden" name="csrf" value={ surface.CSRF }/>

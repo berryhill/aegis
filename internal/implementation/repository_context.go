@@ -13,11 +13,21 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 )
 
+type RepositoryTextRange struct {
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+	Text  string `json:"text"`
+}
+
 type RepositoryContextText struct {
-	Path   string `json:"path"`
-	Role   string `json:"role"`
-	Digest string `json:"digest"`
-	Text   string `json:"text"`
+	Bytes  int64                  `json:"bytes,omitempty"`
+	Mode   uint32                 `json:"mode,omitempty"`
+	Ranges [2]RepositoryTextRange `json:"ranges,omitzero"`
+	Absent bool                   `json:"absent,omitempty"`
+	Path   string                 `json:"path"`
+	Role   string                 `json:"role"`
+	Digest string                 `json:"digest"`
+	Text   string                 `json:"text"`
 }
 
 // CollectedRepositoryContext contains untrusted task data. It supplies no tools,
@@ -65,6 +75,13 @@ func CollectRepositoryContext(ctx context.Context, c loop.VerifiedImplementation
 		if ctx.Err() != nil {
 			return nil, reject
 		}
+		if entry.Absent {
+			if c.SchemaVersion != loop.RepositoryEngineeringSchema || verifyAbsentRegression(root, entry.Path) != nil {
+				return nil, reject
+			}
+			result.Files = append(result.Files, RepositoryContextText{Path: entry.Path, Role: entry.Role, Digest: entry.Digest, Absent: true})
+			continue
+		}
 		b, err := readRepositoryContextFile(root, entry.Path, entry.Bytes)
 		if err != nil || int64(len(b)) != entry.Bytes || int64(len(b)) > m.MaxTotalBytes-total || digest(b) != entry.Digest || !utf8.Valid(b) {
 			return nil, reject
@@ -79,7 +96,16 @@ func CollectRepositoryContext(ctx context.Context, c loop.VerifiedImplementation
 			return nil, reject
 		}
 		total += int64(len(b))
-		result.Files = append(result.Files, RepositoryContextText{Path: entry.Path, Role: entry.Role, Digest: entry.Digest, Text: string(b)})
+		text := RepositoryContextText{Path: entry.Path, Role: entry.Role, Digest: entry.Digest, Text: string(b)}
+		if c.SchemaVersion == loop.RepositoryEngineeringSchema {
+			info, e := root.Lstat(entry.Path)
+			if e != nil {
+				return nil, reject
+			}
+			text.Mode = uint32(info.Mode().Perm())
+			text.Bytes = int64(len(b))
+		}
+		result.Files = append(result.Files, text)
 	}
 	if ctx.Err() != nil {
 		return nil, reject

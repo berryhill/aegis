@@ -30,6 +30,7 @@ type ContributionRoleIdentity struct {
 	TurnID           string `json:"turn_id"`
 }
 type ContributionCandidate struct {
+	Generation   string `json:"generation,omitempty"`
 	CurrentBase  string `json:"current_base,omitempty"`
 	Contract     string `json:"contract"`
 	QueueAttempt string `json:"queue_attempt"`
@@ -87,6 +88,9 @@ type ContributionRecord struct {
 // Interrupted effects retain their reservation; only explicit quiescent phase
 // boundaries permit exact same-attempt continuation. No authority renewal.
 type ManagedContribution struct {
+	sourcePolicy     *loop.SourceInventoryPolicy
+	dependencies     *loop.DependencyBundle
+	templConsistency string
 	// RepairAdmission is an owning-service callback. It must reload canonical
 	// pre-merge failure history and exact current authority under source custody.
 	// A non-nil callback is not itself admission; its sealed result is retained.
@@ -142,6 +146,9 @@ func (e *ManagedContribution) admit(ctx context.Context, effect string) error {
 
 // PreflightManaged rejects unsupported profiles before executable admission.
 func PreflightManaged(c loop.VerifiedImplementation, p loop.ContributionExecutionPolicy) error {
+	if c.SchemaVersion == loop.RepositoryEngineeringSchema && p.Kind != loop.EngineeringExecutionKind {
+		return errors.New("engineering execution requires distinct qualified policy")
+	}
 	if c.Validate() != nil || p.Validate() != nil || c.DecisionMode != "" || c.RepositoryContext == nil {
 		return errors.New("unsupported managed contribution profile")
 	}
@@ -171,6 +178,9 @@ func PreflightManaged(c loop.VerifiedImplementation, p loop.ContributionExecutio
 			return errors.New("resolved managed execution paths required")
 		}
 	}
+	if err := validateTemplSelection(c, p); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -193,6 +203,9 @@ func (e *ManagedContribution) Run(ctx context.Context, run, contract, attempt, b
 	if err := PreflightManaged(c, p); err != nil {
 		return record, err
 	}
+	e.dependencies = p.Dependencies
+	e.templConsistency = p.TemplConsistency
+	e.sourcePolicy = p.SourceInventory
 	// A restart may continue only an explicit quiescent phase boundary, never
 	// an unknown in-flight effect. The root reservation is never released.
 	if old, err := e.Read(run); err == nil {
@@ -257,7 +270,7 @@ func (e *ManagedContribution) Run(ctx context.Context, run, contract, attempt, b
 	if err != nil {
 		return record, err
 	}
-	initial, err := Inventory(ctx, c.Workspace)
+	initial, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 	if err != nil {
 		return record, err
 	}
@@ -275,7 +288,7 @@ func (e *ManagedContribution) Run(ctx context.Context, run, contract, attempt, b
 			return record, errors.New("approved review baseline asset missing or mismatched")
 		}
 	}
-	if err = stdlibModule(initial); err != nil {
+	if err = qualifiedModule(initial, p); err != nil {
 		return record, err
 	}
 	if err = os.MkdirAll(e.StateRoot, 0700); err != nil {
@@ -370,7 +383,7 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			if err = e.admit(ctx, "builder"); err != nil {
 				return record, err
 			}
-			before, err := Inventory(ctx, c.Workspace)
+			before, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 			if err != nil {
 				return record, err
 			}
@@ -386,23 +399,39 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 				return record, errors.New("same independently admitted builder required")
 			}
 			builder = identity
-			after, err := Inventory(ctx, c.Workspace)
+			after, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 			if err != nil || after.Digest != before.Digest {
 				return record, errors.New("source changed during builder proposal")
+			}
+			if p.TemplGeneratedWrites {
+				for _, edit := range edits {
+					if strings.HasSuffix(edit.Path, "_templ.go") {
+						return record, errors.New("generated output is controller-owned")
+					}
+				}
+			}
+			edits, err = resolveEngineeringHunks(ctx, c, edits)
+			if err != nil {
+				return record, err
 			}
 			if err = kernel.apply(ctx, c, edits, expected); err != nil {
 				return record, err
 			}
-			frozen, err = Inventory(ctx, c.Workspace)
+			frozen, err = InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 			if err != nil {
 				return record, err
 			}
 			if err = onlyEdits(before, frozen, edits); err != nil {
 				return record, err
 			}
-			if err = stdlibModule(frozen); err != nil {
+			if err = qualifiedModule(frozen, p); err != nil {
 				return record, err
 			}
+			generation, generatedSource, genErr := e.generateTempl(ctx, c, p, record, frozen, expected)
+			if genErr != nil {
+				return record, genErr
+			}
+			frozen = generatedSource
 			e.CurrentExecutable = ""
 			executable, err := e.build(ctx, c, p, frozen)
 			if err != nil {
@@ -427,7 +456,7 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			if err != nil {
 				return record, err
 			}
-			candidate = ContributionCandidate{CandidateCommit: candidateCommit, CandidateTree: candidateTree, Contract: contract, QueueAttempt: attempt, Pass: record.Consumed, Base: base, HeadCommit: strings.TrimSpace(string(commit)), HeadTree: strings.TrimSpace(string(tree)), Index: digest(index), Source: frozen, Executable: executable, Toolchain: e.toolchainDigest, Policy: contributionPolicyDigest(p), Builder: builder}
+			candidate = ContributionCandidate{Generation: generation, CandidateCommit: candidateCommit, CandidateTree: candidateTree, Contract: contract, QueueAttempt: attempt, Pass: record.Consumed, Base: base, HeadCommit: strings.TrimSpace(string(commit)), HeadTree: strings.TrimSpace(string(tree)), Index: digest(index), Source: frozen, Executable: executable, Toolchain: e.toolchainDigest, Policy: contributionPolicyDigest(p), Builder: builder}
 			if record.Integration != nil {
 				candidate.CurrentBase = record.Integration.CurrentBase
 			}
@@ -510,7 +539,7 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			if err = e.checkpoint(ctx, "review", record, candidate.Digest); err != nil {
 				return record, err
 			}
-			check.Review, err = e.persistReview(candidate, p)
+			check.Review, err = e.persistReview(candidate, p, check)
 			if err != nil {
 				return record, err
 			}
@@ -604,6 +633,9 @@ func (e *ManagedContribution) prepare(ctx context.Context, p loop.ContributionEx
 	return err
 }
 func (e *ManagedContribution) native(ctx context.Context, c loop.VerifiedImplementation, source SourceInventory, args []string) ([]byte, error) {
+	return e.nativeOperation(ctx, c, source, args, false)
+}
+func (e *ManagedContribution) nativeOperation(ctx context.Context, c loop.VerifiedImplementation, source SourceInventory, args []string, generate bool) ([]byte, error) {
 	toolchain, toolErr := e.verifyToolchain(ctx)
 	if toolErr != nil {
 		return nil, toolErr
@@ -631,6 +663,75 @@ func (e *ManagedContribution) native(ctx context.Context, c loop.VerifiedImpleme
 	cmd.Dir = workspace
 	cmd.Env = []string{"PATH=" + filepath.Dir(e.GoBinary), "HOME=" + home, "GOCACHE=" + filepath.Join(home, "cache"), "GOMODCACHE=" + filepath.Join(home, "modules"), "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off", "CGO_ENABLED=0", "GOMAXPROCS=2", "GOMEMLIMIT=2GiB", "GOFLAGS=-p=1 -trimpath -buildvcs=false"}
 	cmd.Env = append(cmd.Env, "GOROOT="+toolchain.Root, "GOENV=off", "GOOS="+toolchain.OS, "GOARCH="+toolchain.Arch, "GOAMD64=v1", "GOEXPERIMENT=", "GODEBUG=", "TMPDIR="+home)
+	if e.dependencies != nil {
+		wire, err := dependencyBundleBytes(*e.dependencies)
+		if err != nil {
+			return nil, err
+		}
+		proxy := filepath.Join(home, "proxy")
+		if err = materializeDependencyBundle(ctx, wire, proxy); err != nil {
+			return nil, err
+		}
+		for i, entry := range cmd.Env {
+			if strings.HasPrefix(entry, "GOPROXY=") {
+				cmd.Env[i] = "GOPROXY=file://" + proxy
+			}
+			if strings.HasPrefix(entry, "GOFLAGS=") {
+				cmd.Env[i] += " -mod=readonly -modcacherw"
+			}
+		}
+	}
+	pairs := selectedTemplPairs(c.WritableFiles)
+	if len(pairs) > 0 {
+		if e.templConsistency != loop.TemplModuleConsistency || e.dependencies == nil {
+			return nil, errTemplConsistency
+		}
+		run := func(ctx context.Context, generated *exec.Cmd) error {
+			if err := e.admit(ctx, "native-check"); err != nil {
+				return err
+			}
+			generated.WaitDelay = time.Second
+			if e.Native != nil {
+				x := e.Native(ctx, generated)
+				if x != nil {
+					removeHome = false
+				}
+				return x
+			}
+			if err := configureProcess(generated); err != nil {
+				return err
+			}
+			defer killProcessGroup(generated)
+			return generated.Run()
+		}
+		if generate {
+			if err := generateTemplPairs(ctx, e.GoBinary, workspace, cmd.Env, source, pairs, run, e.Admit); err != nil {
+				return nil, err
+			}
+			observed, err := InventoryWithPolicy(ctx, workspace, e.sourcePolicy)
+			if err != nil {
+				return nil, err
+			}
+			edits, err := generatedTemplEdits(source, observed, pairs)
+			if err != nil {
+				return nil, err
+			}
+			if _, err = e.verifyToolchain(ctx); err != nil {
+				return nil, err
+			}
+			if _, err = dependencyBundleBytes(*e.dependencies); err != nil {
+				return nil, err
+			}
+			return json.Marshal(edits)
+		}
+		if err := checkTemplConsistency(ctx, e.GoBinary, workspace, cmd.Env, source, pairs, run); err != nil {
+			return nil, err
+		}
+		observed, err := InventoryWithPolicy(ctx, workspace, e.sourcePolicy)
+		if err != nil || observed.Digest != source.Digest {
+			return nil, errTemplConsistency
+		}
+	}
 	if e.CurrentExecutable != "" {
 		b, err := e.DB.Get(blobKey(e.CurrentExecutable))
 		if err != nil || digest(b) != e.CurrentExecutable {
@@ -669,6 +770,11 @@ func (e *ManagedContribution) native(ctx context.Context, c loop.VerifiedImpleme
 	}
 	if output.overflow {
 		return nil, errors.New("native check output exceeds bound")
+	}
+	if e.dependencies != nil {
+		if _, checkErr := dependencyBundleBytes(*e.dependencies); checkErr != nil {
+			return nil, checkErr
+		}
 	}
 	return output.bytes, err
 }
@@ -717,10 +823,15 @@ func (e *ManagedContribution) build(ctx context.Context, c loop.VerifiedImplemen
 	return e.blob(b)
 }
 func (e *ManagedContribution) revalidate(ctx context.Context, c loop.VerifiedImplementation, p loop.ContributionExecutionPolicy, v ContributionCandidate) error {
+	if p.Dependencies != nil {
+		if _, err := dependencyBundleBytes(*p.Dependencies); err != nil {
+			return err
+		}
+	}
 	if err := e.admit(ctx, "candidate-verify"); err != nil {
 		return err
 	}
-	source, err := Inventory(ctx, c.Workspace)
+	source, err := InventoryWithPolicy(ctx, c.Workspace, e.sourcePolicy)
 	if err != nil || source.Digest != v.Source.Digest {
 		return errors.New("frozen source changed")
 	}

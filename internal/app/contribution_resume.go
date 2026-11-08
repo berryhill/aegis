@@ -16,6 +16,9 @@ import (
 func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, key string) (ContributionExecutionResult, error) {
 	c, _, err := s.ReadContributionAs(ctx, sub, key)
 	if err != nil {
+		if errors.Is(err, fleet.ErrNotFound) {
+			return s.resumeEngineeringPreparation(ctx, sub, key)
+		}
 		return ContributionExecutionResult{}, err
 	}
 	runCtx, finish, err := s.beginContributionRun(ctx, c)

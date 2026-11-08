@@ -1,0 +1,57 @@
+package consoleweb
+
+import (
+ "fmt"
+ "net/url"
+)
+
+templ ContributionIssueForm(csrf, id, revision, digest string) {
+ <form method="post" action={ "/console/loops/contribution?loop_id=" + url.QueryEscape(id) }>
+  <input type="hidden" name="csrf" value={ csrf }/>
+  <input type="hidden" name="revision" value={ revision }/>
+  <input type="hidden" name="digest" value={ digest }/>
+  <input type="hidden" name="action" value="run"/>
+  <label>GitHub issue URL <input type="url" name="github_issue_url" required maxlength="2048" placeholder="https://github.com/owner/repository/issues/123"/></label>
+  <button class="primary" type="submit">Run exact contribution Loop</button>
+ </form>
+}
+
+templ ContributionRecovery(csrf string, run ContributionRunModel) {
+ <section class="panel" aria-label="Retained contribution controls">
+ <p>Current delivery target: <strong>{ run.Delivery }</strong></p>
+ if run.Stopped {
+ <p>Stop retained: this contribution cannot resume execution.</p>
+ }
+ if run.Decision != nil {
+ <section aria-label="Independent provisioning decision" id="protected-contribution-decision">
+ <h2>Independent provisioning decision</h2>
+ <dl><dt>Purpose</dt><dd>{ run.Decision.Purpose }</dd><dt>Role</dt><dd>{ run.Decision.Role }</dd><dt>Agent</dt><dd>{ run.Decision.Agent }</dd><dt>Charter</dt><dd>{ run.Decision.Charter }</dd><dt>Plan</dt><dd>{ run.Decision.Plan }</dd><dt>Plan digest</dt><dd>{ run.Decision.PlanDigest }</dd><dt>Candidate</dt><dd>{ run.Decision.Candidate }</dd><dt>Contract</dt><dd>{ run.Decision.Contract }</dd><dt>Delivery status</dt><dd>{ run.Decision.Status }</dd><dt>Expires</dt><dd>{ run.Decision.Expires }</dd></dl>
+ <p>{ run.Decision.Message }</p>
+ <p>The existing protected decision companion authenticates independently. Browser login is not local-OS authority; this page cannot approve or apply provisioning.</p>
+ <a href="#protected-contribution-continuation">Protected setup / decision continuation</a>
+ </section>
+ }
+ <h2>Same-intent recovery</h2><p>Retrying this exact issue and revision retains the original intent, deadline, candidate budget and independent decisions. Stop is sticky; narrowing cannot widen the delivery target.</p>
+ <form method="post" action={ "/console/loops/contribution?loop_id=" + url.QueryEscape(run.LoopID) }>
+  <input type="hidden" name="csrf" value={ csrf }/>
+  <input type="hidden" name="revision" value={ fmt.Sprint(run.Revision) }/>
+  <input type="hidden" name="digest" value={ run.Digest }/>
+  <input type="hidden" name="github_issue_url" value={ run.Issue }/>
+  <button type="submit" name="action" value="status">Read status</button>
+  if run.Decision != nil && !run.Stopped {
+ <button id="protected-contribution-continuation" type="submit" name="action" value="protected-review">Read protected decision delivery</button>
+ }
+  <button type="submit" name="action" value="resume">Resume same intent</button>
+  <button type="submit" name="action" value="stop">Stop contribution</button>
+ </form>
+ <form method="post" action={ "/console/loops/contribution?loop_id=" + url.QueryEscape(run.LoopID) }>
+  <input type="hidden" name="csrf" value={ csrf }/>
+  <input type="hidden" name="revision" value={ fmt.Sprint(run.Revision) }/>
+  <input type="hidden" name="digest" value={ run.Digest }/>
+  <input type="hidden" name="github_issue_url" value={ run.Issue }/>
+  <input type="hidden" name="action" value="narrow"/>
+  <label>Narrow delivery <select name="delivery"><option value="no-merge">No merge</option><option value="no-publish">No publish</option><option value="local-only">Local only</option></select></label>
+  <button type="submit">Apply narrower target</button>
+ </form>
+ </section>
+}

@@ -25,8 +25,12 @@ import (
 const maxBytes = 8 << 20
 
 type Edit struct {
-	Path    string `json:"path"`
-	Content []byte `json:"content"`
+	Path           string     `json:"path"`
+	Content        []byte     `json:"content"`
+	PreimageDigest string     `json:"preimage_digest,omitempty"`
+	PreimageMode   uint32     `json:"preimage_mode,omitempty"`
+	Hunks          []ByteHunk `json:"hunks,omitempty"`
+	preserveMode   os.FileMode
 }
 type Request struct {
 	FailureObserver func(ManagedFailure) error   `json:"-"`
@@ -588,6 +592,11 @@ func (e *Executor) Output(id string, c loop.VerifiedImplementation) ([]byte, err
 }
 
 func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edits []Edit, states ...*CollectedRepositoryContext) error {
+	var resolveErr error
+	edits, resolveErr = resolveEngineeringHunks(ctx, c, edits)
+	if resolveErr != nil {
+		return resolveErr
+	}
 	var expected *CollectedRepositoryContext
 	if len(states) != 0 {
 		expected = states[0]
@@ -635,7 +644,12 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 		if x != nil {
 			return x
 		}
-		_, x = f.Write(v.Content)
+		if v.preserveMode != 0 {
+			x = f.Chmod(v.preserveMode)
+		}
+		if x == nil {
+			_, x = f.Write(v.Content)
+		}
 		if x == nil {
 			x = f.Sync()
 		}
@@ -646,7 +660,25 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 		if closeErr != nil {
 			return closeErr
 		}
-		if err = root.Rename(temp, v.Path); err != nil {
+		creating := false
+		if expected != nil {
+			for _, f := range expected.Files {
+				creating = creating || (f.Path == v.Path && f.Absent)
+			}
+		}
+		if creating {
+			// No-clobber creation: a concurrent basename insertion must not be
+			// overwritten between negative-preimage checking and application.
+			if err = verifyAbsentRegression(root, v.Path); err != nil {
+				return err
+			}
+			if err = root.Link(temp, v.Path); err != nil {
+				return err
+			}
+			if err = root.Remove(temp); err != nil {
+				return err
+			}
+		} else if err = root.Rename(temp, v.Path); err != nil {
 			return err
 		}
 		advanceContext(c, expected, []Edit{v})
@@ -685,6 +717,9 @@ func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]
 }
 
 func (e *Executor) checkCandidate(ctx context.Context, c loop.VerifiedImplementation, expected *CollectedRepositoryContext) ([]byte, bool, error) {
+	if c.SchemaVersion == loop.RepositoryEngineeringSchema && len(selectedTemplPairs(c.WritableFiles)) > 0 {
+		return nil, false, errors.New("template consistency requires independently approved managed native policy")
+	}
 	if e.Native == nil {
 		return nil, false, errors.New("qualified native checker port required")
 	}

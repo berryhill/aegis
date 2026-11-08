@@ -9,13 +9,14 @@ import (
 
 type AssetReviewEvidence struct{ ID, Scope, Path, Status, Digest, Reason string }
 type ContributionReviewLedger struct {
+	Check                     string `json:"check,omitempty"`
 	Candidate, Source, Policy string
 	Assets                    []AssetReviewEvidence
 }
 
-// A closed exact-content review: approval of these bytes lives in the immutable
-// operator policy, never in caller PASS text. This is not a general semantic
-// reviewer. Any other bytes require a new policy approval.
+// Historical policies retain exact-content approval. Engineering policies bind
+// actual immutable security/launch journeys, not a builder/model PASS or advance
+// approval of future source bytes. The ledger records changed/unaffected assets.
 func reviewCandidate(v ContributionCandidate, p loop.ContributionExecutionPolicy) (ContributionReviewLedger, error) {
 	l := ContributionReviewLedger{Candidate: v.Digest, Source: v.Source.Digest, Policy: contributionPolicyDigest(p)}
 	bad := errors.New("incomplete or mismatched approved asset review")
@@ -39,7 +40,7 @@ func reviewCandidate(v ContributionCandidate, p loop.ContributionExecutionPolicy
 					r.Status = "unaffected"
 				}
 			}
-			if r.Digest != a.ApprovedDigest {
+			if r.Digest == "" || (p.ReviewMode == "" && r.Digest != a.ApprovedDigest) {
 				return l, bad
 			}
 		}
@@ -47,26 +48,46 @@ func reviewCandidate(v ContributionCandidate, p loop.ContributionExecutionPolicy
 	}
 	return l, nil
 }
-func (e *ManagedContribution) persistReview(v ContributionCandidate, p loop.ContributionExecutionPolicy) (string, error) {
+func (e *ManagedContribution) reviewJourneysPassed(output string, p loop.ContributionExecutionPolicy) bool {
+	tests := []loop.RequiredGoTest{}
+	for _, c := range p.Criteria {
+		tests = append(tests, c.Test)
+	}
+	wire := previousBytes(e.DB, output)
+	return len(wire) > 0 && requiredTestsPassed(wire, tests)
+}
+func (e *ManagedContribution) persistReview(v ContributionCandidate, p loop.ContributionExecutionPolicy, checks ...ContributionCheck) (string, error) {
 	l, err := reviewCandidate(v, p)
 	if err != nil {
 		return "", err
+	}
+	if p.ReviewMode == "issue-journeys.v1" {
+		if len(checks) != 1 || checks[0].Outcome != "passed" || !e.reviewJourneysPassed(checks[0].OutputDigest, p) {
+			return "", errors.New("actual independent review journey evidence required")
+		}
+		l.Check = checks[0].OutputDigest
 	}
 	b, err := json.Marshal(l)
 	if err != nil {
 		return "", err
 	}
 	d := digest(b)
-	err = e.DB.Create([]byte("contribution/review/"+d), b)
-	return d, err
+	return d, e.DB.Create([]byte("contribution/review/"+d), b)
 }
-func (e *ManagedContribution) validateReview(v ContributionCandidate, p loop.ContributionExecutionPolicy, d string) error {
+func (e *ManagedContribution) validateReview(v ContributionCandidate, p loop.ContributionExecutionPolicy, d string, outputs ...string) error {
 	l, err := reviewCandidate(v, p)
 	if err != nil {
 		return err
 	}
-	want, _ := json.Marshal(l)
 	got, err := e.DB.Get([]byte("contribution/review/" + d))
+	if p.ReviewMode == "issue-journeys.v1" {
+		var retained ContributionReviewLedger
+		if err != nil || json.Unmarshal(got, &retained) != nil || len(outputs) != 1 || retained.Check != outputs[0] || !e.reviewJourneysPassed(retained.Check, p) {
+			return errors.New("missing independent review journeys")
+		}
+		l.Check = retained.Check
+	}
+	want, _ := json.Marshal(l)
 	if err != nil || digest(got) != d || !bytes.Equal(got, want) {
 		return errors.New("immutable candidate review ledger mismatch")
 	}

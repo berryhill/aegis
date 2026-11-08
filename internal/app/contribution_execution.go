@@ -11,6 +11,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
@@ -18,6 +19,7 @@ import (
 
 // ContributionExecutionResult reports candidate execution, never delivery success.
 type ContributionExecutionResult struct {
+	Preparation     *ContributionEngineeringStatus    `json:"preparation,omitempty"`
 	Provenance      *ContributionRunProvenance        `json:"provenance,omitempty"`
 	Available       bool                              `json:"available"`
 	Reason          string                            `json:"reason"`
@@ -208,6 +210,9 @@ func (s *Service) executeContributionInRun(ctx context.Context, subject core.Sub
 func (s *Service) ContributionExecutionStatusAs(ctx context.Context, subject core.Subject, key string) (ContributionExecutionResult, error) {
 	c, view, err := s.ReadContributionAs(ctx, subject, key)
 	if err != nil {
+		if errors.Is(err, fleet.ErrNotFound) {
+			return s.preparationExecutionStatus(ctx, subject, key)
+		}
 		return ContributionExecutionResult{}, err
 	}
 	lv, err := s.GetLoopViewAs(ctx, subject, c.Loop.ID, c.Loop.Revision)

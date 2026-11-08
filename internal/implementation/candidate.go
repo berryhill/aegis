@@ -3,7 +3,9 @@ package implementation
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"github.com/berryhill/aegis/internal/loop"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,6 +28,17 @@ type SourceInventory struct {
 // Inventory extends the implementation kernel's root-relative, single-link
 // reader. There is no selected-file fallback and no implicit ignored exclusion.
 func Inventory(ctx context.Context, workspace string) (SourceInventory, error) {
+	return InventoryWithPolicy(ctx, workspace, nil)
+}
+
+func InventoryWithPolicy(ctx context.Context, workspace string, policy *loop.SourceInventoryPolicy) (SourceInventory, error) {
+	fileLimit, totalLimit, countLimit := int64(maxBytes), int64(maxBytes), 4096
+	if policy != nil {
+		if err := policy.Validate(); err != nil {
+			return SourceInventory{}, err
+		}
+		fileLimit, totalLimit, countLimit = policy.MaxFileBytes, policy.MaxTotalBytes, int(policy.MaxFiles)
+	}
 	var result SourceInventory
 	result.Schema = "aegis.contribution.source.v1"
 	root, err := os.OpenRoot(workspace)
@@ -58,15 +71,35 @@ func Inventory(ctx context.Context, workspace string) (SourceInventory, error) {
 		if x != nil || !info.Mode().IsRegular() || !singleLink(info) {
 			return errors.New("nonregular source input denied")
 		}
-		if info.Size() > maxBytes || total+info.Size() > maxBytes || len(result.Files) >= 4096 {
+		if info.Size() < 0 || info.Size() > fileLimit || info.Size() > totalLimit-total || len(result.Files) >= countLimit {
 			return errors.New("complete source inventory exceeds supported profile")
 		}
 		b, x := readRepositoryContextFile(root, p, info.Size())
 		if x != nil {
 			return x
 		}
-		if strings.Contains(string(b), "-----BEGIN "+"PRIVATE KEY-----") || strings.Contains(string(b), "-----BEGIN RSA "+"PRIVATE KEY-----") {
-			return errors.New("private key input denied")
+		if containsPrivateKeyHeading(b) {
+			approved := false
+			if policy != nil {
+				for _, f := range policy.SyntheticFixtures {
+					approved = approved || (f.Path == p && f.Digest == digest(b))
+				}
+			}
+			// Exact synthetic-source approval never permits a parseable private key.
+			for rest := b; len(rest) > 0; {
+				block, tail := pem.Decode(rest)
+				if block == nil {
+					break
+				}
+				if strings.Contains(block.Type, "PRIVATE KEY") {
+					approved = false
+					break
+				}
+				rest = tail
+			}
+			if !approved {
+				return errors.New("private key input denied")
+			}
 		}
 		total += int64(len(b))
 		result.Files = append(result.Files, SourceFile{p, uint32(info.Mode().Perm()), b})

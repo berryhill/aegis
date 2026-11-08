@@ -11,6 +11,7 @@ const (
 )
 
 type PageModel struct {
+	ContributionRun     *ContributionRunModel
 	Authenticated       bool
 	CSRF                string
 	Authentication      AuthenticationModel
@@ -227,12 +228,26 @@ type LinkModel struct{ Label, Detail, URL string }
 // immutable Loop revision. Definition data is deliberately separate from
 // execution records: this model never carries a run, attempt, artifact,
 // receipt, or disposition.
+type ContributionRunModel struct {
+	LoopID, Digest, Issue string
+	Revision              uint64
+	Delivery              string
+	Stopped               bool
+	Decision              *ContributionDecisionModel
+}
+
+// Only exact public decision references, never plans, receipts or transcripts.
+type ContributionDecisionModel struct {
+	Purpose, Role, Agent, Charter, Plan, PlanDigest, Candidate, Contract, Status, Expires, Message string
+}
+
 type LoopDetailModel struct {
 	HumanTitle                                                             string
 	TargetID, Digest, PreviousDigest, PublisherID, ExpectedLifecycleDigest string
 	EntryStepID, Validation, ValidationDigest                              string
 	Description, LatestVersion, GraphChildSummary                          string
 	CycleSummary, ExitCondition, ExhaustionDestination                     string
+	Contribution                                                           bool
 	CanActivate, CanRetire, DoerV4, DoerV5, HistoricalRevision             bool
 	CanvasWidth, CanvasHeight                                              int
 	Inputs, Outputs                                                        []LoopPortModel

@@ -2,7 +2,13 @@
 
 The managed controller is an intermediate candidate path, not GitHub publication
 or final contribution success. Its native execution profile is restricted to
-explicitly approved dependency-free Go modules; native checks are not a sandbox.
+explicitly approved dependency-free Go modules for historical policies. The
+opt-in [issue-derived engineering policy](issue-derived-engineering.md) supports
+separate editable regression scope and exact approved offline dependency bundles;
+new regression preimages and managed preparation primitive are documented
+separately. Pre-seal role/custody integration remains incomplete; current intake
+still uses the legacy structured issue scope.
+Native checks are not a sandbox.
 Production Git origin checks require exact canonical public GitHub HTTPS. The
 optional trusted fetch seam replaces transport only: origin and fetched base
 checks still execute. It is not model-selected or exposed in a Loop document.

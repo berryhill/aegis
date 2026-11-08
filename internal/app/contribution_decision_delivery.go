@@ -16,16 +16,12 @@ func (s *Service) DeliverContributionDecisionAs(ctx context.Context, sub core.Su
 	if err := s.requirePrincipal(sub); err != nil {
 		return "", err
 	}
-	c, state, _, err := s.ObserveContributionContinuityAs(ctx, sub, key)
+	c, state, control, err := s.contributionDecisionContext(ctx, sub, key)
 	if err != nil {
 		return "", err
 	}
 	if _, ok := contribution.SealedRole(c, role); !ok {
 		return "", ErrDenied
-	}
-	control, err := s.FleetRepository.(fleet.ContributionRepository).GetContributionControl(ctx, c.QueueItemID)
-	if err != nil {
-		return "", err
 	}
 	// Stable across login/request sessions, but never across changed sealed scope.
 	id := "decision-" + contribution.Digest([]byte(c.Digest + "/" + state.Stage + "/" + state.Candidate + "/" + control.Digest + "/" + role))[7:]
@@ -64,7 +60,7 @@ func (s *Service) DeliverContributionDecisionAs(ctx context.Context, sub core.Su
 		}
 		next := d
 		next.Status = status
-		if err = s.FleetRepository.(ContributionDecisionRepository).UpdateContributionDecision(ctx, d, next); err != nil {
+		if err = s.contributionDecisionRepository(c).UpdateContributionDecision(ctx, d, next); err != nil {
 			return "", err
 		}
 		d = next

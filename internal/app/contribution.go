@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
@@ -135,6 +137,9 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 			return contribution.Contract{}, fleet.ErrCorrupt
 		}
 		// This is readback of the original invocation, not re-admission or restart.
+		if e := s.carryEngineeringPreparation(ctx, prior); e != nil {
+			return contribution.Contract{}, e
+		}
 		return prior, nil
 	} else if !errors.Is(e, fleet.ErrNotFound) {
 		return contribution.Contract{}, e
@@ -163,6 +168,18 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 	if p.ReadAction != contribution.ReadIssueAction || p.Repository != issue.Owner+"/"+issue.Repository {
 		return contribution.Contract{}, ErrDenied
 	}
+	// Same-intent preparation resolves original source and identity before another read.
+	var retainedIntent contributionEngineeringIntent
+	if p.Engineering != nil {
+		if e := s.Store.Load("contribution-engineering-intents", engineeringIntentID(subject.PrincipalID, key), &retainedIntent); e == nil {
+			if retainedIntent.Contract.PayloadDigest != payload {
+				return contribution.Contract{}, ErrConflict
+			}
+			reader = retainedEngineeringReader{retainedIntent.Contract.Source}
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return contribution.Contract{}, e
+		}
+	}
 	source, err := reader.Read(ctx, issue)
 	if err != nil {
 		return contribution.Contract{}, err
@@ -186,7 +203,32 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 	}
 	id := hex.EncodeToString(material)
 	now := s.Now()
-	c, err := contribution.Seal(contribution.Contract{SchemaVersion: contribution.Schema, OwnerID: subject.PrincipalID, SessionID: session, Key: key, PayloadDigest: payload, QueueItemID: "contribution-item-" + id, SubmissionID: "contribution-sub-" + id, RunID: "contribution-run-" + id, Loop: selected, Controller: p.Controller, Builder: p.Builder, Tester: p.Tester, Source: source, NarrowerScope: scope, Outcome: template.Task, Acceptance: template.Acceptance, Invariants: p.Invariants, Exclusions: p.Exclusions, Repository: p.Repository, Base: p.Base, Worktree: template.Workspace, Effect: effect, Roles: roles, TemplateDigest: templateDigest, CandidateBudget: template.MaxPasses, AdmittedAt: now, Deadline: now.Add(time.Duration(p.DeadlineSeconds) * time.Second)})
+	pending := contribution.Contract{SchemaVersion: contribution.Schema, OwnerID: subject.PrincipalID, SessionID: session, Key: key, PayloadDigest: payload, QueueItemID: "contribution-item-" + id, SubmissionID: "contribution-sub-" + id, RunID: "contribution-run-" + id, Loop: selected, Controller: p.Controller, Builder: p.Builder, Tester: p.Tester, Source: source, NarrowerScope: scope, Outcome: template.Task, Acceptance: template.Acceptance, Invariants: p.Invariants, Exclusions: p.Exclusions, Repository: p.Repository, Base: p.Base, Worktree: template.Workspace, Effect: effect, Roles: roles, TemplateDigest: templateDigest, CandidateBudget: template.MaxPasses, AdmittedAt: now, Deadline: now.Add(time.Duration(p.DeadlineSeconds) * time.Second)}
+	if p.Engineering != nil {
+		pending, err = s.prepareContributionEngineering(ctx, subject, pending, r, template)
+		if err != nil {
+			return contribution.Contract{}, err
+		}
+		id = strings.TrimPrefix(pending.RunID, "contribution-run-")
+		// Serialize the final control read through Queue custody. A stop racing
+		// this boundary must land either here or in the ordinary Queue controls.
+		s.contributionEngineeringMu.Lock()
+		defer s.contributionEngineeringMu.Unlock()
+		var intent contributionEngineeringIntent
+		eid := engineeringIntentID(subject.PrincipalID, key)
+		if e := s.Store.Load("contribution-engineering-intents", eid, &intent); e != nil {
+			return contribution.Contract{}, e
+		}
+		status, e := s.engineeringStatus(eid, intent)
+		if e != nil || status.Control.Stop {
+			return contribution.Contract{}, ErrDenied
+		}
+		pending, e = s.applyEngineeringDelivery(pending, status.Control.Delivery)
+		if e != nil {
+			return contribution.Contract{}, e
+		}
+	}
+	c, err := contribution.Seal(pending)
 	if err != nil {
 		return contribution.Contract{}, err
 	}
@@ -197,7 +239,12 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 	if err = orchestration.ValidateContributionIntakeInput(ctx, bound, c, r.Contribution.Managed); err != nil {
 		return contribution.Contract{}, err
 	}
-	request := orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{Contribution: &c, Inputs: []graph.NormalizedInput{}, SubmissionID: c.SubmissionID, IdempotencyKey: "contribution-" + id, SnapshotID: "contribution-snapshot-" + id, QueueItemID: c.QueueItemID, GraphRunID: c.RunID, TransitionID: "contribution-transition-" + id, RejectionID: "contribution-reject-" + id, MaxAttempts: 1}, Participant: p.Controller, Loop: selected, NodeID: "contribution"}
+	inputs := []graph.NormalizedInput{}
+	if len(r.Inputs) != 0 {
+		wire, _ := json.Marshal(url)
+		inputs = append(inputs, graph.NormalizedInput{PortID: "github_issue_url", Type: "string", Value: wire})
+	}
+	request := orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{Contribution: &c, Inputs: inputs, SubmissionID: c.SubmissionID, IdempotencyKey: "contribution-" + id, SnapshotID: "contribution-snapshot-" + id, QueueItemID: c.QueueItemID, GraphRunID: c.RunID, TransitionID: "contribution-transition-" + id, RejectionID: "contribution-reject-" + id, MaxAttempts: 1}, Participant: p.Controller, Loop: selected, NodeID: "contribution"}
 	decision, err := s.submitLoopAs(ctx, subject, request)
 	if err != nil {
 		return contribution.Contract{}, err
@@ -208,6 +255,9 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 	stored, err := repo.GetContribution(ctx, subject.PrincipalID, key)
 	if err != nil || stored.Digest != c.Digest {
 		return contribution.Contract{}, fleet.ErrCorrupt
+	}
+	if e := s.carryEngineeringPreparation(ctx, stored); e != nil {
+		return contribution.Contract{}, e
 	}
 	return stored, nil
 }

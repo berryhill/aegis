@@ -29,14 +29,11 @@ type ContributionDecisionReview struct {
 }
 
 func (s *Service) ReadContributionDecisionAs(ctx context.Context, sub core.Subject, key, id string) (contribution.Decision, error) {
-	c, _, _, e := s.ObserveContributionContinuityAs(ctx, sub, key)
+	c, _, _, e := s.contributionDecisionContext(ctx, sub, key)
 	if e != nil {
 		return contribution.Decision{}, e
 	}
-	r, ok := s.FleetRepository.(ContributionDecisionRepository)
-	if !ok {
-		return contribution.Decision{}, ErrDenied
-	}
+	r := s.contributionDecisionRepository(c)
 	d, e := r.GetContributionDecision(ctx, c.QueueItemID, id)
 	if e == nil && !s.Now().Before(d.ExpiresAt) && (d.Status == "requested" || d.Status == "delivered") {
 		next := d
@@ -53,7 +50,7 @@ func (s *Service) checkContributionDecision(ctx context.Context, sub core.Subjec
 	if e := s.requirePrincipal(sub); e != nil {
 		return e
 	}
-	c, state, _, e := s.ObserveContributionContinuityAs(ctx, sub, d.Key)
+	c, state, control, e := s.contributionDecisionContext(ctx, sub, d.Key)
 	if e != nil {
 		return e
 	}
@@ -61,8 +58,7 @@ func (s *Service) checkContributionDecision(ctx context.Context, sub core.Subjec
 	if !ok || role != d.Binding || c.Digest != d.ContractDigest || c.QueueItemID != d.QueueItemID || c.OwnerID != d.OwnerID || state.CancelRequested || state.Stage != d.Stage || state.Candidate != d.Candidate {
 		return fmt.Errorf("%w: decision binding 6", ErrConflict)
 	}
-	control, e := s.FleetRepository.(fleet.ContributionRepository).GetContributionControl(ctx, c.QueueItemID)
-	if e != nil || control.Stop || control.Digest != d.ControlDigest {
+	if control.Stop || control.Digest != d.ControlDigest {
 		return fmt.Errorf("%w: decision binding 7", ErrConflict)
 	}
 	if !s.Now().Before(d.ExpiresAt) || !s.Now().Before(c.Deadline) {
@@ -82,7 +78,7 @@ func (s *Service) PrepareContributionDecisionAs(ctx context.Context, sub core.Su
 	if e := s.requirePrincipal(sub); e != nil {
 		return out, e
 	}
-	c, state, _, e := s.ObserveContributionContinuityAs(ctx, sub, in.Key)
+	c, state, control, e := s.contributionDecisionContext(ctx, sub, in.Key)
 	if e != nil {
 		return out, e
 	}
@@ -90,10 +86,7 @@ func (s *Service) PrepareContributionDecisionAs(ctx context.Context, sub core.Su
 	if !ok || !contribution.ValidKey(in.ID) {
 		return out, ErrDenied
 	}
-	repo, ok := s.FleetRepository.(ContributionDecisionRepository)
-	if !ok {
-		return out, ErrDenied
-	}
+	repo := s.contributionDecisionRepository(c)
 	// Uncertain responses are read back, never automatically re-prompted.
 	if existing, readErr := repo.GetContributionDecision(ctx, c.QueueItemID, in.ID); readErr == nil {
 		if existing.Status != "requested" || existing.Role != in.Role || s.checkContributionDecision(ctx, sub, existing) != nil {
@@ -110,10 +103,6 @@ func (s *Service) PrepareContributionDecisionAs(ctx context.Context, sub core.Su
 		return ContributionDecisionReview{Intent: existing, Plan: plan, Charter: charter}, nil
 	} else if readErr != fleet.ErrNotFound {
 		return out, readErr
-	}
-	control, e := s.FleetRepository.(fleet.ContributionRepository).GetContributionControl(ctx, c.QueueItemID)
-	if e != nil {
-		return out, e
 	}
 	now := s.Now()
 	expiry := now.Add(3 * time.Minute)
@@ -150,7 +139,11 @@ func (s *Service) CompleteContributionDecisionAs(ctx context.Context, sub core.S
 	if !reflect.DeepEqual(d, review.Intent) || d.Status != "requested" {
 		return d, fmt.Errorf("%w: decision binding 1", ErrConflict)
 	}
-	repo := s.FleetRepository.(ContributionDecisionRepository)
+	c, _, _, e := s.contributionDecisionContext(ctx, sub, d.Key)
+	if e != nil {
+		return d, e
+	}
+	repo := s.contributionDecisionRepository(c)
 	finish := func(status string) (contribution.Decision, error) {
 		next := d
 		next.Status = status

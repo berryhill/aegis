@@ -192,6 +192,11 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 				return nil, implementation.ContributionRoleIdentity{}, err
 			}
 		}
+		if bound.SchemaVersion == loop.RepositoryEngineeringSchema {
+			if _, err = engine.RetainEngineeringContract(input.Contribution); err != nil {
+				return nil, implementation.ContributionRoleIdentity{}, err
+			}
+		}
 		if _, err := implementationInput(input, patchResponseInstruction(false)); err != nil {
 			return nil, implementation.ContributionRoleIdentity{}, err
 		}

@@ -1,5 +1,6 @@
 """Exact package/default-test coverage, including a real normal/race Go binary."""
 import importlib.util
+import base64
 import json
 import os
 from collections import Counter
@@ -17,6 +18,53 @@ spec.loader.exec_module(shard)
 
 
 class ShardTests(unittest.TestCase):
+    def test_fixture_preparation_fetches_only_locked_archives(self):
+        spec = importlib.util.spec_from_file_location('fixture_deps', Path(__file__).with_name('prepare-offline-fixture-deps.py'))
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        checksum = 'h1:' + base64.b64encode(bytes(32)).decode()
+        locks = (f'example.org/current v1.2.3 {checksum}\n'
+                 f'example.org/current v1.2.3/go.mod {checksum}\n'
+                 f'example.org/old v0.1.0/go.mod {checksum}\n').encode()
+        self.assertEqual(module.locked_inputs(locks),
+                         (['example.org/current@v1.2.3'], ['example.org/old@v0.1.0']))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'go.mod').write_text('module example.org/fixture\n')
+            (root / 'go.sum').write_bytes(locks)
+            with mock.patch.object(module.subprocess, 'run') as run:
+                module.prepare(root)
+            self.assertEqual([call.args[0] for call in run.call_args_list], [
+                ['go', 'mod', 'download', 'example.org/current@v1.2.3'],
+                ['go', 'list', '-m', '-mod=readonly', '-json', 'example.org/old@v0.1.0'],
+                ['go', 'mod', 'verify'],
+            ])
+            def mutate_lock(*args, **kwargs):
+                (root / 'go.sum').write_text('changed')
+            with mock.patch.object(module.subprocess, 'run', side_effect=mutate_lock):
+                with self.assertRaisesRegex(ValueError, 'changed module locks'):
+                    module.prepare(root)
+        for invalid in (b'', b'bad record', b'-flag v1.0.0 h1:bad', b'example.org/module latest h1:bad'):
+            with self.assertRaises((ValueError, TypeError)):
+                module.locked_inputs(invalid)
+
+    def test_offline_fixture_dependency_preparation_precedes_execution(self):
+        workflow = (Path(__file__).resolve().parent.parent / '.github/workflows/ci.yml').read_text()
+        preparation = workflow.split('      - name: Prepare locked offline fixture dependencies\n')
+        self.assertEqual(len(preparation), 2)
+        step, execution = preparation[1].split('      - name: Run complete deterministic shard\n', 1)
+        self.assertEqual(step, """        if: ${{ matrix.group == 'implementation' || matrix.group == 'manager-a' }}
+        run: |
+          python3 scripts/prepare-offline-fixture-deps.py
+          git diff --exit-code -- go.mod go.sum
+""")
+        self.assertIn('python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py', execution)
+        # Both normal and race lanes retain the complete offline fixture roots.
+        for race in (False, True):
+            self.assertIn('implementation', shard.bundle_groups('implementation', race))
+            self.assertIn('manager', shard.bundle_groups('manager-a', race))
+
     def test_compiled_environment_uses_selected_not_bootstrap_go(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'selected toolchain'

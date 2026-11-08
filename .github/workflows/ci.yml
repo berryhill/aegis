@@ -103,6 +103,14 @@ jobs:
         run: |
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
+      # Test compilation warms product imports, not the pinned templ tool graph.
+      # Prepare every locked module before offline native fixtures run; neither
+      # fixtures nor product runtime may fetch missing dependencies themselves.
+      - name: Prepare locked offline fixture dependencies
+        if: ${{ matrix.group == 'implementation' || matrix.group == 'manager-a' }}
+        run: |
+          python3 scripts/prepare-offline-fixture-deps.py
+          git diff --exit-code -- go.mod go.sum
       - name: Run complete deterministic shard
         env:
           SHARD_GROUP: ${{ matrix.group }}

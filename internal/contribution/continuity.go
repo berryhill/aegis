@@ -204,6 +204,13 @@ func ApplyContinuity(c Contract, prior Continuity, e ContinuityEvent) (Continuit
 		next.QueueItemID = c.QueueItemID
 		next.ContractDigest = c.Digest
 		next.Limits = e.Limits
+		if c.Preparation != nil {
+			if e.Limits.RuntimeTurns < 2 {
+				return prior, ErrContinuityExhausted
+			}
+			next.Used.RuntimeTurns = 2
+			next.Reservations = map[string]string{c.Preparation.Digest + "-inspect": "runtime-turn", c.Preparation.Digest + "-scope": "runtime-turn"}
+		}
 	} else {
 		if e.Limits != (Counters{}) {
 			return prior, ErrContinuityConflict

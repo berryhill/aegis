@@ -1433,6 +1433,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 	if composed != nil {
 		composed(doerPortal)
 	}
+	e.POST("/console/loops/contribution", consoleContributionRunHandler(svc, consoleManager))
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
 	e.POST("/console/loops/availability", consoleLoopAvailabilityHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
