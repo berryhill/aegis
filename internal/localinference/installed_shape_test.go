@@ -32,7 +32,7 @@ func TestInstalledHermesProxyShape(t *testing.T) {
 				if q["session_id"] != "installed-session" || q["stream"] == true || q["stream_options"] != nil || q["reasoning_effort"] != "none" || q["temperature"] != float64(0) {
 					t.Errorf("unexpected forwarded shape: %+v", q)
 				}
-				io.WriteString(w, `{"id":"answer","object":"chat.completion","created":1,"model":"exact","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"`+logprobs+`}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+				io.WriteString(w, `{"id":"answer","object":"chat.completion","created":1,"model":"exact","system_fingerprint":"fp_ollama","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"`+logprobs+`}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
 			}))
 			defer upstream.Close()
 			p, err := New(core.LocalInference{Kind: "ollama", Endpoint: upstream.URL, ModelDigest: "sha256:" + strings.Repeat("a", 64)}, "exact", func(context.Context) error { return nil })

@@ -30,7 +30,7 @@ func (s *Service) reserveNextLoopRun(ctx context.Context, sub core.Subject, in Q
 	if old.Projection.ActiveClaimID != "" || old.Disposition == nil || old.RuntimeAuthorityBinding == nil || old.Submission.OwnerID != sub.PrincipalID || old.Submission.OwnerAgentID != agent.AgentID || old.RuntimeAuthorityBinding.OwnerAgent != in.Agent || old.Disposition.GraphRunID != old.Item.GraphRunID || old.Disposition.QueueItem.ID != old.Item.ItemID || old.Disposition.QueueItem.Digest != old.Item.Digest {
 		return "", ErrDenied
 	}
-	if (old.Projection.State != queue.StateFailed || old.Disposition.State != execution.StateFailed) && (old.Projection.State != queue.StateSucceeded || old.Disposition.State != execution.StateSucceeded) {
+	if (old.Projection.State != queue.StateFailed || old.Disposition.State != execution.StateFailed) && (old.Projection.State != queue.StateSucceeded || old.Disposition.State != execution.StateSucceeded) && (old.Projection.State != queue.StateCancelled || old.Disposition.State != execution.StateCancelled || old.Disposition.ReasonCode != "doer_cancelled") {
 		return "", ErrDenied
 	}
 	// Retirement is Agent-scoped, but task budgets are not. A failed reusable
@@ -179,7 +179,7 @@ func (s *Service) completedReusablePredecessor(ctx context.Context, sub core.Sub
 	if old.SourceKind != graph.SourceDirectLoop || old.Projection.ActiveClaimID != "" || old.Disposition == nil || old.RuntimeAuthorityBinding == nil || len(old.LoopExecutions) != 1 || len(old.Attempts) != 1 || len(old.Claims) != 1 || s.loopRunWorkers[old.Item.ItemID] {
 		return false
 	}
-	if (old.Projection.State != queue.StateSucceeded || old.Disposition.State != execution.StateSucceeded) && (old.Projection.State != queue.StateFailed || old.Disposition.State != execution.StateFailed) {
+	if (old.Projection.State != queue.StateSucceeded || old.Disposition.State != execution.StateSucceeded) && (old.Projection.State != queue.StateFailed || old.Disposition.State != execution.StateFailed) && (old.Projection.State != queue.StateCancelled || old.Disposition.State != execution.StateCancelled || old.Disposition.ReasonCode != "doer_cancelled") {
 		return false
 	}
 	rev, err := s.FleetRepository.GetLoopRevision(ctx, old.Source.ID, old.Source.Revision)

@@ -27,10 +27,11 @@ type openAIMessage struct {
 	ToolCalls  []any  `json:"tool_calls,omitempty"`
 }
 type openAIChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
+	ID                string `json:"id"`
+	Object            string `json:"object"`
+	Created           int64  `json:"created"`
+	Model             string `json:"model"`
+	SystemFingerprint string `json:"system_fingerprint,omitempty"`
 	Choices []struct {
 		Index        int           `json:"index"`
 		Message      openAIMessage `json:"message"`

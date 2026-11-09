@@ -1,7 +1,10 @@
 package hermes
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -128,6 +131,11 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return AttemptTurnResult{}, err
 	}
 	defer os.RemoveAll(home) //nolint:errcheck
+	if !request.ProviderFormatProbe {
+		if err = seedAttemptStateDB(home); err != nil {
+			return AttemptTurnResult{}, err
+		}
+	}
 	var providerToken ProviderAccessToken
 	if authority.Authority.Hermes.ProviderAuthentication != nil {
 		providerToken, err = a.ResolveProviderAuthentication(turnContext, authority.Authority.Hermes)
@@ -497,4 +505,23 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+const attemptStateDBSeedGzip = "H4sIAAAAAAAC/+1VvU7DMBB2QvmVKrExVbpOgFT+xAvQQkAV4S+kgk6WoaaySOMSXyQQI2Jk5H3YEE/AOzAyMXJNE9qhMFRigX6y5e/O5zvLdzofH7kKJVzoqCUQ1pnNbJttADDGcunMYA2QE9w+vT2wwcix5ceX8Q6zU3mE38CKPTG3WbCYChvy2lwFlFMuYtSJzI00RunQ8LWMjdGZqc7BfCeR1iujMcLfwbw1W5xPGGV5isCEbCqzpEKFXSYQZauNM0n+3xmNEf4F8mPF6V4x5K0Pas0VxirW83D+7mxrcq5QsO5PUJwFMusw2Wpvek7Zd8AvV1wHMi0sqAb4zqkPh151r+zVYdepl8DoODqX3Y39A5o11y1BbGTEU/sStHRDBv2cn+vwQjVTlbkxVNi8HWmq7lTXFpEMMWuDPVcGRYSywenno0u6fSEl9c0vfSLySAqjwywwuRJNSaHjEKG67zs7jgdbzna55vqwWgLUmi4mguB7ExW2Y+SoLyW9x4B9HePPBqgw6D7W4tD9/xMJyGCBAAgAAA=="
+
+func seedAttemptStateDB(home string) error {
+	compressed, err := base64.StdEncoding.DecodeString(attemptStateDBSeedGzip)
+	if err != nil {
+		return err
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(home, "state.db"), data, 0600)
 }
