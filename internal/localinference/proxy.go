@@ -227,6 +227,15 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
 	stream := q.Stream
 	q.Stream = false
 	q.StreamOptions = nil
+	if p.route.Kind == "ollama" {
+		if q.ReasoningEffort == "" {
+			q.ReasoningEffort = "none"
+		}
+		if q.Temperature == nil {
+			zero := 0.0
+			q.Temperature = &zero
+		}
+	}
 	b, _ = json.Marshal(q)
 	b, e = p.request(ctx, "/v1/chat/completions", b)
 	var answer openAIChatResponse

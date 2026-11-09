@@ -513,7 +513,7 @@ func minimalEnv(home string, credentials []Credential) []string {
 			out = append(out, x)
 		}
 	}
-	out = append(out, "HOME="+home, "HERMES_HOME="+home, "HERMES_ENABLE_PROJECT_PLUGINS=false", "HERMES_YOLO_MODE=0", "HERMES_SKIP_VERSION_CHECK=1", "PYTHONDONTWRITEBYTECODE=1")
+	out = append(out, "HOME="+home, "HERMES_HOME="+home, "HERMES_ENABLE_PROJECT_PLUGINS=false", "HERMES_YOLO_MODE=0", "HERMES_SKIP_VERSION_CHECK=1", "HERMES_DISABLE_LAZY_INSTALLS=1", "PYTHONDONTWRITEBYTECODE=1")
 	for _, credential := range credentials {
 		out = append(out, credential.TargetEnv+"="+credential.Value)
 	}

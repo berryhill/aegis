@@ -1590,8 +1590,10 @@ func (s *Service) endSession(ctx context.Context, id, status, reason string, rev
 	if status == "expired" {
 		kind = core.AuthorityCommandExpire
 	}
-	if err = s.processAuthorityCommand(ctx, kind, authority, reason); err != nil {
-		return err
+	if s.Now().Before(authority.ExpiresAt) {
+		if err = s.processAuthorityCommand(ctx, kind, authority, reason); err != nil {
+			return err
+		}
 	}
 	var sess core.Session
 	if err := s.Store.Update("sessions", id, func(b []byte) (any, error) {

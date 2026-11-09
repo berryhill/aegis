@@ -47,7 +47,7 @@ func (w *QueueWorker) ValidateDoerAvailability(ctx context.Context, value loop.L
 	if value.SchemaVersion != loop.DoerRevisionSchemaVersion {
 		return nil
 	}
-	if _, err := w.implementation.decision.Gate(ctx, value.Doer.Task); err != nil {
+	if _, err := w.implementation.decision.Gate(ctx, doerGateState(*value.Doer)); err != nil {
 		return ErrLocalLayaUnavailable
 	}
 	return nil
@@ -121,7 +121,7 @@ func (w *QueueWorker) ValidateDoerContractReadiness(ctx context.Context, contrac
 		}
 	}
 	if probe {
-		if _, err := c.decision.Gate(ctx, contract.Task); err != nil {
+		if _, err := c.decision.Gate(ctx, doerGateState(contract)); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}

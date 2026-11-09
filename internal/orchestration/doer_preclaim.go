@@ -55,14 +55,7 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 			return LayaGate{}, fmt.Errorf("%w: selected file already satisfies assertion", ErrWorkerDenied)
 		}
 	}
-	state := "Task: " + contract.Task + "\nExpected result: " + contract.VerifyFile + " exists in the workspace"
-	if contract.Coding != nil {
-		state = "Task: " + contract.Task + "\nExpected result: " + contract.Coding.Acceptance
-	}
-	if contract.ExpectedText != nil {
-		state += " and contains exactly " + fmt.Sprintf("%q", *contract.ExpectedText)
-	}
-	gate, err := worker.implementation.decision.Gate(ctx, state)
+	gate, err := worker.implementation.decision.Gate(ctx, doerGateState(contract))
 	if err != nil {
 		return LayaGate{}, fmt.Errorf("%w: Doer gate unavailable", ErrWorkerDenied)
 	}
@@ -76,6 +69,17 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 		return gate, fmt.Errorf("%w: doer_needs_input", ErrWorkerDenied)
 	}
 	return gate, nil
+}
+
+func doerGateState(contract loop.DoerContract) string {
+	state := "Task: " + contract.Task + "\nExpected result: " + contract.VerifyFile + " exists in the workspace"
+	if contract.Coding != nil {
+		state = "Task: " + contract.Task + "\nExpected result: " + contract.Coding.Acceptance
+	}
+	if contract.ExpectedText != nil {
+		state += " and contains exactly " + fmt.Sprintf("%q", *contract.ExpectedText)
+	}
+	return state
 }
 
 // Reject the admitted Queue item without inventing a claim or a failed
