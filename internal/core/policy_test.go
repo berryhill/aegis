@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,27 @@ func TestAuthorityRelevantMutationsChangeCanonicalDigest(t *testing.T) {
 		{"flow", func(s *TrustStanza) { s.InformationFlow.CrossStanza = "allow" }},
 		{"model", func(s *TrustStanza) { s.Hermes.Model = "other-model" }},
 		{"enabled", func(s *TrustStanza) { s.Enabled = false }},
+		{"allowed_lanes_codex_and_ollama", func(s *TrustStanza) {
+			s.Grant.Tools = nil
+			s.Scopes.Credentials = nil
+			s.Hermes = HermesConfig{
+				Provider:               "openai-codex",
+				Model:                  "gpt-6.1-sol",
+				ProviderAuthentication: &ProviderAuthentication{Mode: ControllerCodexAccessTokenV1},
+				AllowedLanes: []HermesLane{
+					{
+						Provider:               "openai-codex",
+						Model:                  "gpt-6.1-sol",
+						ProviderAuthentication: &ProviderAuthentication{Mode: ControllerCodexAccessTokenV1},
+					},
+					{
+						Provider:       "ollama",
+						Model:          "laya:24b-4k",
+						LocalInference: &LocalInference{Kind: "ollama", Endpoint: "http://127.0.0.1:11434", ModelDigest: "sha256:" + strings.Repeat("a", 64)},
+					},
+				},
+			}
+		}},
 	}
 	for _, mutation := range mutations {
 		t.Run(mutation.name, func(t *testing.T) {
@@ -145,5 +167,64 @@ func TestAuthorityRelevantMutationsChangeCanonicalDigest(t *testing.T) {
 				t.Fatal("authority mutation did not alter charter digest")
 			}
 		})
+	}
+}
+
+func TestHermesConfigAllowedLanesAndResolution(t *testing.T) {
+	base := completePolicyCharter()
+	baseCanonical, err := Canonicalize(base)
+	if err != nil {
+		t.Fatalf("Canonicalize base: %v", err)
+	}
+	// Omitting allowed_lanes preserves exact canonical bytes and digest.
+	redecoded, err := DecodeCharter(bytes.NewReader(baseCanonical.Canonical))
+	if err != nil {
+		t.Fatalf("DecodeCharter base: %v", err)
+	}
+	reCanonical, err := Canonicalize(redecoded)
+	if err != nil || !EqualCanonical(baseCanonical, reCanonical) {
+		t.Fatalf("canonical stability broken: err=%v", err)
+	}
+	if lane, err := base.Stanzas[0].Hermes.ResolveAuthorizedLane("", ""); err != nil || lane.Provider != "test" || lane.Model != "test-model" {
+		t.Fatalf("expected default lane resolution, got %+v err=%v", lane, err)
+	}
+	if _, err := base.Stanzas[0].Hermes.ResolveAuthorizedLane("test", "unauthorized-model"); !errors.Is(err, ErrUnauthorizedHermesLane) {
+		t.Fatalf("expected ErrUnauthorizedHermesLane, got %v", err)
+	}
+
+	multi := completePolicyCharter()
+	multi.Stanzas[0].Grant.Tools = nil
+	multi.Stanzas[0].Scopes.Credentials = nil
+	codexAuth := &ProviderAuthentication{Mode: ControllerCodexAccessTokenV1}
+	localInf := &LocalInference{Kind: "ollama", Endpoint: "http://127.0.0.1:11434", ModelDigest: "sha256:" + strings.Repeat("b", 64)}
+	multi.Stanzas[0].Hermes = HermesConfig{
+		Provider:               "openai-codex",
+		Model:                  "gpt-6.1-sol",
+		ProviderAuthentication: codexAuth,
+		AllowedLanes: []HermesLane{
+			{Provider: "openai-codex", Model: "gpt-6.1-sol", ProviderAuthentication: codexAuth},
+			{Provider: "openai-codex", Model: "gpt-6.1-sol-spark", ProviderAuthentication: codexAuth},
+			{Provider: "ollama", Model: "laya:24b-4k", LocalInference: localInf},
+		},
+	}
+	multiCanonical, err := Canonicalize(multi)
+	if err != nil {
+		t.Fatalf("Canonicalize multi-lane charter: %v", err)
+	}
+	decodedMulti, err := DecodeCharter(bytes.NewReader(multiCanonical.Canonical))
+	if err != nil {
+		t.Fatalf("DecodeCharter multi-lane: %v", err)
+	}
+	if lane, err := decodedMulti.Stanzas[0].Hermes.ResolveAuthorizedLane("", ""); err != nil || lane.Model != "gpt-6.1-sol" || lane.ProviderAuthentication == nil {
+		t.Fatalf("unexpected default lane: %+v err=%v", lane, err)
+	}
+	if lane, err := decodedMulti.Stanzas[0].Hermes.ResolveAuthorizedLane("openai-codex", "gpt-6.1-sol-spark"); err != nil || lane.ProviderAuthentication == nil {
+		t.Fatalf("unexpected spark lane: %+v err=%v", lane, err)
+	}
+	if lane, err := decodedMulti.Stanzas[0].Hermes.ResolveAuthorizedLane("ollama", "laya:24b-4k"); err != nil || lane.LocalInference == nil || lane.ProviderAuthentication != nil {
+		t.Fatalf("unexpected local lane: %+v err=%v", lane, err)
+	}
+	if _, err := decodedMulti.Stanzas[0].Hermes.ResolveAuthorizedLane("openai-codex", "gpt-5o"); !errors.Is(err, ErrUnauthorizedHermesLane) {
+		t.Fatalf("expected unauthorized model denial, got %v", err)
 	}
 }

@@ -6,10 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/execution"
+	"github.com/berryhill/aegis/internal/loop"
 	hermesruntime "github.com/berryhill/aegis/internal/runtime/hermes"
 )
+
+func resolveStepLane(rev loop.LoopRevision, stepID, nodeProvider, nodeModel string, hermesCfg core.HermesConfig) (string, string) {
+	provider, model := rev.StepLane(stepID)
+	if provider == "" && model == "" {
+		provider, model = strings.TrimSpace(nodeProvider), strings.TrimSpace(nodeModel)
+	}
+	if lane, err := hermesCfg.ResolveLane(provider, model); err == nil {
+		return lane.Provider, lane.Model
+	}
+	return provider, model
+}
+
+func resolveActionStepLane(rev loop.LoopRevision, nodeProvider, nodeModel string, hermesCfg core.HermesConfig) (string, string) {
+	for _, step := range rev.Steps {
+		if step.Kind == loop.StepAction {
+			return resolveStepLane(rev, step.ID, nodeProvider, nodeModel, hermesCfg)
+		}
+	}
+	return resolveStepLane(rev, "", nodeProvider, nodeModel, hermesCfg)
+}
 
 // RuntimeFailure preserves the adapter-observed terminal class without
 // treating runtime narration as authoritative completion.
@@ -56,11 +79,12 @@ func (adapter *RoutedRuntimeAdapter) Execute(ctx context.Context, request Runtim
 		if err != nil {
 			return RuntimeResult{}, err
 		}
+		provider, model := resolveActionStepLane(request.LoopRevision, request.NodeProvider, request.NodeModel, request.Launch.AuthorityContext.Authority.Hermes)
 		result, err := adapter.hermes.AttemptTurn(ctx, hermesruntime.AttemptTurnRequest{
 			Launch: request.Launch, Admission: request.Admission,
 			AttemptID: request.LoopExecutionID + ":turn", ParentAttemptID: request.Launch.ParentDispatch.ID,
 			StateRoot: adapter.stateRoot, Input: string(input),
-			Model: request.Launch.AuthorityContext.Authority.Hermes.Model, Provider: request.Launch.AuthorityContext.Authority.Hermes.Provider,
+			Model: model, Provider: provider,
 			Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration},
 		})
 		if err != nil {

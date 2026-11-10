@@ -630,6 +630,15 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if e != nil || session.ID != canonicalAuthority.SessionID || session.Mandate.ID != canonicalAuthority.MandateID || core.ValidateAuthorityContext(canonicalAuthority, session.Mandate) != nil || session.Status != "running" || session.RuntimeSessionID == "" || session.RuntimePID <= 0 || session.ProcessStart == "" {
 		return readback("session_preparation_in_progress_or_interrupted")
 	}
+	for _, step := range lv.Revision.Steps {
+		p, m := step.EffectiveLane()
+		if p == "" && m == "" {
+			continue
+		}
+		if _, laneErr := canonicalAuthority.Authority.Hermes.ResolveLane(p, m); laneErr != nil {
+			return readback("doer_model_required")
+		}
+	}
 	bindingID, transitionID := key+"-binding", key+"-ready"
 	if prior, priorErr := s.FleetRepository.GetQueueRuntimeBinding(ctx, result.QueueItemID); priorErr == nil {
 		transitions, listErr := s.FleetRepository.ListQueueTransitions(ctx, result.QueueItemID)

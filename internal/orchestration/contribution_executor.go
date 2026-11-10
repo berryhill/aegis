@@ -25,6 +25,8 @@ import (
 type ContributionRole struct {
 	Agent     registry.AgentRevision
 	Launch    execution.LaunchContract
+	Provider  string
+	Model     string
 	Admission execution.AdmissionChecker
 	Close     func(context.Context) error
 }
@@ -97,6 +99,14 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		if err = w.authorizeImplementationRevision(runtime.LoopRevision, runtime.Participant); err != nil {
 			return err
 		}
+		if runtime.LoopRevision.Contribution != nil {
+			ctrlProvider, ctrlModel := runtime.LoopRevision.Contribution.RoleLane("controller")
+			if strings.TrimSpace(controller.AuthorityContext.Authority.Hermes.Provider) != "" || strings.TrimSpace(controller.AuthorityContext.Authority.Hermes.Model) != "" || ctrlProvider != "" || ctrlModel != "" {
+				if _, err := controller.AuthorityContext.Authority.Hermes.ResolveLane(ctrlProvider, ctrlModel); err != nil {
+					return ErrWorkerDenied
+				}
+			}
+		}
 		// Controller and child are independent conjunctive gates, never a union.
 		if active != nil && active != builder && strings.HasPrefix(effect, "write:") {
 			return errors.New("tester source edits denied")
@@ -108,6 +118,9 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		role, err := w.contributionRoles(c, request.Subject, sealed, index)
 		if err != nil {
 			return nil, err
+		}
+		if role.Provider == "" && role.Model == "" && runtime.LoopRevision.Contribution != nil && index >= 0 && index < 3 {
+			role.Provider, role.Model = runtime.LoopRevision.Contribution.RoleLane([]string{"controller", "builder", "tester"}[index])
 		}
 		if err = validateContributionRole(role, sealed, index, w.now()); err != nil {
 			if role.Close != nil {
@@ -139,7 +152,8 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 			}
 			return role.Admission.CheckRuntimeAdmission(ctx, launch, at)
 		})
-		return hermesruntime.AttemptTurnRequest{Launch: role.Launch, Admission: admission, ParentAttemptID: role.Launch.ParentDispatch.ID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(w.implementation.root)), "runtime", "contribution"), Model: role.Launch.AuthorityContext.Authority.Hermes.Model, Provider: role.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
+		provider, model := resolvedContributionRoleLane(*role)
+		return hermesruntime.AttemptTurnRequest{Launch: role.Launch, Admission: admission, ParentAttemptID: role.Launch.ParentDispatch.ID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(w.implementation.root)), "runtime", "contribution"), Model: model, Provider: provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
 	}
 	candidateAccepted := false
 	if w.contributionContinuity != nil {
@@ -313,15 +327,33 @@ func validateContributionRole(r ContributionRole, c contribution.Contract, index
 	if a.Revision != expected.Agent.Revision || a.Digest != expected.Agent.Digest || a.AgentID != expected.Agent.ID || a.Charter != expected.Charter || a.Runtime != expected.Runtime || a.Ownership.OwnerID != c.OwnerID || authority.AgentID != a.Charter.ID || authority.CharterDigest != a.Charter.Digest || authority.SessionID == c.SessionID || len(authority.Authority.Tools) != 0 || len(authority.Authority.Credentials) != 0 || len(authority.Authority.Capabilities) != 0 {
 		return errors.New("exact tool-free independent role required")
 	}
+	if strings.TrimSpace(authority.Authority.Hermes.Provider) != "" || strings.TrimSpace(authority.Authority.Hermes.Model) != "" || strings.TrimSpace(r.Provider) != "" || strings.TrimSpace(r.Model) != "" {
+		if _, err := authority.Authority.Hermes.ResolveLane(r.Provider, r.Model); err != nil {
+			return err
+		}
+	}
 	decision, err := r.Admission.CheckRuntimeAdmission(context.Background(), r.Launch, at)
 	if err != nil {
 		return err
 	}
 	return execution.ValidateAdmission(r.Launch, decision, at)
 }
+
+func resolvedContributionRoleLane(role ContributionRole) (string, string) {
+	h := role.Launch.AuthorityContext.Authority.Hermes
+	if lane, err := h.ResolveLane(role.Provider, role.Model); err == nil {
+		return lane.Provider, lane.Model
+	}
+	if strings.TrimSpace(role.Provider) != "" || strings.TrimSpace(role.Model) != "" {
+		return strings.TrimSpace(role.Provider), strings.TrimSpace(role.Model)
+	}
+	return h.Provider, h.Model
+}
+
 func contributionIdentity(role ContributionRole, runtime, turn string) implementation.ContributionRoleIdentity {
 	a := role.Launch.AuthorityContext
-	return implementation.ContributionRoleIdentity{AgentDigest: role.Agent.Digest, CharterDigest: role.Agent.Charter.Digest, AuthorityID: a.ID, AuthorityDigest: a.Digest, SessionID: a.SessionID, MandateID: a.MandateID, RuntimeSessionID: runtime, TurnID: turn}
+	provider, model := resolvedContributionRoleLane(role)
+	return implementation.ContributionRoleIdentity{Provider: provider, Model: model, AgentDigest: role.Agent.Digest, CharterDigest: role.Agent.Charter.Digest, AuthorityID: a.ID, AuthorityDigest: a.Digest, SessionID: a.SessionID, MandateID: a.MandateID, RuntimeSessionID: runtime, TurnID: turn}
 }
 
 // ContributionExecutionReadback is private owner-service evidence, not model

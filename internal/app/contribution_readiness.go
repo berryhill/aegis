@@ -150,13 +150,25 @@ func (s *Service) ReadContributionReadinessAs(ctx context.Context, sub core.Subj
 			role.Provisioning = ready
 		}
 		stanza := selected.Selected
-		if stanza.Hermes.ProviderAuthentication != nil {
-			if _, e = s.resolveControllerProviderAuthentication(ctx, stanza.Hermes); e != nil {
+		reqProvider, reqModel := p.RoleLane(role.Role)
+		resolvedLane, laneErr := stanza.Hermes.ResolveLane(reqProvider, reqModel)
+		if laneErr == nil && i == 1 && p.Engineering != nil {
+			prepProvider, prepModel := p.RoleLane("prepare")
+			_, laneErr = stanza.Hermes.ResolveLane(prepProvider, prepModel)
+		}
+		if laneErr != nil {
+			block(&role.Selection, "role_model_lane_unauthorized", "review_exact_role_charter")
+			r.Roles = append(r.Roles, role)
+			continue
+		}
+		laneHermes := stanza.Hermes.WithLane(resolvedLane)
+		if laneHermes.ProviderAuthentication != nil {
+			if _, e = s.resolveControllerProviderAuthentication(ctx, laneHermes); e != nil {
 				block(&role.Provider, "role_provider_authentication_required", "protected_controller_provider_setup")
 			} else {
 				role.Provider = ready
 			}
-		} else if stanza.Hermes.LocalInference != nil || stanza.Hermes.Provider == "none" {
+		} else if laneHermes.LocalInference != nil || laneHermes.Provider == "none" {
 			role.Provider = ready
 		} else {
 			// Omission preserves the historical credential-scope contract.

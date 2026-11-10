@@ -115,6 +115,14 @@ func (s *Service) prepareContributionEngineering(ctx context.Context, subject co
 	if len(mandate.Tools) != 0 || len(mandate.Capabilities) != 0 || len(mandate.Scopes.Credentials) != 0 {
 		return out, ErrDenied
 	}
+	var prepProvider, prepModel string
+	if revision.Contribution != nil {
+		prepProvider, prepModel = revision.Contribution.RoleLane("prepare")
+	}
+	prepLane, e := mandate.Hermes.ResolveLane(prepProvider, prepModel)
+	if e != nil {
+		return out, ErrDenied
+	}
 	// This dispatch owns preparation, not session launch. Its actual terminal
 	// outcome is independent of the successful launch required by AttemptTurn.
 	requested := s.Now()
@@ -199,7 +207,7 @@ func (s *Service) prepareContributionEngineering(ctx context.Context, subject co
 		return out, e
 	}
 	admission := engineeringPreparationAdmission{s, subject, intent, id}
-	request := hermesruntime.AttemptTurnRequest{Launch: launch, Admission: admission, AttemptID: fmt.Sprintf("%s-%d", id, head.Sequence), ParentAttemptID: launch.ParentDispatch.ID, StateRoot: s.Store.Root(), Model: mandate.Hermes.Model, Provider: mandate.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
+	request := hermesruntime.AttemptTurnRequest{Launch: launch, Admission: admission, AttemptID: fmt.Sprintf("%s-%d", id, head.Sequence), ParentAttemptID: launch.ParentDispatch.ID, StateRoot: s.Store.Root(), Model: prepLane.Model, Provider: prepLane.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
 	receipt, e := (orchestration.HermesPatchProposer{Adapter: engineeringTurnRecorder{s, intent, id}, Request: request}).PrepareEngineering(ctx, pending.Source, *revision.Contribution.Engineering, template, revision.Contribution.Managed.RepositoryPath, pending.Base)
 	if e != nil {
 		return out, e

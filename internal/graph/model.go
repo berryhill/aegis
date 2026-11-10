@@ -68,6 +68,8 @@ type Node struct {
 	ID          string                `json:"id"`
 	Participant reference.RevisionRef `json:"participant"`
 	Loop        reference.RevisionRef `json:"loop"`
+	Provider    string                `json:"provider,omitempty"`
+	Model       string                `json:"model,omitempty"`
 	Inputs      []Port                `json:"inputs"`
 	Outputs     []Port                `json:"outputs"`
 }

@@ -63,8 +63,9 @@ func validateDoerReusableRevision(r LoopRevision, add func(string, string, strin
 	}
 	expected := canonicalRevision(doerReusableCandidate(*r.DoerReusable))
 	actual := canonicalRevision(r)
+	strippedSteps, stepsOK := stripValidDoerStepLanes(actual.Steps)
 	if !reflect.DeepEqual(actual.Inputs, expected.Inputs) || len(actual.Outputs) != 0 || actual.EntryStepID != expected.EntryStepID ||
-		!reflect.DeepEqual(actual.Steps, expected.Steps) || !reflect.DeepEqual(actual.Transitions, expected.Transitions) ||
+		!stepsOK || !reflect.DeepEqual(strippedSteps, expected.Steps) || !reflect.DeepEqual(actual.Transitions, expected.Transitions) ||
 		!reflect.DeepEqual(actual.RequiredEvidence, expected.RequiredEvidence) {
 		add("doer_reusable.shape", "steps", "v5 requires closed typed inputs, steps, transitions and verifier")
 	}

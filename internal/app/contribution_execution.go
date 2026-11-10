@@ -279,6 +279,14 @@ func (s *Service) resolveContributionRole(ctx context.Context, subject core.Subj
 	if mandate.CharterDigest != agent.Charter.Digest || len(mandate.Tools) != 0 || len(mandate.Capabilities) != 0 || len(mandate.Scopes.Credentials) != 0 {
 		return orchestration.ContributionRole{}, deny
 	}
+	var reqProvider, reqModel string
+	if lv, lvErr := s.GetLoopViewAs(ctx, subject, c.Loop.ID, c.Loop.Revision); lvErr == nil && lv.Revision.Contribution != nil {
+		reqProvider, reqModel = lv.Revision.Contribution.RoleLane(name)
+	}
+	resolvedLane, laneErr := mandate.Hermes.ResolveLane(reqProvider, reqModel)
+	if laneErr != nil {
+		return orchestration.ContributionRole{}, deny
+	}
 	var session core.Session
 	if continued != nil {
 		session = *continued
@@ -320,7 +328,7 @@ func (s *Service) resolveContributionRole(ctx context.Context, subject core.Subj
 			return orchestration.ContributionRole{}, errors.Join(e, closeRole(context.WithoutCancel(ctx)))
 		}
 	}
-	return orchestration.ContributionRole{Agent: agent, Launch: launch, Admission: contributionRoleAdmission{s, c, index}, Close: closeRole}, nil
+	return orchestration.ContributionRole{Agent: agent, Launch: launch, Provider: resolvedLane.Provider, Model: resolvedLane.Model, Admission: contributionRoleAdmission{s, c, index}, Close: closeRole}, nil
 }
 
 type contributionRoleAdmission struct {

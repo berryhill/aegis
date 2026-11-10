@@ -13,6 +13,22 @@ type ProviderAuthentication struct {
 }
 
 func ValidateProviderAuthentication(h HermesConfig, tools, credentials []string) error {
+	if err := validateSingleProviderAuthentication(h, tools, credentials); err != nil {
+		return err
+	}
+	for _, lane := range h.AllowedLanes {
+		if lane.Provider == h.Provider && lane.ProviderAuthentication == nil && lane.LocalInference == nil {
+			lane.ProviderAuthentication = h.ProviderAuthentication
+			lane.LocalInference = h.LocalInference
+		}
+		if err := validateSingleProviderAuthentication(h.WithLane(lane), tools, credentials); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSingleProviderAuthentication(h HermesConfig, tools, credentials []string) error {
 	if h.ProviderAuthentication == nil {
 		return nil
 	}

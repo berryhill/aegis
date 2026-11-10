@@ -76,6 +76,11 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return AttemptTurnResult{}, err
 	}
 	authority := request.Launch.AuthorityContext
+	lane, err := authority.Authority.Hermes.ResolveLane(request.Provider, request.Model)
+	if err != nil {
+		return AttemptTurnResult{}, fmt.Errorf("%w: Hermes provider or model does not match immutable authority", ErrAttemptDenied)
+	}
+	effectiveHermes := authority.Authority.Hermes.WithLane(lane)
 	now := a.now()
 	if err := checkAdmission(ctx, request, now); err != nil {
 		return AttemptTurnResult{}, err
@@ -137,8 +142,8 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		}
 	}
 	var providerToken ProviderAccessToken
-	if authority.Authority.Hermes.ProviderAuthentication != nil {
-		providerToken, err = a.ResolveProviderAuthentication(turnContext, authority.Authority.Hermes)
+	if effectiveHermes.ProviderAuthentication != nil {
+		providerToken, err = a.ResolveProviderAuthentication(turnContext, effectiveHermes)
 		if err != nil {
 			return AttemptTurnResult{}, err
 		}
@@ -167,21 +172,21 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		"HERMES_DISABLE_AUTO_SKILLS=1",
 	)
 	command.Env = append(command.Env, "HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1")
-	if authority.Authority.Hermes.ProviderAuthentication != nil {
+	if effectiveHermes.ProviderAuthentication != nil {
 		command.Env = providerAuthenticationEnv(command.Env)
 	}
-	if request.Model != "" {
+	if effectiveHermes.Model != "" {
 		// Current native gateways consume HERMES_MODEL; retain the equal legacy
 		// alias for older supported runtimes, never an ambient model default.
-		command.Env = append(command.Env, "HERMES_MODEL="+request.Model, "HERMES_TUI_MODEL="+request.Model)
+		command.Env = append(command.Env, "HERMES_MODEL="+effectiveHermes.Model, "HERMES_TUI_MODEL="+effectiveHermes.Model)
 	}
-	if request.Provider != "" {
-		command.Env = append(command.Env, "HERMES_TUI_PROVIDER="+request.Provider)
+	if effectiveHermes.Provider != "" {
+		command.Env = append(command.Env, "HERMES_TUI_PROVIDER="+effectiveHermes.Provider)
 	}
 	var release func() error
-	if authority.Authority.Hermes.LocalInference != nil {
+	if effectiveHermes.LocalInference != nil {
 		var cleanup func()
-		release, cleanup, err = prepareLocal(turnContext, command, authority.Authority.Hermes, func(c context.Context) error { return checkAdmission(c, request, a.now()) })
+		release, cleanup, err = prepareLocal(turnContext, command, effectiveHermes, func(c context.Context) error { return checkAdmission(c, request, a.now()) })
 		if err != nil {
 			return AttemptTurnResult{}, err
 		}
@@ -206,7 +211,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	if err = checkAdmission(ctx, request, startedAt); err != nil {
 		return AttemptTurnResult{}, err
 	}
-	if authority.Authority.Hermes.ProviderAuthentication != nil {
+	if effectiveHermes.ProviderAuthentication != nil {
 		if err = a.qualifyProviderDescriptor(descriptor); err != nil {
 			return AttemptTurnResult{}, err
 		}
@@ -224,6 +229,8 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		ID:                 request.AttemptID,
 		DispatchID:         request.ParentAttemptID,
 		AuthorityContextID: authority.ID,
+		Provider:           effectiveHermes.Provider,
+		Model:              effectiveHermes.Model,
 		State:              execution.StateRequested,
 		RequestedAt:        now,
 	}
@@ -395,17 +402,19 @@ func validateAttemptRequest(request AttemptTurnRequest) error {
 		return fmt.Errorf("%w: authority binding is invalid: %v", ErrAttemptDenied, err)
 	}
 	hermesBinding := request.Launch.AuthorityContext.Authority.Hermes
-	if hermesBinding.ProviderAuthentication != nil && (core.ValidateProviderAuthentication(hermesBinding, request.Launch.AuthorityContext.Authority.Tools, request.Launch.AuthorityContext.Authority.Credentials) != nil || len(request.Credentials) != 0) {
-		return ErrProviderAuthUnauthorized
-	}
-	if hermesBinding.LocalInference != nil && len(request.Credentials) != 0 {
-		return fmt.Errorf("%w: local inference forbids credentials", ErrAttemptDenied)
-	}
 	if strings.TrimSpace(hermesBinding.Model) == "" || strings.TrimSpace(hermesBinding.Provider) == "" {
 		return fmt.Errorf("%w: authority-selected Hermes provider and model are required", ErrAttemptDenied)
 	}
-	if request.Model != hermesBinding.Model || request.Provider != hermesBinding.Provider {
+	lane, err := hermesBinding.ResolveLane(request.Provider, request.Model)
+	if err != nil {
 		return fmt.Errorf("%w: Hermes provider or model does not match immutable authority", ErrAttemptDenied)
+	}
+	effectiveHermes := hermesBinding.WithLane(lane)
+	if effectiveHermes.ProviderAuthentication != nil && (core.ValidateProviderAuthentication(effectiveHermes, request.Launch.AuthorityContext.Authority.Tools, request.Launch.AuthorityContext.Authority.Credentials) != nil || len(request.Credentials) != 0) {
+		return ErrProviderAuthUnauthorized
+	}
+	if effectiveHermes.LocalInference != nil && len(request.Credentials) != 0 {
+		return fmt.Errorf("%w: local inference forbids credentials", ErrAttemptDenied)
 	}
 	if err := execution.ValidateDispatch(request.Launch.ParentDispatch, request.Launch.AuthorityContext); err != nil {
 		return fmt.Errorf("%w: %v", ErrAttemptDenied, err)
