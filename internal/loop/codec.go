@@ -142,6 +142,22 @@ func canonicalRevision(value LoopRevision) LoopRevision {
 		p := *value.Contribution
 		p.Invariants = append([]string(nil), p.Invariants...)
 		p.Exclusions = append([]string(nil), p.Exclusions...)
+		if p.PrepareLane != nil {
+			l := *p.PrepareLane
+			p.PrepareLane = &l
+		}
+		if p.ControllerLane != nil {
+			l := *p.ControllerLane
+			p.ControllerLane = &l
+		}
+		if p.BuilderLane != nil {
+			l := *p.BuilderLane
+			p.BuilderLane = &l
+		}
+		if p.TesterLane != nil {
+			l := *p.TesterLane
+			p.TesterLane = &l
+		}
 		value.Contribution = &p
 	}
 	if value.Doer != nil {

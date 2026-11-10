@@ -77,6 +77,8 @@ type DoerStepBinding struct {
 	Operation DoerOperation `json:"operation"`
 	Backend   string        `json:"backend"`
 	Authority string        `json:"authority"`
+	Provider  string        `json:"provider,omitempty"`
+	Model     string        `json:"model,omitempty"`
 }
 
 const DoerVerifierID = "aegis.doer.selected-file.verifier"
@@ -188,6 +190,43 @@ func doerCandidate(c DoerContract) LoopRevision {
 		RequiredEvidence: []EvidenceRequirement{{Claim: claim, ProducerStepID: "verify"}}}
 }
 
+func validLaneValue(value string) bool {
+	return validID(value) && value != "none" && !strings.EqualFold(value, "all")
+}
+
+func stripValidDoerStepLanes(steps []Step) ([]Step, bool) {
+	out := make([]Step, len(steps))
+	for i, s := range steps {
+		out[i] = s
+		if s.Executable != nil {
+			copyExec := *s.Executable
+			out[i].Executable = &copyExec
+		}
+		hasStepLane := s.Provider != "" || s.Model != ""
+		hasExecLane := s.Executable != nil && (s.Executable.Provider != "" || s.Executable.Model != "")
+		if !hasStepLane && !hasExecLane {
+			continue
+		}
+		if s.Executable == nil || s.Executable.Backend != "hermes" {
+			return nil, false
+		}
+		if hasStepLane && (!validLaneValue(s.Model) || (s.Provider != "" && !validLaneValue(s.Provider))) {
+			return nil, false
+		}
+		if hasExecLane && (!validLaneValue(s.Executable.Model) || (s.Executable.Provider != "" && !validLaneValue(s.Executable.Provider))) {
+			return nil, false
+		}
+		if (s.Provider != "" && s.Executable.Provider != "" && s.Provider != s.Executable.Provider) || (s.Model != "" && s.Executable.Model != "" && s.Model != s.Executable.Model) {
+			return nil, false
+		}
+		out[i].Provider = ""
+		out[i].Model = ""
+		out[i].Executable.Provider = ""
+		out[i].Executable.Model = ""
+	}
+	return out, true
+}
+
 func validateDoerRevision(r LoopRevision, add func(string, string, string)) {
 	if r.Doer == nil || !validDoerContract(*r.Doer) {
 		add("doer.contract", "doer", "v4 requires a bounded task, selected relative file and one to three attempts")
@@ -195,8 +234,9 @@ func validateDoerRevision(r LoopRevision, add func(string, string, string)) {
 	}
 	expected := canonicalRevision(doerCandidate(*r.Doer))
 	actual := canonicalRevision(r)
+	strippedSteps, stepsOK := stripValidDoerStepLanes(actual.Steps)
 	if len(actual.Inputs) != 0 || len(actual.Outputs) != 0 || actual.EntryStepID != expected.EntryStepID ||
-		!reflect.DeepEqual(actual.Steps, expected.Steps) || !reflect.DeepEqual(actual.Transitions, expected.Transitions) ||
+		!stepsOK || !reflect.DeepEqual(strippedSteps, expected.Steps) || !reflect.DeepEqual(actual.Transitions, expected.Transitions) ||
 		!reflect.DeepEqual(actual.RequiredEvidence, expected.RequiredEvidence) {
 		add("doer.shape", "steps", "v4 requires the closed gate/action/verifier geometry and sealed bindings")
 	}

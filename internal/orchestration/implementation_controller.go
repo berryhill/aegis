@@ -109,7 +109,12 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 	if !ok {
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_custody_unavailable", nil, nil)
 	}
-	turn := hermesruntime.AttemptTurnRequest{Launch: runtime.Launch, Admission: runtime.Admission, ParentAttemptID: base.Attempt.AttemptID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(c.root)), "runtime", "fleet"), Model: runtime.Launch.AuthorityContext.Authority.Hermes.Model, Provider: runtime.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
+	implementStepID := action
+	if p, m := runtime.LoopRevision.StepLane("implement"); p != "" || m != "" {
+		implementStepID = "implement"
+	}
+	actionProvider, actionModel := resolveStepLane(runtime.LoopRevision, implementStepID, runtime.NodeProvider, runtime.NodeModel, runtime.Launch.AuthorityContext.Authority.Hermes)
+	turn := hermesruntime.AttemptTurnRequest{Launch: runtime.Launch, Admission: runtime.Admission, ParentAttemptID: base.Attempt.AttemptID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(c.root)), "runtime", "fleet"), Model: actionModel, Provider: actionProvider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
 	kernel := &implementation.Executor{DB: custody.ImplementationStore(), GoBinary: c.config.GoBinary, Native: runImplementationCheckerNative, Proposer: HermesPatchProposer{Adapter: c.adapter, Request: turn}}
 	runID := base.Attempt.AttemptID
 	if coding {
@@ -139,9 +144,12 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 			return w.terminal(ctx, request, base, execution.StateDenied, "implementation_laya_unconfigured", nil, nil)
 		}
 		kernel.Decision = implementationLayaDecision{adapter: c.decision}
-		luna := implementationLuna{adapter: c.adapter, request: turn}
-		kernel.Diagnosis = luna
-		kernel.Reporter = luna
+		diagTurn := turn
+		diagTurn.Provider, diagTurn.Model = resolveStepLane(runtime.LoopRevision, "diagnosis", runtime.NodeProvider, runtime.NodeModel, runtime.Launch.AuthorityContext.Authority.Hermes)
+		compTurn := turn
+		compTurn.Provider, compTurn.Model = resolveStepLane(runtime.LoopRevision, "completion", runtime.NodeProvider, runtime.NodeModel, runtime.Launch.AuthorityContext.Authority.Hermes)
+		kernel.Diagnosis = implementationLuna{adapter: c.adapter, request: diagTurn}
+		kernel.Reporter = implementationLuna{adapter: c.adapter, request: compTurn}
 	}
 	kernel.Admit = func(ctx context.Context, _ string) error {
 		if runtime.LoopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
@@ -159,7 +167,7 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		if coding {
 			e = w.authorizeDoer(ctx, *outer, runtime.Participant)
 			if e == nil {
-				e = w.checkDoerProviderAuthority(ctx, runtime.Launch.AuthorityContext.Authority)
+				e = w.checkDoerProviderAuthorityForLoop(ctx, runtime.Launch.AuthorityContext.Authority, runtime.LoopRevision, runtime.NodeProvider, runtime.NodeModel)
 			}
 		} else {
 			e = c.authorize(runtime.LoopRevision.Steps, runtime.Participant)

@@ -108,6 +108,8 @@ type EvidenceRequirement struct {
 type Step struct {
 	Implementation *VerifiedImplementation `json:"implementation,omitempty"`
 	Executable     *DoerStepBinding        `json:"executable,omitempty"`
+	Provider       string                  `json:"provider,omitempty"`
+	Model          string                  `json:"model,omitempty"`
 	ID             string                  `json:"id"`
 	Kind           StepKind                `json:"kind"`
 	InputPorts     []Port                  `json:"input_ports"`
@@ -116,6 +118,28 @@ type Step struct {
 	Gate           *GateDefinition         `json:"gate,omitempty"`
 	Terminal       *TerminalDefinition     `json:"terminal,omitempty"`
 	EvidenceClaims []EvidenceClaim         `json:"evidence_claims"`
+}
+
+func (s Step) EffectiveLane() (provider, model string) {
+	provider, model = s.Provider, s.Model
+	if s.Executable != nil {
+		if provider == "" {
+			provider = s.Executable.Provider
+		}
+		if model == "" {
+			model = s.Executable.Model
+		}
+	}
+	return provider, model
+}
+
+func (r LoopRevision) StepLane(stepID string) (provider, model string) {
+	for _, s := range r.Steps {
+		if s.ID == stepID {
+			return s.EffectiveLane()
+		}
+	}
+	return "", ""
 }
 
 type Transition struct {

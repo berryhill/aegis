@@ -71,9 +71,18 @@ type ApprovalPolicy struct {
 type InformationFlowPolicy struct {
 	CrossStanza string `json:"cross_stanza"`
 }
+type HermesLane struct {
+	ID                     string                  `json:"id,omitempty"`
+	ProviderAuthentication *ProviderAuthentication `json:"provider_authentication,omitempty"`
+	LocalInference         *LocalInference         `json:"local_inference,omitempty"`
+	Model                  string                  `json:"model"`
+	Provider               string                  `json:"provider"`
+}
+
 type HermesConfig struct {
 	ProviderAuthentication *ProviderAuthentication `json:"provider_authentication,omitempty"`
 	LocalInference         *LocalInference         `json:"local_inference,omitempty"`
+	AllowedLanes           []HermesLane            `json:"allowed_lanes,omitempty"`
 	Profile                string                  `json:"profile"`
 	PersistentHome         bool                    `json:"persistent_home"`
 	MCPServers             []string                `json:"mcp_servers"`
@@ -82,6 +91,100 @@ type HermesConfig struct {
 	Model                  string                  `json:"model"`
 	Provider               string                  `json:"provider"`
 }
+
+var ErrUnauthorizedHermesLane = errors.New("Hermes provider/model lane is not authorized by Charter")
+
+func (h HermesConfig) EffectiveLanes() []HermesLane {
+	if len(h.AllowedLanes) == 0 {
+		if strings.TrimSpace(h.Provider) == "" && strings.TrimSpace(h.Model) == "" {
+			return nil
+		}
+		return []HermesLane{{
+			Provider:               h.Provider,
+			Model:                  h.Model,
+			ProviderAuthentication: h.ProviderAuthentication,
+			LocalInference:         h.LocalInference,
+		}}
+	}
+	lanes := make([]HermesLane, 0, len(h.AllowedLanes)+1)
+	hasDefault := false
+	for _, lane := range h.AllowedLanes {
+		if lane.Provider == h.Provider && lane.ProviderAuthentication == nil && lane.LocalInference == nil {
+			lane.ProviderAuthentication = h.ProviderAuthentication
+			lane.LocalInference = h.LocalInference
+		}
+		if lane.Provider == h.Provider && lane.Model == h.Model {
+			hasDefault = true
+		}
+		lanes = append(lanes, lane)
+	}
+	if !hasDefault && (strings.TrimSpace(h.Provider) != "" || strings.TrimSpace(h.Model) != "") {
+		lanes = append([]HermesLane{{
+			Provider:               h.Provider,
+			Model:                  h.Model,
+			ProviderAuthentication: h.ProviderAuthentication,
+			LocalInference:         h.LocalInference,
+		}}, lanes...)
+	}
+	return lanes
+}
+
+func (h HermesConfig) ResolveLane(provider, model string) (HermesLane, error) {
+	return h.ResolveAuthorizedLane(provider, model)
+}
+
+func (h HermesConfig) ResolveAuthorizedLane(provider, model string) (HermesLane, error) {
+	if strings.TrimSpace(h.Provider) == "" || strings.TrimSpace(h.Model) == "" {
+		return HermesLane{}, ErrUnauthorizedHermesLane
+	}
+	p := strings.TrimSpace(provider)
+	m := strings.TrimSpace(model)
+	if p != "" && m == "" {
+		return HermesLane{}, ErrUnauthorizedHermesLane
+	}
+	if p == "" && m == "" {
+		p = h.Provider
+		m = h.Model
+	}
+	effective := h.EffectiveLanes()
+	if p == "" && m != "" {
+		for _, lane := range effective {
+			if lane.Provider == h.Provider && lane.Model == m {
+				return lane, nil
+			}
+		}
+		var matched *HermesLane
+		for i := range effective {
+			if effective[i].Model == m {
+				if matched != nil {
+					return HermesLane{}, ErrUnauthorizedHermesLane
+				}
+				matched = &effective[i]
+			}
+		}
+		if matched != nil {
+			return *matched, nil
+		}
+		return HermesLane{}, ErrUnauthorizedHermesLane
+	}
+	for _, lane := range effective {
+		if lane.Provider == p && lane.Model == m {
+			return lane, nil
+		}
+	}
+	return HermesLane{}, ErrUnauthorizedHermesLane
+}
+
+func (h HermesConfig) WithLane(lane HermesLane) HermesConfig {
+	out := h
+	out.Provider = lane.Provider
+	out.Model = lane.Model
+	out.ProviderAuthentication = lane.ProviderAuthentication
+	out.LocalInference = lane.LocalInference
+	out.AllowedLanes = nil
+	return out
+}
+
 type TrustStanza struct {
 	ID              string                `json:"id"`
 	Name            string                `json:"name"`
@@ -380,6 +483,27 @@ func validateRequiredCharterFields(data []byte) error {
 				if raw, exists := object["local_inference"]; exists && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 					return errors.New("local_inference must not be null")
 				}
+				if raw, exists := object["allowed_lanes"]; exists {
+					if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+						return errors.New("allowed_lanes must not be null")
+					}
+					var lanes []map[string]json.RawMessage
+					if err := json.Unmarshal(raw, &lanes); err != nil {
+						return fmt.Errorf("decode charter: %s.hermes.allowed_lanes must be an array of objects", path)
+					}
+					for j, laneObj := range lanes {
+						lanePath := fmt.Sprintf("%s.hermes.allowed_lanes[%d]", path, j)
+						if err := require(laneObj, lanePath, "provider", "model"); err != nil {
+							return err
+						}
+						if lraw, lexists := laneObj["local_inference"]; lexists && bytes.Equal(bytes.TrimSpace(lraw), []byte("null")) {
+							return errors.New("local_inference must not be null")
+						}
+						if praw, pexists := laneObj["provider_authentication"]; pexists && bytes.Equal(bytes.TrimSpace(praw), []byte("null")) {
+							return errors.New("provider_authentication must not be null")
+						}
+					}
+				}
 			}
 			if err := require(object, path+"."+field, required...); err != nil {
 				return err
@@ -512,6 +636,44 @@ func ValidateCharter(c Charter) error {
 		}
 		if s.Hermes.ProviderAuthentication == nil && s.Hermes.LocalInference == nil && s.Hermes.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential)) {
 			add(p + " credential scopes must include " + expectedCredential)
+		}
+		seenLanes := map[string]bool{}
+		defaultPresentInAllowed := false
+		for j, lane := range s.Hermes.AllowedLanes {
+			lp := fmt.Sprintf("%s allowed_lanes[%d]", p, j)
+			if lane.ID != "" && invalidPolicyValue(lane.ID) {
+				add(lp + " Hermes lane id must not be wildcard")
+			}
+			if invalidPolicyValue(lane.Provider) || invalidPolicyValue(lane.Model) {
+				add(lp + " Hermes provider and model must be explicit")
+			}
+			laneKey := lane.Provider + "\x00" + lane.Model
+			if seenLanes[laneKey] {
+				add(lp + " duplicate Hermes provider and model lane")
+			}
+			seenLanes[laneKey] = true
+			if lane.Provider == s.Hermes.Provider && lane.Model == s.Hermes.Model {
+				defaultPresentInAllowed = true
+			}
+			effectiveLane := lane
+			if effectiveLane.Provider == s.Hermes.Provider && effectiveLane.ProviderAuthentication == nil && effectiveLane.LocalInference == nil {
+				effectiveLane.ProviderAuthentication = s.Hermes.ProviderAuthentication
+				effectiveLane.LocalInference = s.Hermes.LocalInference
+			}
+			laneCfg := s.Hermes.WithLane(effectiveLane)
+			if err := ValidateLocalInferenceAuthority(laneCfg, s.Grant.Tools, s.Scopes.Credentials); err != nil {
+				add(lp + " " + err.Error())
+			}
+			if err := ValidateProviderAuthentication(laneCfg, s.Grant.Tools, s.Scopes.Credentials); err != nil {
+				add(lp + " " + err.Error())
+			}
+			laneExpectedCredential := "provider:" + effectiveLane.Provider
+			if effectiveLane.ProviderAuthentication == nil && effectiveLane.LocalInference == nil && effectiveLane.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, laneExpectedCredential)) {
+				add(lp + " credential scopes must include " + laneExpectedCredential)
+			}
+		}
+		if len(s.Hermes.AllowedLanes) > 0 && !defaultPresentInAllowed {
+			add(p + " default Hermes provider and model must be included in allowed_lanes")
 		}
 		for _, x := range append(append([]string{}, s.Grant.Tools...), s.Grant.Capabilities...) {
 			if invalidPolicyValue(x) {

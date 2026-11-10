@@ -20,6 +20,8 @@ import (
 type ContributionRoleIdentity struct {
 	InputDigest      string `json:"input_digest,omitempty"`
 	InputBytes       int    `json:"input_bytes,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
 	AgentDigest      string `json:"agent_digest"`
 	CharterDigest    string `json:"charter_digest"`
 	AuthorityID      string `json:"authority_id"`

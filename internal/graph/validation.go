@@ -84,6 +84,11 @@ func validateRevision(revision GraphRevision, verifyDigest bool) []ValidationIss
 		if err := node.Loop.Validate(); err != nil {
 			add("node.loop_invalid", path+".loop", "node must bind an exact Loop revision and digest")
 		}
+		if node.Provider != "" || node.Model != "" {
+			if !validID(node.Model) || node.Model == "none" || strings.EqualFold(node.Model, "all") || (node.Provider != "" && (!validID(node.Provider) || node.Provider == "none" || strings.EqualFold(node.Provider, "all"))) {
+				add("node.lane_invalid", path, "node model lane requires explicit model and optional provider")
+			}
+		}
 		if len(node.Inputs) > MaxPorts || len(node.Outputs) > MaxPorts {
 			add("complexity.node_ports", path, "node port count exceeds the bounded limit")
 		}

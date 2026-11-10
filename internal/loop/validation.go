@@ -290,6 +290,19 @@ func validateStep(step Step, path string, add func(string, string, string)) {
 	default:
 		add("step.kind", path+".kind", "step kind is unsupported")
 	}
+	if step.Provider != "" || step.Model != "" {
+		if step.Kind != StepAction || !validLaneValue(step.Model) || (step.Provider != "" && !validLaneValue(step.Provider)) {
+			add("step.lane_invalid", path, "step model lane requires an action step with explicit model and optional provider")
+		}
+	}
+	if step.Executable != nil && (step.Executable.Provider != "" || step.Executable.Model != "") {
+		if step.Kind != StepAction || step.Executable.Backend != "hermes" || !validLaneValue(step.Executable.Model) || (step.Executable.Provider != "" && !validLaneValue(step.Executable.Provider)) {
+			add("step.lane_invalid", path+".executable", "executable model lane requires hermes backend, explicit model and optional provider")
+		}
+		if (step.Provider != "" && step.Executable.Provider != "" && step.Provider != step.Executable.Provider) || (step.Model != "" && step.Executable.Model != "" && step.Model != step.Executable.Model) {
+			add("step.lane_invalid", path, "step and executable model lane selectors must match")
+		}
+	}
 	claims := map[string]struct{}{}
 	for index, claim := range step.EvidenceClaims {
 		claimPath := fmt.Sprintf("%s.evidence_claims[%d]", path, index)

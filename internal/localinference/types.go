@@ -32,7 +32,7 @@ type openAIChatResponse struct {
 	Created           int64  `json:"created"`
 	Model             string `json:"model"`
 	SystemFingerprint string `json:"system_fingerprint,omitempty"`
-	Choices []struct {
+	Choices           []struct {
 		Index        int           `json:"index"`
 		Message      openAIMessage `json:"message"`
 		FinishReason string        `json:"finish_reason"`

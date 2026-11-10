@@ -687,6 +687,9 @@ func (s *Service) PublishLoopAs(ctx context.Context, subject core.Subject, input
 		}
 		operation.Workspace, operation.Authority, operation.Publisher = &workspace, workspace.Ref(), workspace.Agent
 	}
+	if err := s.validateLoopCharterLanes(ctx, operation.Publisher, revision, "", ""); err != nil {
+		return PublishedLoop{Revision: revision, Validation: validation}, err
+	}
 	decision, err := s.Fleet.PublishLoop(ctx, operation)
 	return PublishedLoop{Revision: revision, Validation: validation, Decision: decision}, err
 }
@@ -923,10 +926,97 @@ func (s *Service) PublishGraphAs(ctx context.Context, subject core.Subject, inpu
 	if err != nil {
 		return PublishedGraph{Revision: revision, Validation: validation}, err
 	}
+	for _, node := range revision.Nodes {
+		if err := s.validateNodeCharterLanes(ctx, node); err != nil {
+			return PublishedGraph{Revision: revision, Validation: validation}, err
+		}
+	}
 	request := graph.PublishRequest{Revision: revision, Validation: validation, ExpectedPreviousDigest: input.ExpectedPreviousDigest, IdempotencyKey: input.IdempotencyKey}
 	operation := orchestration.PublishGraphRequest{Subject: subject, Authority: input.Authority, Publication: request, Workspace: workspace}
 	decision, err := s.Fleet.PublishGraph(ctx, operation)
 	return PublishedGraph{Revision: revision, Validation: validation, Decision: decision}, err
+}
+
+func (s *Service) validateParticipantCharterLanes(ctx context.Context, participantRef reference.RevisionRef, reqs [][2]string) error {
+	if len(reqs) == 0 || participantRef.ID == "" || s.FleetRepository == nil {
+		return nil
+	}
+	participant, err := s.FleetRepository.GetAgentRevision(ctx, participantRef.ID, participantRef.Revision)
+	if err != nil || participant.Digest != participantRef.Digest {
+		return nil
+	}
+	ch, err := s.GetCharter(participant.Charter.ID, participant.Charter.Revision)
+	if err != nil || ch.Digest != participant.Charter.Digest {
+		return nil
+	}
+	for _, st := range ch.Charter.Stanzas {
+		if !st.Enabled {
+			continue
+		}
+		allOK := true
+		for _, r := range reqs {
+			if _, err := st.Hermes.ResolveLane(r[0], r[1]); err != nil {
+				allOK = false
+				break
+			}
+		}
+		if allOK {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: requested Hermes provider/model lane is not authorized by participant Charter", ErrDenied)
+}
+
+func (s *Service) validateLoopCharterLanes(ctx context.Context, participantRef reference.RevisionRef, loopRev loop.LoopRevision, nodeProvider, nodeModel string) error {
+	var reqs [][2]string
+	if strings.TrimSpace(nodeProvider) != "" || strings.TrimSpace(nodeModel) != "" {
+		reqs = append(reqs, [2]string{nodeProvider, nodeModel})
+	}
+	for _, step := range loopRev.Steps {
+		if p, m := step.EffectiveLane(); p != "" || m != "" {
+			reqs = append(reqs, [2]string{p, m})
+		}
+	}
+	if err := s.validateParticipantCharterLanes(ctx, participantRef, reqs); err != nil {
+		return err
+	}
+	if c := loopRev.Contribution; c != nil {
+		roles := []struct {
+			ref  reference.RevisionRef
+			name string
+		}{{
+			ref: c.Controller, name: "controller",
+		}, {
+			ref: c.Builder, name: "builder",
+		}, {
+			ref: c.Tester, name: "tester",
+		}}
+		for i, role := range roles {
+			var roleReqs [][2]string
+			if p, m := c.RoleLane(role.name); p != "" || m != "" {
+				roleReqs = append(roleReqs, [2]string{p, m})
+			}
+			if i == 1 && c.Engineering != nil {
+				if p, m := c.RoleLane("prepare"); p != "" || m != "" {
+					roleReqs = append(roleReqs, [2]string{p, m})
+				}
+			}
+			if err := s.validateParticipantCharterLanes(ctx, role.ref, roleReqs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) validateNodeCharterLanes(ctx context.Context, node graph.Node) error {
+	var loopRev loop.LoopRevision
+	if s.FleetRepository != nil && node.Loop.ID != "" {
+		if loaded, err := s.FleetRepository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision); err == nil && loaded.Digest == node.Loop.Digest {
+			loopRev = loaded
+		}
+	}
+	return s.validateLoopCharterLanes(ctx, node.Participant, loopRev, node.Provider, node.Model)
 }
 
 func (s *Service) PublishGraph(ctx context.Context, input PublishGraphInput) (PublishedGraph, error) {
@@ -1082,6 +1172,13 @@ func (s *Service) submitGraphAs(ctx context.Context, subject core.Subject, reque
 			return orchestration.SubmissionDecision{}, workspaceErr
 		}
 		request.Workspace, request.Authority = &workspace, workspace.Ref()
+	}
+	if g, err := s.FleetRepository.GetGraphRevision(ctx, request.Graph.ID, request.Graph.Revision); err == nil && g.Digest == request.Graph.Digest {
+		for _, node := range g.Nodes {
+			if err := s.validateNodeCharterLanes(ctx, node); err != nil {
+				return orchestration.SubmissionDecision{}, err
+			}
+		}
 	}
 	return s.Fleet.PrepareGraphRun(ctx, request)
 }

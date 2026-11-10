@@ -70,7 +70,8 @@ func validateManagedDoerRevision(r LoopRevision, add func(string, string, string
 		return
 	}
 	actual, expected := canonicalRevision(r), canonicalRevision(managedDoerCandidate(*r.ManagedDoer))
-	if !reflect.DeepEqual(actual.Inputs, expected.Inputs) || !reflect.DeepEqual(actual.Outputs, expected.Outputs) || actual.EntryStepID != expected.EntryStepID || !reflect.DeepEqual(actual.Steps, expected.Steps) || !reflect.DeepEqual(actual.Transitions, expected.Transitions) || !reflect.DeepEqual(actual.RequiredEvidence, expected.RequiredEvidence) {
+	strippedSteps, stepsOK := stripValidDoerStepLanes(actual.Steps)
+	if !reflect.DeepEqual(actual.Inputs, expected.Inputs) || !reflect.DeepEqual(actual.Outputs, expected.Outputs) || actual.EntryStepID != expected.EntryStepID || !stepsOK || !reflect.DeepEqual(strippedSteps, expected.Steps) || !reflect.DeepEqual(actual.Transitions, expected.Transitions) || !reflect.DeepEqual(actual.RequiredEvidence, expected.RequiredEvidence) {
 		add("managed_doer.shape", "steps", "v7 requires closed selected-file geometry, source and required raw artifact output")
 	}
 }

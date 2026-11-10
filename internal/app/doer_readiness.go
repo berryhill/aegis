@@ -209,9 +209,35 @@ func (s *Service) checkDoerSetupReadiness(ctx context.Context, subject core.Subj
 		return
 	}
 	r.Selection = ready
-	if selection.Selected.Hermes.Model == "" || selection.Selected.Hermes.Model == "none" {
+	if selection.Selected.Hermes.Provider == "" || selection.Selected.Hermes.Model == "" {
 		r.block(&r.Model, "doer_model_required")
 		return
+	}
+	type lanePair struct{ provider, model string }
+	var reqLanes []lanePair
+	for _, step := range candidate.Steps {
+		p, m := step.EffectiveLane()
+		isHermesAction := step.Kind == loop.StepAction && (step.Executable == nil || step.Executable.Backend == "hermes")
+		if isHermesAction || p != "" || m != "" {
+			reqLanes = append(reqLanes, lanePair{p, m})
+		}
+	}
+	if len(reqLanes) == 0 {
+		reqLanes = append(reqLanes, lanePair{})
+	}
+	var checkConfigs []core.HermesConfig
+	seenLanes := map[string]bool{}
+	for _, req := range reqLanes {
+		lane, err := selection.Selected.Hermes.ResolveLane(req.provider, req.model)
+		if err != nil || lane.Model == "" || lane.Model == "none" {
+			r.block(&r.Model, "doer_model_required")
+			return
+		}
+		key := lane.Provider + "\x00" + lane.Model
+		if !seenLanes[key] {
+			seenLanes[key] = true
+			checkConfigs = append(checkConfigs, selection.Selected.Hermes.WithLane(lane))
+		}
 	}
 	r.Model = ready
 	if len(selection.Selected.Hermes.Toolsets) != 0 || len(selection.Selected.Grant.Tools) != 0 {
@@ -224,19 +250,21 @@ func (s *Service) checkDoerSetupReadiness(ctx context.Context, subject core.Subj
 		return
 	}
 	r.CredentialFree = ready
-	if selection.Selected.Hermes.ProviderAuthentication != nil {
-		if _, err := s.resolveControllerProviderAuthentication(ctx, selection.Selected.Hermes); err != nil {
-			reason := "doer_prerequisite_unavailable"
-			switch err.Error() {
-			case "doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired", "doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":
-				reason = err.Error()
+	for _, hc := range checkConfigs {
+		if hc.ProviderAuthentication != nil {
+			if _, err := s.resolveControllerProviderAuthentication(ctx, hc); err != nil {
+				reason := "doer_prerequisite_unavailable"
+				switch err.Error() {
+				case "doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired", "doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":
+					reason = err.Error()
+				}
+				r.block(&r.ProviderAuthentication, reason)
+				return
 			}
-			r.block(&r.ProviderAuthentication, reason)
+		} else if hc.LocalInference == nil && hc.Provider != "none" {
+			r.block(&r.ProviderAuthentication, "doer_provider_auth_absent")
 			return
 		}
-	} else if selection.Selected.Hermes.LocalInference == nil && selection.Selected.Hermes.Provider != "none" {
-		r.block(&r.ProviderAuthentication, "doer_provider_auth_absent")
-		return
 	}
 	r.ProviderAuthentication = ready
 	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)

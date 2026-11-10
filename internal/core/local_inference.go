@@ -86,6 +86,22 @@ func (r *LocalInference) UnmarshalJSON(data []byte) error {
 // the charter has previously passed validation. No tool or credential authority
 // may accompany this deliberately bounded route.
 func ValidateLocalInferenceAuthority(h HermesConfig, tools, credentials []string) error {
+	if err := validateSingleLocalInferenceAuthority(h, tools, credentials); err != nil {
+		return err
+	}
+	for _, lane := range h.AllowedLanes {
+		if lane.Provider == h.Provider && lane.ProviderAuthentication == nil && lane.LocalInference == nil {
+			lane.ProviderAuthentication = h.ProviderAuthentication
+			lane.LocalInference = h.LocalInference
+		}
+		if err := validateSingleLocalInferenceAuthority(h.WithLane(lane), tools, credentials); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSingleLocalInferenceAuthority(h HermesConfig, tools, credentials []string) error {
 	if h.LocalInference == nil {
 		if h.Provider == "ollama" {
 			return errors.New("Ollama requires an immutable local inference binding")

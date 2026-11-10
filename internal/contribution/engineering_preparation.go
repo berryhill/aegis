@@ -14,6 +14,8 @@ type EngineeringPreparation struct {
 	ReadStart         int                          `json:"read_start,omitempty"`
 	ReadCount         int                          `json:"read_count,omitempty"`
 	InventoryFiles    []loop.RepositoryContextFile `json:"inventory_files,omitempty"`
+	Provider          string                       `json:"provider,omitempty"`
+	Model             string                       `json:"model,omitempty"`
 	Authority         reference.DigestRef          `json:"authority"`
 	SessionID         string                       `json:"session_id"`
 	MandateID         string                       `json:"mandate_id"`

@@ -1305,15 +1305,45 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	}
 	stage = "provider_resolution"
 	var credentials []hermes.Credential
+	if err = core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials); err != nil {
+		return core.Session{}, hermes.ErrProviderAuthUnauthorized
+	}
+	if err = core.ValidateLocalInferenceAuthority(m.Hermes, m.Tools, m.Scopes.Credentials); err != nil {
+		return core.Session{}, err
+	}
 	if m.Hermes.ProviderAuthentication != nil {
-		if core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials) != nil {
-			return core.Session{}, hermes.ErrProviderAuthUnauthorized
-		}
 		_, err = s.resolveControllerProviderAuthentication(ctx, m.Hermes)
-	} else if m.Hermes.LocalInference != nil {
-		err = core.ValidateLocalInferenceAuthority(m.Hermes, m.Tools, m.Scopes.Credentials)
-	} else {
+	} else if m.Hermes.LocalInference == nil {
 		credentials, err = s.resolveProviderCredential(m.Hermes.Provider, m.Scopes.Credentials)
+	}
+	if err == nil {
+		for _, lane := range m.Hermes.AllowedLanes {
+			runtimeLane, laneErr := m.Hermes.ResolveLane(lane.Provider, lane.Model)
+			if laneErr != nil {
+				err = laneErr
+				break
+			}
+			laneCfg := m.Hermes.WithLane(runtimeLane)
+			if m.Hermes.ProviderAuthentication == nil && m.Hermes.LocalInference == nil && laneCfg.ProviderAuthentication == nil && laneCfg.LocalInference == nil && laneCfg.Provider != "none" {
+				laneCreds, credErr := s.resolveProviderCredential(laneCfg.Provider, m.Scopes.Credentials)
+				if credErr != nil {
+					err = credErr
+					break
+				}
+				for _, c := range laneCreds {
+					exists := false
+					for _, prior := range credentials {
+						if prior.Reference == c.Reference {
+							exists = true
+							break
+						}
+					}
+					if !exists {
+						credentials = append(credentials, c)
+					}
+				}
+			}
+		}
 	}
 	if err != nil {
 		return core.Session{}, err

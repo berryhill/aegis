@@ -45,10 +45,34 @@ func (s *Service) validateContributionAgents(ctx context.Context, subject core.S
 	if r.Contribution == nil || loop.ValidateRevision(r).Outcome != loop.ValidationValid {
 		return ErrDenied
 	}
-	for _, ref := range []reference.RevisionRef{r.Contribution.Controller, r.Contribution.Builder, r.Contribution.Tester} {
+	for i, ref := range []reference.RevisionRef{r.Contribution.Controller, r.Contribution.Builder, r.Contribution.Tester} {
 		a, e := s.FleetRepository.LatestAgentRevision(ctx, ref.ID)
 		if e != nil || a.Revision != ref.Revision || a.Digest != ref.Digest || a.Lifecycle != registry.LifecycleEnabled || a.Ownership.OwnerID != subject.PrincipalID {
 			return ErrDenied
+		}
+		if ch, chErr := s.GetCharter(a.Charter.ID, a.Charter.Revision); chErr == nil && ch.Digest == a.Charter.Digest {
+			roleName := []string{"controller", "builder", "tester"}[i]
+			reqProvider, reqModel := r.Contribution.RoleLane(roleName)
+			prepProvider, prepModel := r.Contribution.RoleLane("prepare")
+			hasAuthorizedLane := false
+			for _, st := range ch.Charter.Stanzas {
+				if !st.Enabled {
+					continue
+				}
+				if _, laneErr := st.Hermes.ResolveLane(reqProvider, reqModel); laneErr != nil {
+					continue
+				}
+				if i == 1 && r.Contribution.Engineering != nil {
+					if _, laneErr := st.Hermes.ResolveLane(prepProvider, prepModel); laneErr != nil {
+						continue
+					}
+				}
+				hasAuthorizedLane = true
+				break
+			}
+			if !hasAuthorizedLane {
+				return ErrDenied
+			}
 		}
 	}
 	return nil

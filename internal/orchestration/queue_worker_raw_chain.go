@@ -324,6 +324,7 @@ func (worker *QueueWorker) executeRawGraphNode(ctx context.Context, request Work
 	defer cancelRuntime()
 	runtimeRequest := RuntimeRequest{
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
+		NodeProvider: node.Provider, NodeModel: node.Model,
 		Authority: request.Authority, Inputs: inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority, agent: node.Participant, loop: node.Loop, graph: snapshot.Graph},
 	}

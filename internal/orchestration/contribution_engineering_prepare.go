@@ -39,6 +39,14 @@ func (p HermesPatchProposer) PrepareEngineering(ctx context.Context, source cont
 	if p.Adapter == nil || p.Request.Admission == nil || p.Request.AttemptID == "" || len(authority.Tools) != 0 || len(authority.Credentials) != 0 || len(authority.Capabilities) != 0 || len(p.Request.Credentials) != 0 || policy.Validate() != nil || template.RepositoryContext == nil || source.DiscussionTruncated || source.Discussion == nil || !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(base) || authorityRef.Validate() != nil || launchAuthority.SessionID == "" || launchAuthority.MandateID == "" {
 		return receipt, reject
 	}
+	resolvedProvider, resolvedModel := strings.TrimSpace(p.Request.Provider), strings.TrimSpace(p.Request.Model)
+	if strings.TrimSpace(authority.Hermes.Provider) != "" || strings.TrimSpace(authority.Hermes.Model) != "" {
+		lane, err := authority.Hermes.ResolveLane(resolvedProvider, resolvedModel)
+		if err != nil {
+			return receipt, reject
+		}
+		resolvedProvider, resolvedModel = lane.Provider, lane.Model
+	}
 	td, err := template.Digest()
 	if err != nil {
 		return receipt, err
@@ -52,7 +60,7 @@ func (p HermesPatchProposer) PrepareEngineering(ctx context.Context, source cont
 		return receipt, err
 	}
 	policyWire, _ := json.Marshal(policy)
-	receipt = EngineeringPreparation{Authority: authorityRef, SessionID: launchAuthority.SessionID, MandateID: launchAuthority.MandateID, SourceDigest: contribution.Digest(sourceWire), Base: base, TemplateDigest: td, PolicyDigest: contribution.Digest(policyWire), InventoryDigest: inventory.Digest}
+	receipt = EngineeringPreparation{Provider: resolvedProvider, Model: resolvedModel, Authority: authorityRef, SessionID: launchAuthority.SessionID, MandateID: launchAuthority.MandateID, SourceDigest: contribution.Digest(sourceWire), Base: base, TemplateDigest: td, PolicyDigest: contribution.Digest(policyWire), InventoryDigest: inventory.Digest}
 	// Retain exact inputs/outputs by digest in the returned receipt; this helper
 	// makes no persistent-state writes and cannot replace owning-service custody.
 	turn := func(suffix string, input any) ([]byte, error) {
@@ -65,6 +73,8 @@ func (p HermesPatchProposer) PrepareEngineering(ctx context.Context, source cont
 			return nil, contribution.ErrInputBound
 		}
 		request.AttemptID = p.Request.AttemptID + suffix
+		request.Provider = resolvedProvider
+		request.Model = resolvedModel
 		request.Input = string(wire)
 		decision, e := request.Admission.CheckRuntimeAdmission(ctx, request.Launch, time.Now().UTC())
 		if e != nil || !decision.Allowed {

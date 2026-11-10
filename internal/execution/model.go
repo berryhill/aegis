@@ -98,6 +98,8 @@ type Turn struct {
 	DispatchID         string     `json:"dispatch_id"`
 	AuthorityContextID string     `json:"authority_context_id"`
 	RuntimeSessionID   string     `json:"runtime_session_id,omitempty"`
+	Provider           string     `json:"provider,omitempty"`
+	Model              string     `json:"model,omitempty"`
 	State              State      `json:"state"`
 	RequestedAt        time.Time  `json:"requested_at"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`

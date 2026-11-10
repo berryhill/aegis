@@ -48,7 +48,11 @@ type ProviderFormatDiagnostic struct {
 
 func validProviderFormatProbe(r AttemptTurnRequest) bool {
 	a := r.Launch.AuthorityContext.Authority
-	h := a.Hermes
+	lane, err := a.Hermes.ResolveLane(r.Provider, r.Model)
+	if err != nil {
+		return false
+	}
+	h := a.Hermes.WithLane(lane)
 	return r.Input == ProviderFormatPrompt && r.Bounds.Duration <= 60*time.Second && r.Bounds.OutputBytes <= 4096 &&
 		len(a.Tools) == 0 && len(a.Capabilities) == 0 && len(a.Memory) == 0 && len(a.Credentials) == 0 && len(r.Credentials) == 0 &&
 		len(h.Toolsets) == 0 && len(h.MCPServers) == 0 && len(h.Plugins) == 0 && h.Profile == "" && !h.PersistentHome && h.LocalInference == nil &&

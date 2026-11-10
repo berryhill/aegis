@@ -41,6 +41,8 @@ type RuntimeRequest struct {
 	GraphRunID      string
 	LoopExecutionID string
 	GraphNodeID     string
+	NodeProvider    string
+	NodeModel       string
 	Authority       reference.DigestRef
 	Inputs          []graph.NormalizedInput
 	Participant     registry.AgentRevision
@@ -341,6 +343,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	defer cancelRuntime()
 	runtimeRequest := RuntimeRequest{
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
+		NodeProvider: node.Provider, NodeModel: node.Model,
 		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority, agent: node.Participant, loop: node.Loop, graph: snapshot.Graph},
 	}

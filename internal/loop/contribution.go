@@ -29,6 +29,20 @@ func NewContributionRevision(id string, revision uint64, previous string, implem
 	return NewRevision(r)
 }
 
+// RoleModelLane selects an optional (provider, model) lane from the bound
+// Agent Charter's authorized Hermes envelope for a Contribution role or phase.
+type RoleModelLane struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model"`
+}
+
+func (l RoleModelLane) Validate() error {
+	if !validLaneValue(l.Model) || (l.Provider != "" && !validLaneValue(l.Provider)) {
+		return errors.New("explicit model lane required")
+	}
+	return nil
+}
+
 // ContributionProfile is an independently published, exact local implementation
 // profile. It does not grant runtime, host, GitHub write or merge authority.
 // GitHub-effect profiles are deliberately not accepted by this local executor.
@@ -36,6 +50,10 @@ type ContributionProfile struct {
 	Engineering       *IssueEngineeringPolicy      `json:"engineering,omitempty"`
 	FinalVerification string                       `json:"final_verification,omitempty"`
 	Managed           *ContributionExecutionPolicy `json:"managed,omitempty"`
+	PrepareLane       *RoleModelLane               `json:"prepare_lane,omitempty"`
+	ControllerLane    *RoleModelLane               `json:"controller_lane,omitempty"`
+	BuilderLane       *RoleModelLane               `json:"builder_lane,omitempty"`
+	TesterLane        *RoleModelLane               `json:"tester_lane,omitempty"`
 	Controller        reference.RevisionRef        `json:"controller"`
 	Builder           reference.RevisionRef        `json:"builder"`
 	Tester            reference.RevisionRef        `json:"tester"`
@@ -47,6 +65,31 @@ type ContributionProfile struct {
 	DeadlineSeconds   uint32                       `json:"deadline_seconds"`
 	Invariants        []string                     `json:"invariants"`
 	Exclusions        []string                     `json:"exclusions"`
+}
+
+func (p ContributionProfile) RoleLane(role string) (provider, model string) {
+	switch role {
+	case "prepare":
+		if p.PrepareLane != nil {
+			return p.PrepareLane.Provider, p.PrepareLane.Model
+		}
+		if p.ControllerLane != nil {
+			return p.ControllerLane.Provider, p.ControllerLane.Model
+		}
+	case "controller":
+		if p.ControllerLane != nil {
+			return p.ControllerLane.Provider, p.ControllerLane.Model
+		}
+	case "builder":
+		if p.BuilderLane != nil {
+			return p.BuilderLane.Provider, p.BuilderLane.Model
+		}
+	case "tester":
+		if p.TesterLane != nil {
+			return p.TesterLane.Provider, p.TesterLane.Model
+		}
+	}
+	return "", ""
 }
 
 func (p ContributionProfile) Validate() error {
@@ -61,6 +104,13 @@ func (p ContributionProfile) Validate() error {
 	if p.Managed != nil {
 		if err := p.Managed.Validate(); err != nil {
 			return err
+		}
+	}
+	for _, lane := range []*RoleModelLane{p.PrepareLane, p.ControllerLane, p.BuilderLane, p.TesterLane} {
+		if lane != nil {
+			if err := lane.Validate(); err != nil {
+				return err
+			}
 		}
 	}
 	if p.Controller.Validate() != nil || p.Builder.Validate() != nil || p.Tester.Validate() != nil || p.RepositoryID == 0 || p.ReadAction != "github.read_contribution_issue.v1" || !validContributionDelivery(p.Effect) || p.DeadlineSeconds < 1 || p.DeadlineSeconds > 86400 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`).MatchString(p.Repository) || !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(p.Base) || len(p.Invariants) == 0 || len(p.Invariants) > 32 || len(p.Exclusions) == 0 || len(p.Exclusions) > 32 {
