@@ -198,3 +198,46 @@ func TestDoerProtectedResultRejectsMissingActionProof(t *testing.T) {
 		t.Fatal("unsafe input status")
 	}
 }
+
+func TestDoerProtectedResultPinsCandidateStepLanes(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Credentials.Authority.DeploymentID = "synthetic-deployment"
+	contract := loop.DoerContract{Task: "Create result.txt", Workspace: t.TempDir(), WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", MaxAttempts: 1}
+	candidate, _, err := loop.NewDoerRevision("synthetic-loop", 1, "", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanes := []loop.DoerStepLane{
+		{ID: "implement", Provider: "ollama", Model: "qwen3.5:4b", ExecutableProvider: "ollama", ExecutableModel: "qwen3.5:4b"},
+	}
+	candidate, _, err = loop.ApplyDoerStepLanes(candidate, lanes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := contract.Digest()
+	agent := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "synthetic-agent", Revision: 1, Digest: "sha256:" + strings.Repeat("a", 64)}
+	now := time.Now().UTC()
+	draft := app.DoerDraft{ID: "doerdraft-" + strings.Repeat("b", 32), Version: 1, PrincipalID: cfg.Principal.ID, Agent: agent, LoopID: candidate.LoopID, Revision: 1, CandidateSteps: lanes, Contract: contract, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	review := app.DoerProtectedSetupReview{Action: "host", Draft: draft, Host: &app.DoerHostApprovalInput{DraftID: draft.ID, DraftVersion: 1, ExpectedCandidateDigest: candidate.Digest, ExpectedContractDigest: digest}}
+	_, key, _ := ed25519.GenerateKey(nil)
+	grant, err := hostapproval.Sign(hostapproval.Record{CandidateSteps: lanes, Purpose: hostapproval.Purpose, DeploymentID: cfg.Credentials.Authority.DeploymentID, PrincipalID: draft.PrincipalID, OwnerID: draft.PrincipalID, Agent: agent, Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: 1, Digest: candidate.Digest}, Contract: contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: now.Add(time.Hour)}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := app.DoerProtectedSetupResult{Status: "approved", Draft: draft, Host: &grant}
+	if !verifyDoerProtectedResult(cfg, review, good) {
+		t.Fatal("exact step-lane protected result rejected")
+	}
+	driftDraft := good
+	driftDraft.Draft.CandidateSteps = nil
+	if verifyDoerProtectedResult(cfg, review, driftDraft) {
+		t.Fatal("draft step-lane drift accepted")
+	}
+	driftHostGrant := grant
+	driftHostGrant.CandidateSteps = nil
+	driftHost := good
+	driftHost.Host = &driftHostGrant
+	if verifyDoerProtectedResult(cfg, review, driftHost) {
+		t.Fatal("host approval step-lane drift accepted")
+	}
+}

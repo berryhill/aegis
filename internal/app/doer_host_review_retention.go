@@ -16,6 +16,10 @@ func validateDoerHostRunInput(input DoerDraftInput) error {
 		return ErrDoerDraftInvalid
 	}
 	candidate, _, err := loop.NewDoerReusableRevision(input.LoopID, input.Revision, input.PreviousDigest, loop.DoerReusableContract{MaxAttempts: input.Contract.MaxAttempts})
+	if err == nil && (input.Name != "" || len(input.CandidateSteps) > 0) {
+		candidate.Name = input.Name
+		candidate, _, err = loop.ApplyDoerStepLanes(candidate, input.CandidateSteps)
+	}
 	if err != nil || loopRevisionRef(candidate) != run.Loop {
 		return ErrDoerDraftInvalid
 	}
@@ -67,8 +71,10 @@ func (s *Service) retainQueueLoopSetupReview(ctx context.Context, sub core.Subje
 		return err
 	}
 	draft, err := s.SaveDoerDraftAs(ctx, sub, DoerDraftInput{
-		CreationKey: "host-review-" + result.RequestID,
-		Agent:       run.Agent, LoopID: run.Loop.ID, Revision: run.Loop.Revision,
+		Name:           candidate.Name,
+		CandidateSteps: loop.ExtractDoerStepLanes(candidate.Steps),
+		CreationKey:    "host-review-" + result.RequestID,
+		Agent:          run.Agent, LoopID: run.Loop.ID, Revision: run.Loop.Revision,
 		PreviousDigest: candidate.PreviousDigest, Contract: contract, HostRun: &run,
 	})
 	if err != nil {

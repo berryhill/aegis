@@ -50,7 +50,8 @@ var ErrAbsent = errors.Join(ErrDenied, errors.New("doer_host_approval_absent"))
 var ErrExpired = errors.Join(ErrDenied, errors.New("doer_host_approval_expired"))
 
 type Record struct {
-	CandidateName string `json:"candidate_name,omitempty"`
+	CandidateName  string              `json:"candidate_name,omitempty"`
+	CandidateSteps []loop.DoerStepLane `json:"candidate_steps,omitempty"`
 	// Nonempty only after an independent protected controller decision for a
 	// differently owned participant. Omitted on historical owner-principal facts.
 	ControllerSubjectID string                `json:"controller_subject_id,omitempty"`
@@ -113,9 +114,9 @@ func (r Record) canonical() ([]byte, error) {
 	} else {
 		candidate, _, ce = loop.NewDoerRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, r.Contract)
 	}
-	if ce == nil && r.CandidateName != "" {
+	if ce == nil && (r.CandidateName != "" || len(r.CandidateSteps) > 0) {
 		candidate.Name = r.CandidateName
-		candidate, _, ce = loop.NewRevision(candidate)
+		candidate, _, ce = loop.ApplyDoerStepLanes(candidate, r.CandidateSteps)
 	}
 	if ce != nil || candidate.Digest != r.Candidate.Digest {
 		return nil, ErrDenied

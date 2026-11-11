@@ -77,3 +77,50 @@ func TestSignedHostApprovalNamedCandidate(t *testing.T) {
 		}
 	}
 }
+
+func TestSignedHostApprovalCandidateStepLanes(t *testing.T) {
+	now := time.Now().UTC()
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	contract := loop.DoerContract{Task: "Write result", Workspace: "/project", WritableFiles: []string{"out"}, VerifyFile: "out", MaxAttempts: 2}
+	reusable := loop.DoerReusableContract{MaxAttempts: 2}
+	candidate, _, err := loop.NewDoerReusableRevision("reusable-lanes", 1, "", reusable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanes := []loop.DoerStepLane{
+		{ID: "completion", Provider: "ollama", Model: "qwen3.5:4b", ExecutableProvider: "ollama", ExecutableModel: "qwen3.5:4b"},
+		{ID: "implement", Provider: "ollama", Model: "qwen3.5:4b", ExecutableProvider: "ollama", ExecutableModel: "qwen3.5:4b"},
+	}
+	candidate, _, err = loop.ApplyDoerStepLanes(candidate, lanes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "agent", Revision: 1, Digest: "sha256:" + strings.Repeat("a", 64)}
+	digest, _ := contract.Digest()
+	r, err := Sign(Record{
+		CandidateSteps: loop.ExtractDoerStepLanes(candidate.Steps),
+		Purpose:        Purpose,
+		DeploymentID:   "deployment",
+		PrincipalID:    "owner",
+		OwnerID:        "owner",
+		Agent:          agent,
+		Candidate:      reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: 1, Digest: candidate.Digest},
+		Contract:       contract,
+		ContractDigest: digest,
+		ApprovedAt:     now,
+		ExpiresAt:      now.Add(time.Hour),
+		RunRequestID:   "loopq-0123456789abcdef0123456789abcdef",
+		DoerReusable:   &reusable,
+	}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Verify(r, pub, "deployment", "owner", agent, contract, now) != nil {
+		t.Fatal("exact step-lane candidate denied")
+	}
+	bad := r
+	bad.CandidateSteps = nil
+	if Verify(bad, pub, "deployment", "owner", agent, contract, now) == nil {
+		t.Fatal("stripped step lanes admitted")
+	}
+}

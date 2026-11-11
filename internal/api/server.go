@@ -1505,7 +1505,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 				if form.DraftID == "" {
 					creationKey = form.PublicationKey
 				}
-				draft, err := svc.SaveDoerDraftAs(c.Request().Context(), subject, app.DoerDraftInput{Name: form.Revision.Name, CreationKey: creationKey, ID: form.DraftID, ExpectedVersion: form.DraftVersion, Agent: workspace.Agent, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Contract: *form.Revision.Doer})
+				draft, err := svc.SaveDoerDraftAs(c.Request().Context(), subject, app.DoerDraftInput{Name: form.Revision.Name, CandidateSteps: app.ExtractDoerStepLanes(form.Revision.Steps), CreationKey: creationKey, ID: form.DraftID, ExpectedVersion: form.DraftVersion, Agent: workspace.Agent, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Contract: *form.Revision.Doer})
 				if err != nil {
 					return err
 				}
