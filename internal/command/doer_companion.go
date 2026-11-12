@@ -208,6 +208,10 @@ func runDoerCompanion(ctx context.Context, o companionOptions, configIdentity st
 			return "response_drift"
 		}
 		candidate, _, err := loop.NewDoerRevision(published.LoopID, published.Revision, published.PreviousDigest, *published.Doer)
+		if err == nil && (published.Name != "" || len(loop.ExtractDoerStepLanes(published.Steps)) > 0) {
+			candidate.Name = published.Name
+			candidate, _, err = loop.ApplyDoerStepLanes(candidate, loop.ExtractDoerStepLanes(published.Steps))
+		}
 		if err != nil || candidate.Digest != published.Digest || candidate.Digest != i.CandidateDigest || i.Loop.ID != candidate.LoopID || i.Loop.Revision != candidate.Revision || i.Loop.Digest != candidate.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || i.Charter.Validate() != nil {
 			return "response_drift"
 		}

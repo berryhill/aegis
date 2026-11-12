@@ -81,6 +81,76 @@ type DoerStepBinding struct {
 	Model     string        `json:"model,omitempty"`
 }
 
+// DoerStepLane retains exact per-step model lane bindings across candidate
+// reconstruction and signed host-write approvals. Omitted when default lanes apply.
+type DoerStepLane struct {
+	ID                 string `json:"id"`
+	Provider           string `json:"provider,omitempty"`
+	Model              string `json:"model,omitempty"`
+	ExecutableProvider string `json:"executable_provider,omitempty"`
+	ExecutableModel    string `json:"executable_model,omitempty"`
+}
+
+func ExtractDoerStepLanes(steps []Step) []DoerStepLane {
+	sorted := canonicalRevision(LoopRevision{Steps: steps}).Steps
+	var out []DoerStepLane
+	for _, s := range sorted {
+		var execProvider, execModel string
+		if s.Executable != nil {
+			execProvider, execModel = s.Executable.Provider, s.Executable.Model
+		}
+		if s.Provider == "" && s.Model == "" && execProvider == "" && execModel == "" {
+			continue
+		}
+		out = append(out, DoerStepLane{
+			ID:                 s.ID,
+			Provider:           s.Provider,
+			Model:              s.Model,
+			ExecutableProvider: execProvider,
+			ExecutableModel:    execModel,
+		})
+	}
+	return out
+}
+
+func ApplyDoerStepLanes(r LoopRevision, lanes []DoerStepLane) (LoopRevision, LoopValidationResult, error) {
+	if len(lanes) == 0 {
+		return NewRevision(r)
+	}
+	steps := make([]Step, len(r.Steps))
+	indexByID := make(map[string]int, len(r.Steps))
+	for i, s := range r.Steps {
+		steps[i] = s
+		if s.Executable != nil {
+			copyExec := *s.Executable
+			steps[i].Executable = &copyExec
+		}
+		indexByID[s.ID] = i
+	}
+	seen := make(map[string]bool, len(lanes))
+	for _, lane := range lanes {
+		idx, ok := indexByID[lane.ID]
+		if !ok || seen[lane.ID] || (lane.Provider == "" && lane.Model == "" && lane.ExecutableProvider == "" && lane.ExecutableModel == "") {
+			return LoopRevision{}, LoopValidationResult{Outcome: ValidationInvalid}, errors.New("invalid Doer step lane binding")
+		}
+		seen[lane.ID] = true
+		steps[idx].Provider = lane.Provider
+		steps[idx].Model = lane.Model
+		if lane.ExecutableProvider != "" || lane.ExecutableModel != "" {
+			if steps[idx].Executable == nil {
+				return LoopRevision{}, LoopValidationResult{Outcome: ValidationInvalid}, errors.New("invalid Doer step lane binding")
+			}
+			steps[idx].Executable.Provider = lane.ExecutableProvider
+			steps[idx].Executable.Model = lane.ExecutableModel
+		}
+	}
+	r.Steps = steps
+	if !reflect.DeepEqual(ExtractDoerStepLanes(r.Steps), lanes) {
+		return LoopRevision{}, LoopValidationResult{Outcome: ValidationInvalid}, errors.New("non-canonical Doer step lane bindings")
+	}
+	return NewRevision(r)
+}
+
 const DoerVerifierID = "aegis.doer.selected-file.verifier"
 const DoerVerifierPolicy = "aegis.doer.selected-file.v1"
 

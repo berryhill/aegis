@@ -61,7 +61,7 @@ func (s *Service) doerHostReviewCandidate(ctx context.Context, sub core.Subject,
 		c, _, err := d.Candidate()
 		return c, err
 	}
-	if validateDoerDraftInput(DoerDraftInput{HostRun: d.HostRun, ID: d.ID, ExpectedVersion: d.Version, Agent: d.Agent, LoopID: d.LoopID, Revision: d.Revision, PreviousDigest: d.PreviousDigest, Contract: d.Contract}) != nil {
+	if validateDoerDraftInput(DoerDraftInput{Name: d.Name, CandidateSteps: d.CandidateSteps, HostRun: d.HostRun, ID: d.ID, ExpectedVersion: d.Version, Agent: d.Agent, LoopID: d.LoopID, Revision: d.Revision, PreviousDigest: d.PreviousDigest, Contract: d.Contract}) != nil {
 		return loop.LoopRevision{}, ErrDenied
 	}
 	run, _, err := normalizeLoopRunIdentity(*d.HostRun)

@@ -54,6 +54,10 @@ func NewDoerLoopRevision(id string, revision uint64, previous string, contract D
 	return loop.NewDoerRevision(id, revision, previous, contract)
 }
 
+func ExtractDoerStepLanes(steps []LoopStep) []loop.DoerStepLane {
+	return loop.ExtractDoerStepLanes(steps)
+}
+
 func RevisionReference(id string, revision uint64, digest string) reference.RevisionRef {
 	return reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: id, Revision: revision, Digest: digest}
 }
