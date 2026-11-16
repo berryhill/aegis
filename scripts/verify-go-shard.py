@@ -27,10 +27,14 @@ IMPLEMENTATION_CONTRIBUTION_TEST = 'TestManagedContributionRepairAndCustody'
 # Measured residual race cost after native-cache repair: these two complete
 # roots consumed 66.64s + 51.96s in the default partition's unchanged 480s alarm.
 # Rebalance existing partitions/lanes only; retain all defaults and evidence names.
+# Post-merge 43976201285 still hit the default 480s alarm. Move the measured
+# 66.26s stdlib-only engineering regression too; race CLI projects 509.813s
+# including compile/list, before setup/cleanup, under its unchanged 600s cap.
 IMPLEMENTATION_CONTRIBUTION_TESTS = (
     IMPLEMENTATION_CONTRIBUTION_TEST,
     'TestManagedContributionProductiveDeliveryRepair',
     'TestManagedContributionSameAgentSeparateSessions',
+    'TestManagedContributionEngineeringRegressionRepair',
 )
 PARTITIONS = {
     'orchestration': (ORCHESTRATION, CONTRIBUTION_TEST),

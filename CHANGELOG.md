@@ -4,6 +4,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Move the complete stdlib-only engineering regression repair root from the
+  implementation defaults into the existing contribution partition after a
+  post-merge race aggregate timeout. Preserve offline fixture preparation,
+  exact-once tests/children/seeds, existing lanes and all deadlines/resource limits.
+
 - Move only the complete race cli and cli-contribution-host groups out of api-b
   into existing support-a and cli-command lanes after its hosted aggregate timeout.
   Preserve the normal correction, separate missing-host process, every test,

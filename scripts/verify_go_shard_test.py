@@ -64,6 +64,14 @@ class ShardTests(unittest.TestCase):
         for race in (False, True):
             self.assertIn('implementation', shard.bundle_groups('implementation', race))
             self.assertIn('manager', shard.bundle_groups('manager-a', race))
+        # The moved regression uses a synthetic stdlib-only module. Keep the
+        # actual locked-module/templ roots in the lane that owns preparation.
+        offline = ('TestEngineeringActualLockedOfflineDependencies',
+                   'TestEngineeringTemplActualRenderedConsistency')
+        names = sorted([*shard.IMPLEMENTATION_CONTRIBUTION_TESTS, *offline])
+        for target in offline:
+            self.assertIsNotNone(re.fullmatch(shard.test_pattern(names, 'implementation'), target))
+            self.assertIsNone(re.fullmatch(shard.test_pattern(names, 'implementation-contribution'), target))
 
     def test_compiled_environment_uses_selected_not_bootstrap_go(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -288,6 +296,28 @@ class ShardTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         shard.test_pattern([name for name in names if name != target], group)
             self.assertEqual(Counter(seen), Counter(names))
+
+    def test_postmerge_race_budget_moves_only_whole_stdlib_regression_root(self):
+        before = ('TestManagedContributionRepairAndCustody',
+                  'TestManagedContributionProductiveDeliveryRepair',
+                  'TestManagedContributionSameAgentSeparateSessions')
+        moved = 'TestManagedContributionEngineeringRegressionRepair'
+        self.assertEqual(shard.IMPLEMENTATION_CONTRIBUTION_TESTS, (*before, moved))
+        names = sorted([*before, moved, moved + 'Future',
+                        'TestManagedContributionEngineeringNewRegressionRepair',
+                        'Example', 'FuzzSeed'])
+        for group in ('implementation', 'implementation-contribution'):
+            pattern = shard.test_pattern(names, group)
+            self.assertNotIn('/', pattern)  # No child/seed filter.
+            self.assertEqual(bool(re.fullmatch(pattern, moved)), group.endswith('-contribution'))
+            self.assertEqual(bool(re.fullmatch(pattern, moved + 'Future')), group == 'implementation')
+            with self.assertRaises(ValueError):
+                shard.test_pattern([name for name in names if name != moved], group)
+        self.assertEqual(shard.bundle_groups('implementation', False),
+                         ('implementation', 'implementation-contribution'))
+        self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
+        self.assertEqual(shard.bundle_groups('cli', True),
+                         ('cli-contribution-root', 'cli-contribution-final', 'implementation-contribution'))
 
     def test_implementation_missing_inventory_never_executes_in_both_modes(self):
         for race in (False, True):
@@ -734,6 +764,7 @@ func TestContributionQueueNativeRepairIntegration(t *testing.T) { ready(t); t.Ru
 func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("repair", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionProductiveDeliveryRepair(t *testing.T) { ready(t); t.Run("productive", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionSameAgentSeparateSessions(t *testing.T) { ready(t); t.Run("same-agent", func(t *testing.T) { ready(t) }) }
+func TestManagedContributionEngineeringRegressionRepair(t *testing.T) { ready(t); t.Run("regression", func(t *testing.T) { ready(t) }) }
 func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
 }
 func FuzzSeed(f *testing.F) { if !mainReady { f.Fatal("TestMain did not run") }; f.Add("seed"); f.Fuzz(func(t *testing.T, s string) { ready(t) }) }
@@ -759,7 +790,7 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                         result = subprocess.run([str(binary), '-test.v', '-test.count=1', '-test.timeout=8m', '-test.run=' + shard.test_pattern(names, group)], cwd=package, capture_output=True, text=True, check=True)
                         native_seen.extend(re.findall(r'^=== RUN\s+(\S+)', result.stdout, re.M))
                     self.assertEqual(Counter(native_seen), Counter(seen))
-                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair', 'TestManagedContributionProductiveDeliveryRepair/productive', 'TestManagedContributionSameAgentSeparateSessions/same-agent']))
+                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair', 'TestManagedContributionProductiveDeliveryRepair/productive', 'TestManagedContributionSameAgentSeparateSessions/same-agent', 'TestManagedContributionEngineeringRegressionRepair/regression']))
                 # Exercise the actual compact command planner, not a separately
                 # hand-written binary invocation. TestMain's os.Exit(m.Run())
                 # above must pass, but an unexpected test-body os.Exit(0) must not.

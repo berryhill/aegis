@@ -161,6 +161,21 @@ TestMain invocations, process alarms, lane counts and resource bounds remain
 unchanged. These sums are planning evidence, **not fresh hosted PASS**; complete
 exact-head hosted timing remains the acceptance gate.
 
+### Post-merge implementation root balancing
+
+Main run **43976201285** exhausted the implementation race process's 480s alarm,
+not a native operation deadline. Move only the measured 66.26s complete
+`TestManagedContributionEngineeringRegressionRepair` root into the existing
+`implementation-contribution` partition. Normal keeps both partitions in its
+implementation lane; race contribution already belongs to CLI. Its measured
+compile/list and existing execution phases plus the moved root project 509.813s
+of the unchanged 600s CLI job, before setup/cleanup. Preserve every other mapping,
+all process/native limits, seven normal and thirteen race lanes, and exact-once
+actual-mode inventories. The synthetic stdlib-only root needs no locked module
+bundle; real offline/templ roots retain implementation/manager-a preparation.
+See the [budget analysis](implementation/issue-379-verification-budget.md) for
+the dependency trace and evidence limits. Fresh hosted success remains required.
+
 ## Release transaction
 
 `make release VERSION=MAJOR.MINOR.PATCH` retains its explicit publication authority,
