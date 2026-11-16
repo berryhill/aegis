@@ -211,9 +211,9 @@ class ShardTests(unittest.TestCase):
         self.assertIsNotNone(re.fullmatch(defaults, target + 'Future'))
         self.assertIsNotNone(re.fullmatch(defaults, 'TestInstalledUpgradeFullCommand'))
         self.assertEqual([name for name in names if re.fullmatch(isolated, name)], [target])
-        self.assertIn(group, shard.bundle_groups('api-b', True))
+        self.assertNotIn(group, shard.bundle_groups('api-b', True))
         self.assertIn(group, shard.bundle_groups('cli', False))
-        self.assertNotIn(group, shard.bundle_groups('cli-command', True))
+        self.assertEqual(shard.bundle_groups('cli-command', True), ('cli-command', group))
 
     def test_manager_exact_once_current_future_and_missing_heavy(self):
         for count in (0, 1, 47, 48):
@@ -498,7 +498,7 @@ class ShardTests(unittest.TestCase):
             },
             'race': {
                 'orchestration': ('orchestration', 'orchestration-contribution'),
-                'api-b': ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'),
+                'api-b': ('api-b', 'remainder-b'),
                 'manager-b': ('manager-contribution-restart',),
                 'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
             },
@@ -508,7 +508,7 @@ class ShardTests(unittest.TestCase):
                 self.assertEqual(shard.BUNDLES[mode][lane], groups)
         self.assertEqual(len(shard.GROUPS), 26)
         self.assertEqual(shard.BUNDLES['race']['cli-command'],
-                         ('cli-command',))
+                         ('cli-command', 'cli-contribution-host'))
         self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):
             with self.assertRaises(ValueError):
@@ -539,9 +539,9 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence'))
         self.assertEqual(shard.bundle_groups('api-b', True),
-                         ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'))
+                         ('api-b', 'remainder-b'))
         self.assertEqual(shard.bundle_groups('support-a', True),
-                         ('remainder-a', 'cli-contribution-disconnect'))
+                         ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
         self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
                          {'normal': 7, 'race': 13})
@@ -561,7 +561,7 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
-    def test_repacked_modes_preserve_exact_once_union_four_race_moves_one_normal_move(self):
+    def test_repacked_modes_preserve_exact_once_union_six_race_moves_one_normal_move(self):
         # Freeze the pre-repack maps, accounting separately for the new exact
         # missing-host partition in api-b. No lane or unrelated group changes.
         before = {
@@ -611,14 +611,22 @@ class ShardTests(unittest.TestCase):
             'manager-contribution-cancel': ('manager-c', 'manager-d'),
             'cli-contribution-disconnect': ('cli', 'support-a'),
             'remainder-b': ('cli', 'api-b'),
+            'cli': ('api-b', 'support-a'),
+            'cli-contribution-host': ('api-b', 'cli-command'),
         })
         self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
+        # Both newly moved whole groups must remain present exactly once.
+        for group, destination in (('cli', 'support-a'), ('cli-contribution-host', 'cli-command')):
+            for invalid in (tuple(g for g in shard.BUNDLES['race'][destination] if g != group),
+                            (*shard.BUNDLES['race'][destination], group)):
+                with mock.patch.dict(shard.BUNDLES['race'], {destination: invalid}), self.assertRaises(ValueError):
+                    shard.bundle_groups(destination, True)
 
     def test_race_persistence_uses_existing_api_a_lane_budget(self):
         # Two hosted attempts exhausted support-a with both complete groups.
         # Reuse api-a's existing job budget; package alarms stay unchanged.
         self.assertEqual(shard.bundle_groups('support-a', True),
-                         ('remainder-a', 'cli-contribution-disconnect'))
+                         ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)

@@ -136,6 +136,31 @@ planning sums, not fresh hosted success. All groups/roots remain exact-once per
 mode; job names/counts, 480s manager process alarms, 600s normal job alarms,
 resource limits and offline-dependency preparation remain unchanged.
 
+### Race API whole-group packing
+
+The same hosted run **43969794998** also cancelled race `api-b` at its unchanged
+960s job deadline, just after api-b (423.410s), cli (92.241s) and remainder-b
+(328.890s) completed and the missing-host group started. This is an aggregate
+deadline, not a product-test failure or superseded-run cancellation. Move only
+two existing whole groups; the normal correction above remains unchanged:
+
+| Race lane | Revised groups | Measured-phase planning sum, before setup/cleanup |
+| --- | --- | --- |
+| api-b | api-b, remainder-b | 100.553s compile + 1.080s inventory + 423.410s + 328.890s = 853.933s of 960s |
+| cli-command | cli-command, cli-contribution-host | 82.361s compile + 1.064s inventory + 282.494s + historical approximately 164s host = approximately 529.919s of 600s |
+| support-a | remainder-a, cli-contribution-disconnect, cli | 84.593s compile + 1.064s inventory + 200.161s + 106.907s + 92.241s = 484.966s of 600s |
+
+The host estimate is the earlier run 42089450269 observation, not a newly measured
+passing host group. Keep its exact existing partition and run it **after defaults
+in a separate process** using cli-command's already compiled binary. It must not
+rejoin the defaults process and delay that process's early upgrade child behind
+the missing-host cleanup barrier. Neither destination nor the source had locked
+offline-dependency preparation; its existing implementation/manager-a routing is
+unchanged. All group definitions, mode inventories, selectors, test bodies,
+TestMain invocations, process alarms, lane counts and resource bounds remain
+unchanged. These sums are planning evidence, **not fresh hosted PASS**; complete
+exact-head hosted timing remains the acceptance gate.
+
 ## Release transaction
 
 `make release VERSION=MAJOR.MINOR.PATCH` retains its explicit publication authority,

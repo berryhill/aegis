@@ -4,6 +4,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Move only the complete race cli and cli-contribution-host groups out of api-b
+  into existing support-a and cli-command lanes after its hosted aggregate timeout.
+  Preserve the normal correction, separate missing-host process, every test,
+  dependency preparation, job count and all deadlines/resource limits.
+
 - Repack the complete manager restart test group from normal manager-a to normal
   manager-b after a hosted job-packing timeout; preserve exact-once coverage,
   race lanes, job counts, dependency preparation and all deadlines/resource limits.

@@ -124,12 +124,10 @@ BUNDLES = {
         # remainder-b previously took 186s. Move that complete existing group
         # to api-b, preserving every partition, alarm, lane and resource bound.
         'api-a': ('api-a', 'persistence'),
-        # Run 42089450269: missing-host held native cleanup for ~164s before
-        # cli-command's upgrade child could start, exhausting its unchanged
-        # 8m process / 10m job budgets. api-b used 635s of its existing 960s.
-        # Move this exact native root through the existing partition mechanism;
-        # keep all tests, jobs, resource limits and cleanup barriers unchanged.
-        'api-b': ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'),
+        # Hosted 43969794998 exhausted 960s after the first three groups,
+        # just as missing-host started. Move only cli and missing-host to
+        # measured spare lanes; API + remainder projects 853.933s before setup.
+        'api-b': ('api-b', 'remainder-b'),
         # Hosted 41218036692: compile 65s + defaults 444s left too little
         # of 600s for contribution. Keep that group in a separate lane.
         'implementation': ('implementation',),
@@ -142,11 +140,15 @@ BUNDLES = {
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         # Hosted 41220874653: cli-command defaults took 462s plus 106s
         # compilation; support-a completed in 314s and takes disconnect.
-        'cli-command': ('cli-command',),
+        # Keep missing-host OUT of the defaults process: its historical ~164s
+        # cleanup must not block that process's early upgrade child. Reuse the
+        # binary in a separate sequential process, projecting ~529.919s total.
+        'cli-command': ('cli-command', 'cli-contribution-host'),
         # After main's remainder move, hosted 41225087087 completed CLI in
         # 319s; its already compiled dependencies leave room for contribution.
         'cli': ('cli-contribution-root', 'cli-contribution-final', 'implementation-contribution'),
-        'support-a': ('remainder-a', 'cli-contribution-disconnect'),
+        # Hosted compile/list + existing groups + cli projects 484.966s of 600s.
+        'support-a': ('remainder-a', 'cli-contribution-disconnect', 'cli'),
         'support-b': ('update',),
     },
 }
