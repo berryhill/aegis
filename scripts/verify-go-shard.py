@@ -108,8 +108,11 @@ BUNDLES = {
         'api-b': ('api-b', 'cli', 'persistence'),
         'implementation': ('implementation', 'implementation-contribution'),
         'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
-        'manager-a': ('manager', 'manager-contribution-restart', 'manager-contribution-final', 'manager-contribution-readback'),
-        'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel'),
+        # Hosted 43969794998 exhausted manager-a's 600s job during readback.
+        # Move the whole 127.838s restart group: manager-b projects 523.897s
+        # including its measured compile, before setup; keep all alarms intact.
+        'manager-a': ('manager', 'manager-contribution-final', 'manager-contribution-readback'),
+        'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel', 'manager-contribution-restart'),
         'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {

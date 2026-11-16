@@ -49,8 +49,8 @@ and `metrics-40888280401.json` are in the parent's `issue404-evidence` directory
 This supersedes the earlier 40884797403 packing estimates; the fixture-only
 baseline **40882148345** remains 57 PASS, 209.13 runner-minutes and 999s peak.
 
-The mapping below is specifically **40888280401 -> this revision**. All other
-lanes/groups are unchanged. `cli` means `cmd/aegis` + `internal/console`, not the
+The historical mapping below records the **40888280401** packing repair; later
+adjustments are described separately. `cli` means `cmd/aegis` + `internal/console`, not the
 separate command/default or contribution partitions.
 
 | Mode / lane | 40888280401 groups | Revised groups |
@@ -77,7 +77,7 @@ consumed compile ~85s + restart 392.73s + final 111.75s, leaving no setup margin
 Moving final to manager-e projects ~550s (existing ~438.9s + final), while manager-b
 projects ~478s. These are planning sums, **not fresh hosted success**.
 
-All 25 groups remain exact-once in each mode, with the same seven normal and
+All 26 current groups remain exact-once in each mode, with the same seven normal and
 thirteen race lane names. The packing change above did not alter partitions,
 resource budgets or native unexpected-zero-exit guards.
 Compile/list reuse remains once per split package per lane. Compiler, inventory
@@ -110,9 +110,31 @@ roots move into existing groups in both normal and race modes:
   `TestEngineeringProseRepairLocalTarget` and `TestRetainedDeliveryNativeComposition`.
 
 All children/seeds remain selected. The dynamic remainder retains every other
-current/future default test. Existing workflow jobs, evidence names, group-to-lane
-assignments, dependency preflight, package/native deadlines and resource limits
-remain unchanged. Local supervised group PASS is not hosted whole-workflow PASS.
+current/future default test. That partition balancing preserved workflow jobs,
+evidence names, group-to-lane assignments, dependency preflight, package/native
+deadlines and resource limits. Local supervised group PASS is not hosted
+whole-workflow PASS.
+
+### Normal manager whole-group packing
+
+Hosted run **43969794998** cancelled normal `manager-a` at its unchanged 600s job
+deadline during readback, after compile 41.289s and passing manager 153.167s,
+restart 127.838s and final 162.732s phases. Move only the existing whole restart
+group between the two existing normal lanes; race mappings and test partitions
+are unchanged:
+
+| Normal lane | Revised groups |
+| --- | --- |
+| manager-a | manager, manager-contribution-final, manager-contribution-readback |
+| manager-b | manager-contribution-repair, manager-contribution-disconnect, manager-contribution-resume, manager-contribution-joint, manager-contribution-cancel, manager-contribution-restart |
+
+The passing normal `manager-b` measured 121.316s + 72.636s + 73.750s + 58.145s +
+35.543s for its existing groups. Adding restart projects **489.228s** of execution,
+or **523.897s** with its measured 34.669s compile, leaving **76.103s** for inventory,
+setup and cleanup within 600s. Normal `manager-a` gains 127.838s of room. These are
+planning sums, not fresh hosted success. All groups/roots remain exact-once per
+mode; job names/counts, 480s manager process alarms, 600s normal job alarms,
+resource limits and offline-dependency preparation remain unchanged.
 
 ## Release transaction
 

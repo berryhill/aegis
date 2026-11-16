@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Repack the complete manager restart test group from normal manager-a to normal
+  manager-b after a hosted job-packing timeout; preserve exact-once coverage,
+  race lanes, job counts, dependency preparation and all deadlines/resource limits.
+
 - Reduce contribution/native-check overhead without extending deadlines: authenticate
   fresh complete stored bytes before reusing one bounded Store-local successful
   decode, return independent typed deep copies, and retain fresh authority/control

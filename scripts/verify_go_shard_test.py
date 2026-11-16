@@ -561,7 +561,7 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
-    def test_repacked_modes_preserve_exact_once_group_union_and_only_four_moves(self):
+    def test_repacked_modes_preserve_exact_once_union_four_race_moves_one_normal_move(self):
         # Freeze the pre-repack maps, accounting separately for the new exact
         # missing-host partition in api-b. No lane or unrelated group changes.
         before = {
@@ -590,7 +590,12 @@ class ShardTests(unittest.TestCase):
                 'support-b': ('update',),
             },
         }
-        self.assertEqual(shard.BUNDLES['normal'], before['normal'])
+        # Hosted 43969794998: move only the complete restart group from normal
+        # manager-a to manager-b; preserve every other group's order and owner.
+        expected_normal = dict(before['normal'])
+        expected_normal['manager-a'] = ('manager', 'manager-contribution-final', 'manager-contribution-readback')
+        expected_normal['manager-b'] = (*before['normal']['manager-b'], 'manager-contribution-restart')
+        self.assertEqual(shard.BUNDLES['normal'], expected_normal)
         for mode, lanes in before.items():
             self.assertEqual(set(shard.BUNDLES[mode]), set(lanes))
             old_union = Counter(group for groups in lanes.values() for group in groups)
