@@ -172,6 +172,7 @@ func (s *Store) Close() error {
 		return fleet.ErrClosed
 	}
 	s.closed = true
+	s.contributionReplay = contributionReplayCache{}
 	err := s.db.Sync()
 	dirtyRemoved := false
 	if closeErr := s.db.Close(); err == nil {

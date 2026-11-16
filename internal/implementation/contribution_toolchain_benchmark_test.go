@@ -1,7 +1,10 @@
 package implementation
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,15 +31,43 @@ func TestToolchainScratchManifestBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	for _, entry := range m.Files {
-		info, err := root.Lstat(entry.Path)
+	// Independently enumerate the old WalkDir inventory as well as rereading
+	// every file through the original full-path reader. Missing/extra entries,
+	// traversal ordering, modes and bytes must preserve the exact manifest.
+	expected := m
+	expected.Files = nil
+	err = filepath.WalkDir(m.Root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
-		b, err := readRepositoryContextFile(root, entry.Path, info.Size())
-		if err != nil || digest(b) != entry.Digest || uint32(info.Mode().Perm()) != entry.Mode {
-			t.Fatalf("scratch changed manifest for %s: %v", entry.Path, err)
+		rel, err := filepath.Rel(m.Root, p)
+		if err != nil {
+			return err
 		}
+		if d.IsDir() && (rel == "pkg/mod" || rel == "pkg/sumdb" || rel == "doc" || rel == "test" || rel == "api" || rel == "misc") {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		b, err := readRepositoryContextFile(root, rel, info.Size())
+		if err != nil {
+			return err
+		}
+		expected.Files = append(expected.Files, toolchainFile{rel, uint32(info.Mode().Perm()), digest(b)})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(expected)
+	got, _ := json.Marshal(m)
+	if !bytes.Equal(want, got) {
+		t.Fatal("fresh traversal changed full manifest bytes")
 	}
 }
 

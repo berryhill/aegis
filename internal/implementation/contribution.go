@@ -688,6 +688,14 @@ func (e *ManagedContribution) nativeOperation(ctx context.Context, c loop.Verifi
 		if e.templConsistency != loop.TemplModuleConsistency || e.dependencies == nil {
 			return nil, errTemplConsistency
 		}
+		// Reuse only controller-populated tool compilation bytes, never a prior
+		// candidate cache. The original deadline includes population and copying.
+		// Without the joined native port retain the original unseeded behavior.
+		if e.Native != nil {
+			if err := e.seedTemplCache(ctx, source, cmd.Env, filepath.Join(home, "cache")); err != nil {
+				return nil, errors.Join(errTemplConsistency, err)
+			}
+		}
 		run := func(ctx context.Context, generated *exec.Cmd) error {
 			if err := e.admit(ctx, "native-check"); err != nil {
 				return err

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 )
 
 type toolchainFile struct {
@@ -37,59 +37,107 @@ func freezeToolchain(ctx context.Context, driver string) (toolchainManifest, []b
 			return m, nil, fmt.Errorf("%w: missing %s", bad, p)
 		}
 	}
+	rootInfo, err := os.Lstat(m.Root)
+	if err != nil || !rootInfo.IsDir() || rootInfo.Mode().Perm()&0022 != 0 {
+		return m, nil, bad
+	}
 	root, err := os.OpenRoot(m.Root)
 	if err != nil {
 		return m, nil, err
 	}
 	defer root.Close()
+	actual, err := root.Stat(".")
+	if err != nil || !os.SameFile(rootInfo, actual) {
+		return m, nil, bad
+	}
 	var total int64
-	// One call-local scratch allocation, never shared with another validation.
-	// Each file is fully reread and hashed before the next read overwrites it.
+	// Retain each directory descriptor only during this fresh traversal. Every
+	// file is fully reread through the same no-follow, size/EOF/identity reader;
+	// do not reopen its entire ancestor chain for every sibling. No observation,
+	// byte hash or integrity decision survives this call.
 	var scratch []byte
-	err = filepath.WalkDir(m.Root, func(p string, d fs.DirEntry, e error) error {
-		if e != nil {
-			return e
+	var walk func(*os.Root, string) error
+	walk = func(parent *os.Root, prefix string) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if e = ctx.Err(); e != nil {
-			return e
+		dir, err := parent.Open(".")
+		if err != nil {
+			return err
 		}
-		relPath, _ := filepath.Rel(m.Root, p)
-		// GOPATH may share GOROOT. Module caches and docs are not native inputs;
-		// every actual distribution input is included, with no dependency downloads.
-		if d.IsDir() && (relPath == "pkg/mod" || relPath == "pkg/sumdb" || relPath == "doc" || relPath == "test" || relPath == "api" || relPath == "misc") {
-			return filepath.SkipDir
+		entries, err := dir.ReadDir(-1)
+		closeErr := dir.Close()
+		if err != nil {
+			return err
 		}
-		info, e := d.Info()
-		if e != nil {
-			return e
+		if closeErr != nil {
+			return closeErr
 		}
-		if info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0022 != 0 {
-			return fmt.Errorf("%w: unsafe %s", bad, relPath)
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			name := entry.Name()
+			rel := filepath.Join(prefix, name)
+			info, err := parent.Lstat(name)
+			if err != nil {
+				return err
+			}
+			// Same excluded non-input directories as the original full manifest.
+			if info.IsDir() && (rel == "pkg/mod" || rel == "pkg/sumdb" || rel == "doc" || rel == "test" || rel == "api" || rel == "misc") {
+				continue
+			}
+			if info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0022 != 0 {
+				return fmt.Errorf("%w: unsafe %s", bad, rel)
+			}
+			if info.IsDir() {
+				child, err := parent.OpenRoot(name)
+				if err != nil {
+					return err
+				}
+				opened, err := child.Stat(".")
+				if err == nil && !os.SameFile(info, opened) {
+					err = bad
+				}
+				if err == nil {
+					err = walk(child, rel)
+				}
+				closeErr := child.Close()
+				if err != nil {
+					return err
+				}
+				if closeErr != nil {
+					return closeErr
+				}
+				current, err := parent.Lstat(name)
+				if err != nil || !os.SameFile(info, current) || info.Mode() != current.Mode() {
+					return bad
+				}
+				continue
+			}
+			if !info.Mode().IsRegular() || !singleLink(info) || info.Size() > 64<<20 || len(m.Files) >= 50000 {
+				return bad
+			}
+			total += info.Size()
+			if total > 1<<30 {
+				return bad
+			}
+			b, err := readRepositoryContextFileBuffer(parent, name, info.Size(), scratch)
+			if err != nil {
+				return err
+			}
+			scratch = b
+			m.Files = append(m.Files, toolchainFile{rel, uint32(info.Mode().Perm()), digest(b)})
 		}
-		if d.IsDir() {
-			return nil
-		}
-		if !info.Mode().IsRegular() || !singleLink(info) || info.Size() > 64<<20 || len(m.Files) >= 50000 {
-			return bad
-		}
-		total += info.Size()
-		if total > 1<<30 {
-			return bad
-		}
-		b, e := readRepositoryContextFileBuffer(root, relPath, info.Size(), scratch)
-		if e != nil {
-			return e
-		}
-		scratch = b
-		rel, e := filepath.Rel(m.Root, p)
-		if e != nil {
-			return e
-		}
-		m.Files = append(m.Files, toolchainFile{rel, uint32(info.Mode().Perm()), digest(b)})
-		return nil
-	})
-	if err != nil {
+		return ctx.Err()
+	}
+	if err = walk(root, ""); err != nil {
 		return m, nil, err
+	}
+	current, err := os.Lstat(m.Root)
+	if err != nil || !os.SameFile(rootInfo, current) || rootInfo.Mode() != current.Mode() {
+		return m, nil, bad
 	}
 	b, err := json.Marshal(m)
 	return m, b, err

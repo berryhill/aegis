@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/berryhill/aegis/internal/loop"
 	"golang.org/x/mod/modfile"
@@ -68,10 +69,36 @@ func hashZip(b []byte) (string, error) {
 	return dirhash.Hash1(names, func(p string) (io.ReadCloser, error) { return files[p].Open() })
 }
 
-// validateLockedDependencyBundle validates every retained archive byte against the
+// Retain only a successful checksum verification identity, never a path/mtime
+// stamp or ambient .ziphash. Every call authenticates ALL archive and lockfile
+// bytes anew. Repeated native operations need not inflate identical archives
+// again after their exact bytes have passed the complete locked-sum verifier.
+var lockedDependencyVerification struct {
+	sync.Mutex
+	identity string
+}
+
+func validateLockedDependencyBundle(wire, mod, sum []byte) error {
+	identity := digest(wire) + digest(mod) + digest(sum)
+	lockedDependencyVerification.Lock()
+	verified := lockedDependencyVerification.identity == identity
+	lockedDependencyVerification.Unlock()
+	if verified {
+		return nil
+	}
+	if err := verifyLockedDependencyBundle(wire, mod, sum); err != nil {
+		return err
+	}
+	lockedDependencyVerification.Lock()
+	lockedDependencyVerification.identity = identity
+	lockedDependencyVerification.Unlock()
+	return nil
+}
+
+// verifyLockedDependencyBundle validates every retained archive byte against the
 // independently frozen go.sum, including go.mod hashes (not ambient .ziphash).
 // All direct/indirect go.mod requirements must have full offline proxy triplets.
-func validateLockedDependencyBundle(wire, mod, sum []byte) error {
+func verifyLockedDependencyBundle(wire, mod, sum []byte) error {
 	sums, err := lockedSums(sum)
 	if err != nil {
 		return err

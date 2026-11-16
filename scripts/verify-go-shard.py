@@ -24,6 +24,14 @@ ORCHESTRATION = ROOT + 'internal/orchestration'
 IMPLEMENTATION = ROOT + 'internal/implementation'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
 IMPLEMENTATION_CONTRIBUTION_TEST = 'TestManagedContributionRepairAndCustody'
+# Measured residual race cost after native-cache repair: these two complete
+# roots consumed 66.64s + 51.96s in the default partition's unchanged 480s alarm.
+# Rebalance existing partitions/lanes only; retain all defaults and evidence names.
+IMPLEMENTATION_CONTRIBUTION_TESTS = (
+    IMPLEMENTATION_CONTRIBUTION_TEST,
+    'TestManagedContributionProductiveDeliveryRepair',
+    'TestManagedContributionSameAgentSeparateSessions',
+)
 PARTITIONS = {
     'orchestration': (ORCHESTRATION, CONTRIBUTION_TEST),
     'orchestration-contribution': (ORCHESTRATION, CONTRIBUTION_TEST),
@@ -41,6 +49,32 @@ MANAGER_TESTS = {
     'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
     'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
 }
+# The complete huge-assets journey passes alone but its first cold pinned-tool
+# command exhausts the unchanged native deadline beside the other native roots
+# in manager (observed group failure at 475.557s). Keep it in manager-a, which
+# owns the offline dependency preflight. Move only its five native competitors
+# to existing native groups/lanes; do not add jobs or extend any alarm.
+MANAGER_COMPANION_TESTS = {
+    'manager-contribution-final': (
+        'TestContributionDeliveryControllerNativeLocal',
+        'TestContributionDeliveryLocalNarrowJourney',
+        'TestContributionManagerJoinedPublicResultHistoricalPolicy',
+    ),
+    'manager-contribution-readback': (
+        'TestEngineeringProseRepairLocalTarget',
+        'TestRetainedDeliveryNativeComposition',
+    ),
+}
+
+
+def manager_targets(group):
+    return (MANAGER_TESTS[group], *MANAGER_COMPANION_TESTS.get(group, ()))
+
+
+def manager_required_tests():
+    return tuple(name for group in MANAGER_TESTS for name in manager_targets(group))
+
+
 COMMAND = ROOT + 'internal/command'
 CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld', 'cli-contribution-host': 'TestPublicRootContributionMissingHostPreflight'}
 GROUPS = {
@@ -177,20 +211,22 @@ def test_pattern(names, group):
     if group in ('api-a', 'api-b'):
         selected = names[0 if group == 'api-a' else 1::2]
     elif group in PARTITIONS:
-        _, target = PARTITIONS[group]
-        if target not in names:
+        package, target = PARTITIONS[group]
+        targets = IMPLEMENTATION_CONTRIBUTION_TESTS if package == IMPLEMENTATION else (target,)
+        if not set(targets) <= set(names):
             raise ValueError('missing contribution integration test')
-        selected = [name for name in names if (name == target) == group.endswith('-contribution')]
+        selected = [name for name in names if (name in targets) == group.endswith('-contribution')]
     elif group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
         if not set(CLI_CONTRIBUTION_TESTS.values()) <= set(names):
             raise ValueError('missing CLI contribution integration test')
         selected = ([CLI_CONTRIBUTION_TESTS[group]] if group in CLI_CONTRIBUTION_TESTS else
                     [name for name in names if name not in CLI_CONTRIBUTION_TESTS.values()])
     elif group == 'manager' or group in MANAGER_TESTS:
-        if not set(MANAGER_TESTS.values()) <= set(names):
-            raise ValueError('missing manager contribution integration test')
-        selected = ([MANAGER_TESTS[group]] if group in MANAGER_TESTS else
-                    [name for name in names if name not in MANAGER_TESTS.values()])
+        required = manager_required_tests()
+        if len(required) != len(set(required)) or not set(required) <= set(names):
+            raise ValueError('missing or duplicate manager contribution integration test')
+        selected = ([name for name in names if name in manager_targets(group)] if group in MANAGER_TESTS else
+                    [name for name in names if name not in required])
     else:
         raise ValueError('unknown test partition')
     if not selected:

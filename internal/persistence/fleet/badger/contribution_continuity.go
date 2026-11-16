@@ -34,6 +34,7 @@ var _ fleet.ContributionContinuityRepository = (*Store)(nil)
 // Typed deep copies prevent returned maps/slices/pointers from aliasing the cache.
 // One entry bounds retention independently of the number of contributions.
 type contributionReplayCache struct {
+	decoded  contributionDecodeCache
 	id       string
 	contract []byte
 	wire     [][]byte
@@ -83,7 +84,7 @@ func copyReplayEvents(events []contribution.ContinuityEvent) []contribution.Cont
 }
 
 func loadContributionContinuity(txn *badgerdb.Txn, id string, caches ...*contributionReplayCache) (state contribution.Continuity, events []contribution.ContinuityEvent, err error) {
-	c, err := loadContribution(txn, id)
+	c, contract, err := loadContributionBytes(txn, id, caches...)
 	if err != nil {
 		return state, nil, err
 	}
@@ -137,10 +138,6 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string, caches ...*contrib
 	if !bytes.Equal(head, wire[len(wire)-1]) {
 		return state, nil, fleet.ErrCorrupt
 	}
-	contract, e := contribution.Marshal(c)
-	if e != nil {
-		return state, nil, fleet.ErrCorrupt
-	}
 	var cache *contributionReplayCache
 	if len(caches) != 0 {
 		cache = caches[0]
@@ -172,7 +169,7 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string, caches ...*contrib
 		events = append(events, event)
 	}
 	if cache != nil && start != len(wire) {
-		*cache = contributionReplayCache{id: id, contract: contract, wire: wire, state: copyReplayState(state), events: copyReplayEvents(events)}
+		*cache = contributionReplayCache{decoded: cache.decoded, id: id, contract: contract, wire: wire, state: copyReplayState(state), events: copyReplayEvents(events)}
 	}
 	return state, events, nil
 }
@@ -188,7 +185,7 @@ func (s *Store) GetContributionContinuity(ctx context.Context, id string) (state
 
 func (s *Store) AppendContributionContinuity(ctx context.Context, event contribution.ContinuityEvent) (out contribution.Continuity, err error) {
 	err = s.update(ctx, func(txn *badgerdb.Txn) error {
-		c, e := loadContribution(txn, event.QueueItemID)
+		c, e := loadContribution(txn, event.QueueItemID, &s.contributionReplay)
 		if e != nil {
 			return e
 		}
@@ -200,7 +197,7 @@ func (s *Store) AppendContributionContinuity(ctx context.Context, event contribu
 		if prior.Sequence >= contributionContinuityMax || (!contributionSafetyEvent(event.Kind) && prior.Sequence >= contributionContinuityMax-tail) {
 			return contribution.ErrContinuityExhausted
 		}
-		control, e := loadContributionControl(txn, event.QueueItemID)
+		control, e := loadContributionControl(txn, event.QueueItemID, &s.contributionReplay)
 		if e != nil {
 			return e
 		}
