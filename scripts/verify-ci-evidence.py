@@ -16,7 +16,7 @@ REQUIRED_JOBS = frozenset({"Exact-head release readiness", "Race tests", "Reposi
                            "Release package proof", "Release package and installed proof"}
                           | {f"Go {mode} / {group}" for mode, groups in {
                                  "normal": ("api-a", "api-b", "implementation", "orchestration", "manager-a", "manager-b", "cli"),
-                                 "race": ("api-a", "api-b", "implementation", "orchestration", "manager-a", "manager-b", "manager-c", "manager-d", "manager-e", "cli-command", "cli", "support-a", "support-b"),
+                                 "race": ("api-a", "api-b", "implementation", "orchestration", "manager-a", "manager-b", "manager-c", "manager-d", "manager-e", "cli-command", "cli-host", "cli", "support-a", "support-b"),
                              }.items() for group in groups})
 
 

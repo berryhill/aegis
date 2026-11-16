@@ -25,7 +25,7 @@ source suite. Package compilation caches are an optimization, not green-test evi
 Normal and race candidate tests use fresh execution rather than relying on cached
 results.
 
-Ordinary source CI has **28 expanded jobs**: seven normal and thirteen race Go
+Ordinary source CI has **29 expanded jobs**: seven normal and fourteen race Go
 lanes plus eight repository, packaging, security and aggregate jobs. The extra
 non-browser package job separates eligibility from optional browser coverage
 (see the v0.3.0 profile below). There are no
@@ -77,8 +77,9 @@ consumed compile ~85s + restart 392.73s + final 111.75s, leaving no setup margin
 Moving final to manager-e projects ~550s (existing ~438.9s + final), while manager-b
 projects ~478s. These are planning sums, **not fresh hosted success**.
 
-All 26 current groups remain exact-once in each mode, with the same seven normal and
-thirteen race lane names. The packing change above did not alter partitions,
+All 26 current groups remain exact-once in each mode, with seven normal and
+fourteen race lanes after the dedicated-host correction below. The historical
+packing change above did not alter partitions,
 resource budgets or native unexpected-zero-exit guards.
 Compile/list reuse remains once per split package per lane. Compiler, inventory
 and partition elapsed times remain separate `go_lane_phase` observations. Job
@@ -141,8 +142,9 @@ resource limits and offline-dependency preparation remain unchanged.
 The same hosted run **43969794998** also cancelled race `api-b` at its unchanged
 960s job deadline, just after api-b (423.410s), cli (92.241s) and remainder-b
 (328.890s) completed and the missing-host group started. This is an aggregate
-deadline, not a product-test failure or superseded-run cancellation. Move only
-two existing whole groups; the normal correction above remains unchanged:
+deadline, not a product-test failure or superseded-run cancellation. The initial
+repair moved two existing whole groups as below. Its shared `cli-command` packing
+was subsequently superseded by the dedicated-host correction; normal is unchanged:
 
 | Race lane | Revised groups | Measured-phase planning sum, before setup/cleanup |
 | --- | --- | --- |
@@ -150,15 +152,15 @@ two existing whole groups; the normal correction above remains unchanged:
 | cli-command | cli-command, cli-contribution-host | 82.361s compile + 1.064s inventory + 282.494s + historical approximately 164s host = approximately 529.919s of 600s |
 | support-a | remainder-a, cli-contribution-disconnect, cli | 84.593s compile + 1.064s inventory + 200.161s + 106.907s + 92.241s = 484.966s of 600s |
 
-The host estimate is the earlier run 42089450269 observation, not a newly measured
-passing host group. Keep its exact existing partition and run it **after defaults
+The host estimate was the earlier run 42089450269 observation, not a newly measured
+passing host group. That repair kept its exact existing partition **after defaults
 in a separate process** using cli-command's already compiled binary. It must not
 rejoin the defaults process and delay that process's early upgrade child behind
 the missing-host cleanup barrier. Neither destination nor the source had locked
 offline-dependency preparation; its existing implementation/manager-a routing is
 unchanged. All group definitions, mode inventories, selectors, test bodies,
-TestMain invocations, process alarms, lane counts and resource bounds remain
-unchanged. These sums are planning evidence, **not fresh hosted PASS**; complete
+TestMain invocations, process alarms, lane counts and resource bounds were
+unchanged by that repair. These sums were planning evidence, **not hosted PASS**; complete
 exact-head hosted timing remains the acceptance gate.
 
 ### Post-merge implementation root balancing
@@ -170,11 +172,42 @@ not a native operation deadline. Move only the measured 66.26s complete
 implementation lane; race contribution already belongs to CLI. Its measured
 compile/list and existing execution phases plus the moved root project 509.813s
 of the unchanged 600s CLI job, before setup/cleanup. Preserve every other mapping,
-all process/native limits, seven normal and thirteen race lanes, and exact-once
+all process/native limits, then-existing seven normal and thirteen race lanes, and exact-once
 actual-mode inventories. The synthetic stdlib-only root needs no locked module
 bundle; real offline/templ roots retain implementation/manager-a preparation.
 See the [budget analysis](implementation/issue-379-verification-budget.md) for
 the dependency trace and evidence limits. Fresh hosted success remains required.
+
+### Dedicated race host-review lane
+
+Run **43979771143**, job **133692963167**, disproved the shared-job estimate:
+command compilation took **129.037s**, inventory **1.078s**, and the complete
+command defaults **345.418s (PASS)**. The separate missing-host process started
+but the unchanged **600s job deadline** cancelled it before completion. This is
+aggregate packing exhaustion, not an observed host assertion failure.
+
+Move only the existing complete `cli-contribution-host` group from race
+`cli-command` into new race **`cli-host`**. Command defaults remain alone in
+`cli-command`; all seven normal lanes and every other race assignment are unchanged.
+The new mandatory job is **`Go race / cli-host`**, joined by both workflow aggregates
+and exact-head release evidence. Missing, duplicate, cancelled, skipped, failed or
+wrong-head host evidence denies readiness, including the bounded v0.3.0 profile.
+
+This is one additional execution lane, not another test partition: **26 groups**
+still cover every actual-mode root/child/example/default seed exactly once. The
+host job compiles its own command test binary through the existing pinned toolchain,
+inventories that binary, and runs the same exact parent in its own uncached process.
+It never rejoins the defaults process or delays that process's early upgrade child.
+It inherits the same matrix runner, read-only permissions, environment/toolchain,
+supervisor, source checks and credential handling, without new services or secrets.
+Job/process/native deadlines stay **600s / 480s / unchanged**, with the same
+6-GiB/zero-swap/256-task/two-CPU limits and no shared test-result cache.
+
+The observed 129.037s compile plus 1.078s inventory plus historical approximately
+164s host execution projects **294.115s**, leaving approximately **305.885s** for
+setup/cleanup/variation. These are mixed-run planning sums, not a new hosted PASS;
+fresh complete exact-head CI remains required. The prior implementation partition
+repair and deployed service are outside this lane-only adjustment.
 
 ## Release transaction
 

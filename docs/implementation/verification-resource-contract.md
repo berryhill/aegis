@@ -1,6 +1,25 @@
 # Release verification resource and termination contract
 
-## Contribution CLI existing-lane deadline recovery (#379)
+## Current dedicated host-review race lane
+
+After run `43979771143` exhausted race `cli-command`'s 600s shared-job cap,
+the existing complete `cli-contribution-host` group runs alone in race `cli-host`.
+Command defaults remain in race `cli-command`; normal and other race mappings
+are unchanged. The current topology is **29 expanded jobs, 7 normal / 14 race
+lanes, 26 unchanged groups**, as documented in [the release pipeline](../RELEASE_PIPELINE.md).
+`Go race / cli-host` is mandatory in exact-head evidence and both aggregates.
+It inherits the same runner, pinned toolchain/source preparation, read-only
+permissions, supervisor, environment and credential handling. No new services,
+secrets, result cache or runtime exposure are introduced. Its independently compiled
+binary retains TestMain, uncached execution, all children/seeds, the 480s process
+alarm, 600s job cap and unchanged native/cgroup budgets. Missing or duplicate group
+assignment and missing/non-success/wrong-head job evidence are regression-tested
+denials. Fresh hosted deadline fit remains unverified until the new head runs.
+
+The sections below retain historical topology and measurements; they do not
+override this current lane-only correction or the canonical workflow matrix.
+
+## Historical contribution CLI existing-lane deadline recovery (#379)
 
 Exact-head run `41216964277` passed all three CLI contribution race selections,
 but their compilation/inventory/execution consumed 462 seconds before the

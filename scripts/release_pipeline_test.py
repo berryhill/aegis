@@ -45,8 +45,42 @@ class PipelineTests(unittest.TestCase):
         names.update(f'Go {mode} / {group}' for mode, group in rows)
         self.assertEqual(names, evidence.REQUIRED_JOBS)
         self.assertEqual(len(names), len(self.jobs) - 1 + len(rows))
-        self.assertLessEqual(len(names), 28, 'one independent non-browser packaging gate')
+        self.assertEqual(len(names), 29, 'one dedicated race host lane plus existing packaging gates')
         self.assertIn('-count=1', (ROOT / 'scripts/verify-go-shard.py').read_text())
+
+    def test_matrix_parity_rejects_missing_or_duplicate_host_job(self):
+        row = '          - {mode: race, group: cli-host}\n'
+        original = self.jobs['go-shards']
+        self.assertEqual(original.count(row), 1)
+        for replacement in ('', row + row):
+            with self.subTest(replacement=replacement):
+                self.jobs['go-shards'] = original.replace(row, replacement)
+                with self.assertRaises(AssertionError):
+                    self.test_complete_shards_and_evidence_names_agree()
+        self.jobs['go-shards'] = original
+
+    def test_dedicated_host_inherits_shared_security_resources_and_execution(self):
+        matrix = self.jobs['go-shards']
+        self.assertEqual(matrix.count('- {mode: race, group: cli-host}'), 1)
+        self.assertNotIn('- {mode: normal, group: cli-host}', matrix)
+        self.assertIn('permissions:\n  contents: read\n', self.ci)
+        for required in ('runs-on: ubuntu-latest',
+                         'ref: ${{ github.event.pull_request.head.sha || github.sha }}',
+                         'python3 scripts/prepare-ci-go-toolchain.py',
+                         'Prepare verification cgroup supervisor',
+                         'python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --bundle "$SHARD_GROUP" --race'):
+            self.assertIn(required, matrix)
+        for forbidden in ('permissions:', 'secrets:', 'services:', 'continue-on-error', 'if: ${{ matrix.group == \'cli-host\''):
+            self.assertNotIn(forbidden, matrix)
+        self.assertIn('GOFLAGS: "-p=1"', self.ci)
+        self.assertIn('GOMAXPROCS: "2"', self.ci)
+        self.assertIn('GOMEMLIMIT: "512MiB"', self.ci)
+        # Host uses the unchanged default ten-minute job branch, not an exception.
+        match = re.search(r'^    timeout-minutes: (.+)$', matrix, re.M)
+        assert match is not None
+        timeout = match[1]
+        self.assertNotIn('cli-host', timeout)
+        self.assertTrue(timeout.endswith('&& 16 || 10 }}'))
 
     def test_aggregate_rejects_every_nonsuccess_and_missing_gate(self):
         gate = self.jobs["release-readiness"]

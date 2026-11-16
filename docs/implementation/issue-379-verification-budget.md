@@ -77,6 +77,25 @@ selection parity are regression-tested. All native TTLs, test bodies and
 resource limits remain unchanged, as do the earlier normal-manager and race-API
 packing corrections.
 
+### Dedicated host-review lane after the implementation repair
+
+Run `43979771143` retained the implementation repair but cancelled race
+`cli-command` at the shared 600s job cap. Log `job-133692963167.log` records
+129.037s command compile, 1.078s inventory and passing 345.418s defaults, then
+the separate `cli-contribution-host` process starts and is cancelled. The earlier
+approximately 164s host observation no longer fits alongside those slower phases.
+No host assertion failure was observed; unfinished execution is not PASS.
+
+Only that existing complete race group moves to new `cli-host`; defaults stay in
+`cli-command`, normal stays unchanged, and the implementation root partition above
+is preserved. Independently compiling the host command binary projects 294.115s
+including inventory and historical host execution, before setup/cleanup, rather
+than packing both processes into one job. All 26 groups remain exact-once across
+7 normal and 14 race lanes; the workflow and exact-head required job set include
+`Go race / cli-host`. The 600s job, 480s process, native-operation, cgroup and
+credential boundaries remain unchanged. This is additional execution headroom,
+not test removal, a new partition, result caching or hosted acceptance proof.
+
 ### Historical evidence
 
 Deterministic Python tests qualify exact-once default inventory coverage,

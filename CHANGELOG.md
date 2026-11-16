@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Give the existing complete host-review race group a dedicated mandatory
+  `Go race / cli-host` CI job after the shared command job exhausted its deadline.
+  Keep defaults separate, all 26 groups and seven normal lanes, and every
+  process/native/job/resource limit. Synchronize the fourteen race lanes with
+  exact-head evidence and coverage/security regression tests; no runtime change.
+
 - Move the complete stdlib-only engineering regression repair root from the
   implementation defaults into the existing contribution partition after a
   post-merge race aggregate timeout. Preserve offline fixture preparation,

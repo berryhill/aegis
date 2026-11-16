@@ -207,7 +207,7 @@ class ShardTests(unittest.TestCase):
                     shard.test_pattern([n for n in names if n != missing], group)
         self.assertEqual(Counter(seen), Counter(names))
 
-    def test_missing_host_preflight_uses_existing_lane_without_upgrade_barrier(self):
+    def test_missing_host_preflight_uses_dedicated_lane_without_upgrade_barrier(self):
         target = 'TestPublicRootContributionMissingHostPreflight'
         group = 'cli-contribution-host'
         self.assertEqual(shard.CLI_CONTRIBUTION_TESTS[group], target)
@@ -221,7 +221,15 @@ class ShardTests(unittest.TestCase):
         self.assertEqual([name for name in names if re.fullmatch(isolated, name)], [target])
         self.assertNotIn(group, shard.bundle_groups('api-b', True))
         self.assertIn(group, shard.bundle_groups('cli', False))
-        self.assertEqual(shard.bundle_groups('cli-command', True), ('cli-command', group))
+        self.assertEqual(shard.bundle_groups('cli-command', True), ('cli-command',))
+        self.assertEqual(shard.bundle_groups('cli-host', True), (group,))
+        self.assertNotIn('cli-host', shard.BUNDLES['normal'])
+        self.assertNotIn('/', isolated)  # Preserve all children and seeds.
+        for invalid in ((), (group, group)):
+            with mock.patch.dict(shard.BUNDLES['race'], {'cli-host': invalid}), self.assertRaises(ValueError):
+                shard.bundle_groups('cli-host', True)
+        with mock.patch.dict(shard.BUNDLES['race'], {'cli-command': ('cli-command', group)}), self.assertRaises(ValueError):
+            shard.bundle_groups('cli-host', True)
 
     def test_manager_exact_once_current_future_and_missing_heavy(self):
         for count in (0, 1, 47, 48):
@@ -516,8 +524,8 @@ class ShardTests(unittest.TestCase):
             for lane in lanes:
                 self.assertTrue(shard.bundle_groups(lane, mode == 'race'))
         self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
-                         {'normal': 7, 'race': 13})
-        self.assertEqual(sum(len(lanes) for lanes in shard.BUNDLES.values()) + 7, 27)
+                         {'normal': 7, 'race': 14})
+        self.assertEqual(sum(len(lanes) for lanes in shard.BUNDLES.values()) + 8, 29)
         # Actual 40888280401 deadline repair: preserve the existing lane names,
         # exact-once groups and caps while moving only these measured workloads.
         expected = {
@@ -537,8 +545,8 @@ class ShardTests(unittest.TestCase):
             for lane, groups in lanes.items():
                 self.assertEqual(shard.BUNDLES[mode][lane], groups)
         self.assertEqual(len(shard.GROUPS), 26)
-        self.assertEqual(shard.BUNDLES['race']['cli-command'],
-                         ('cli-command', 'cli-contribution-host'))
+        self.assertEqual(shard.BUNDLES['race']['cli-command'], ('cli-command',))
+        self.assertEqual(shard.BUNDLES['race']['cli-host'], ('cli-contribution-host',))
         self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):
             with self.assertRaises(ValueError):
@@ -555,7 +563,7 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('manager-d', True),
                          ('manager-contribution-repair', 'manager-contribution-joint',
                           'manager-contribution-cancel'))
-        self.assertEqual(len(shard.BUNDLES['race']), 13)
+        self.assertEqual(len(shard.BUNDLES['race']), 14)
         self.assertEqual(sum(group == 'manager-contribution-cancel'
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
@@ -574,7 +582,7 @@ class ShardTests(unittest.TestCase):
                          ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
         self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
-                         {'normal': 7, 'race': 13})
+                         {'normal': 7, 'race': 14})
         for mode, lanes in shard.BUNDLES.items():
             self.assertEqual(Counter(group for lane in lanes.values() for group in lane),
                              Counter(shard.GROUPS.keys()))
@@ -586,14 +594,15 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('cli', True),
                          ('cli-contribution-root', 'cli-contribution-final',
                           'implementation-contribution'))
-        self.assertEqual(len(shard.BUNDLES['race']), 13)
+        self.assertEqual(len(shard.BUNDLES['race']), 14)
         self.assertEqual(sum(group == 'remainder-b'
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
     def test_repacked_modes_preserve_exact_once_union_six_race_moves_one_normal_move(self):
         # Freeze the pre-repack maps, accounting separately for the new exact
-        # missing-host partition in api-b. No lane or unrelated group changes.
+        # missing-host partition in api-b. Only cli-host adds a lane; no other
+        # lane names or unrelated group changes.
         before = {
             'normal': {
                 'api-a': ('api-a', 'remainder-b'),
@@ -627,9 +636,9 @@ class ShardTests(unittest.TestCase):
         expected_normal['manager-b'] = (*before['normal']['manager-b'], 'manager-contribution-restart')
         self.assertEqual(shard.BUNDLES['normal'], expected_normal)
         for mode, lanes in before.items():
-            self.assertEqual(set(shard.BUNDLES[mode]), set(lanes))
+            self.assertEqual(set(shard.BUNDLES[mode]), set(lanes) | ({'cli-host'} if mode == 'race' else set()))
             old_union = Counter(group for groups in lanes.values() for group in groups)
-            new_union = Counter(group for lane in lanes
+            new_union = Counter(group for lane in shard.BUNDLES[mode]
                                 for group in shard.bundle_groups(lane, mode == 'race'))
             self.assertEqual(old_union, Counter(shard.GROUPS.keys()))
             self.assertEqual(new_union, old_union)
@@ -642,11 +651,11 @@ class ShardTests(unittest.TestCase):
             'cli-contribution-disconnect': ('cli', 'support-a'),
             'remainder-b': ('cli', 'api-b'),
             'cli': ('api-b', 'support-a'),
-            'cli-contribution-host': ('api-b', 'cli-command'),
+            'cli-contribution-host': ('api-b', 'cli-host'),
         })
         self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
         # Both newly moved whole groups must remain present exactly once.
-        for group, destination in (('cli', 'support-a'), ('cli-contribution-host', 'cli-command')):
+        for group, destination in (('cli', 'support-a'), ('cli-contribution-host', 'cli-host')):
             for invalid in (tuple(g for g in shard.BUNDLES['race'][destination] if g != group),
                             (*shard.BUNDLES['race'][destination], group)):
                 with mock.patch.dict(shard.BUNDLES['race'], {destination: invalid}), self.assertRaises(ValueError):
@@ -659,7 +668,7 @@ class ShardTests(unittest.TestCase):
                          ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence'))
-        self.assertEqual(len(shard.BUNDLES['race']), 13)
+        self.assertEqual(len(shard.BUNDLES['race']), 14)
         self.assertEqual(sum(group == 'persistence'
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
@@ -765,6 +774,11 @@ func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("re
 func TestManagedContributionProductiveDeliveryRepair(t *testing.T) { ready(t); t.Run("productive", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionSameAgentSeparateSessions(t *testing.T) { ready(t); t.Run("same-agent", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionEngineeringRegressionRepair(t *testing.T) { ready(t); t.Run("regression", func(t *testing.T) { ready(t) }) }
+func TestPublicRootAuthenticatedContributionJourney(t *testing.T) { ready(t) }
+func TestPublicRootAuthenticatedContributionFinalJourney(t *testing.T) { ready(t) }
+func TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney(t *testing.T) { ready(t) }
+func TestPublicRootContributionDeclaredOperationApprovalHeld(t *testing.T) { ready(t) }
+func TestPublicRootContributionMissingHostPreflight(t *testing.T) { ready(t); t.Run("host", func(t *testing.T) { ready(t) }) }
 func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
 }
 func FuzzSeed(f *testing.F) { if !mainReady { f.Fatal("TestMain did not run") }; f.Add("seed"); f.Fuzz(func(t *testing.T, s string) { ready(t) }) }
@@ -779,8 +793,8 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                 subprocess.run(['go', 'test', *(['-race'] if race else []), '-c', '-ldflags=-s -w', '-o', str(binary), pkg], cwd=root, check=True)
                 native_listing = subprocess.run([str(binary), '-test.list=.', '-test.timeout=8m'], cwd=package, capture_output=True, text=True, check=True)
                 self.assertEqual(shard.default_inventory(native_listing.stdout.splitlines()), names)
-                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, *shard.IMPLEMENTATION_CONTRIBUTION_TESTS, 'Example', 'FuzzSeed'])
-                for partitions in (('api-a', 'api-b'), ('orchestration', 'orchestration-contribution'), ('implementation', 'implementation-contribution')):
+                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, *shard.IMPLEMENTATION_CONTRIBUTION_TESTS, *shard.CLI_CONTRIBUTION_TESTS.values(), 'Example', 'FuzzSeed'])
+                for partitions in (('api-a', 'api-b'), ('orchestration', 'orchestration-contribution'), ('implementation', 'implementation-contribution'), ('cli-command', *shard.CLI_CONTRIBUTION_TESTS)):
                     seen = []
                     for group in partitions:
                         result = subprocess.run([*base, '-json', '-run', shard.test_pattern(names, group), pkg], cwd=root, capture_output=True, text=True, check=True)
@@ -790,7 +804,7 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                         result = subprocess.run([str(binary), '-test.v', '-test.count=1', '-test.timeout=8m', '-test.run=' + shard.test_pattern(names, group)], cwd=package, capture_output=True, text=True, check=True)
                         native_seen.extend(re.findall(r'^=== RUN\s+(\S+)', result.stdout, re.M))
                     self.assertEqual(Counter(native_seen), Counter(seen))
-                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair', 'TestManagedContributionProductiveDeliveryRepair/productive', 'TestManagedContributionSameAgentSeparateSessions/same-agent', 'TestManagedContributionEngineeringRegressionRepair/regression']))
+                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair', 'TestManagedContributionProductiveDeliveryRepair/productive', 'TestManagedContributionSameAgentSeparateSessions/same-agent', 'TestManagedContributionEngineeringRegressionRepair/regression', 'TestPublicRootContributionMissingHostPreflight/host']))
                 # Exercise the actual compact command planner, not a separately
                 # hand-written binary invocation. TestMain's os.Exit(m.Run())
                 # above must pass, but an unexpected test-body os.Exit(0) must not.

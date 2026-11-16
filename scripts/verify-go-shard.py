@@ -101,7 +101,7 @@ GROUPS = {
 }
 
 
-# Stable execution lanes, NOT new test partitions: 7 normal + 13 race.
+# Execution lanes, NOT new test partitions: 7 normal + 14 race.
 # Hosted run 40888280401 hit unchanged 600s job deadlines in normal
 # implementation, race orchestration and race manager-b. Repack measured
 # phases into existing lanes/caps; fresh hosted deadline evidence is required.
@@ -144,10 +144,13 @@ BUNDLES = {
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         # Hosted 41220874653: cli-command defaults took 462s plus 106s
         # compilation; support-a completed in 314s and takes disconnect.
-        # Keep missing-host OUT of the defaults process: its historical ~164s
-        # cleanup must not block that process's early upgrade child. Reuse the
-        # binary in a separate sequential process, projecting ~529.919s total.
-        'cli-command': ('cli-command', 'cli-contribution-host'),
+        'cli-command': ('cli-command',),
+        # Hosted 43979771143 exhausted 600s: compile 129.037s + inventory
+        # 1.078s + passing defaults 345.418s left too little for ~164s host.
+        # Compile independently in one dedicated race lane; keep the existing
+        # whole group, separate process, 480s alarm and 600s job cap.
+        # Never rejoin defaults and delay its early upgrade child.
+        'cli-host': ('cli-contribution-host',),
         # After main's remainder move, hosted 41225087087 completed CLI in
         # 319s; its already compiled dependencies leave room for contribution.
         'cli': ('cli-contribution-root', 'cli-contribution-final', 'implementation-contribution'),
