@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Integrate supported installed-dependency module and bounded controller-code launches,
+  with credential-free activation before native authentication custody. Add exact
+  Hermes 0.23.0 source/interpreter/package/PM workspace/dependency qualification
+  records while preserving legacy 0.21.3 and separate diagnostic-probe gates.
+  Synthetic native acceptance is not live-provider entitlement or task completion.
+
 - Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
 
 - Raise the development, CI and release Go toolchain floor to 1.26.11 for

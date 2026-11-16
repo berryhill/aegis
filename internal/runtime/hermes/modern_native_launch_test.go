@@ -4,8 +4,10 @@ package hermes
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -39,27 +41,76 @@ func TestModernNativeAttemptIntegration(t *testing.T) {
 				t.Fatal(err)
 			}
 			fixtureCase := name
-			if name == "output" {
+			if name == "output" || name == "node-model" {
 				fixtureCase = "complete"
 			}
 			if err := os.WriteFile(filepath.Join(state, "state/runtime/case"), []byte(fixtureCase), 0600); err != nil {
 				t.Fatal(err)
 			}
 			a := New(launcher, slog.New(slog.NewTextHandler(io.Discard, nil)))
-			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
 			d, err := a.Discover(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = qualifyProviderTransport(d); !errors.Is(err, ErrProviderAuthRuntimeUnqualified) {
-				t.Fatal("modern production gate unexpectedly open", err)
-			}
-			a.providerTransportQualifier = func(got core.RuntimeDescriptor) error {
-				if got.Installation != d.Installation || got.Version != d.Version {
-					return ErrProviderAuthRuntimeUnqualified
+			productionQualified := false
+			if os.Getenv("AEGIS_TEST_INSTALLED_NATIVE_SOURCE") != "" {
+				var record installedCodexRecord
+				var records []installedCodexRecord
+				if json.Unmarshal(installedCodexRecordJSON, &records) != nil {
+					t.Fatal("record decode")
 				}
-				return nil
+				found := false
+				for _, candidate := range records {
+					if instrumented := os.Getenv("AEGIS_TEST_INSTALLED_INSTRUMENTED_SOURCE"); instrumented != "" {
+						candidate.Source = instrumented
+						candidate.Accepted = false
+					}
+					if validateInstalledCodexRecord(d.Installation, d.Version, candidate) == nil {
+						record = candidate
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Fatal("exact installed evidence mismatch")
+				}
+				if instrumented := os.Getenv("AEGIS_TEST_INSTALLED_INSTRUMENTED_SOURCE"); instrumented != "" {
+					// Only the test observer entry differs. The harness computes its
+					// exact digest from the frozen source plus that one declared file.
+					// Never write this test record into controller policy.
+					record.Source = instrumented
+					record.Accepted = false
+				}
+				if err = validateInstalledCodexRecord(d.Installation, d.Version, record); err != nil {
+					t.Fatal("exact installed evidence mismatch", err)
+				}
+				productionQualified = record.Accepted
+				if productionQualified {
+					if err = qualifyProviderTransport(d); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if !errors.Is(qualifyProviderTransport(d), ErrProviderAuthRuntimeUnqualified) {
+						t.Fatal("unaccepted record admitted")
+					}
+					// Exercise the complete proposed exact verifier, not a permissive
+					// source/version-only seam. It remains explicitly unaccepted.
+					a.providerTransportQualifier = func(got core.RuntimeDescriptor) error {
+						return validateInstalledCodexRecord(got.Installation, got.Version, record)
+					}
+				}
+			} else {
+				if err = qualifyProviderTransport(d); !errors.Is(err, ErrProviderAuthRuntimeUnqualified) {
+					t.Fatal("modern production gate unexpectedly open", err)
+				}
+				a.providerTransportQualifier = func(got core.RuntimeDescriptor) error {
+					if got.Installation != d.Installation || got.Version != d.Version {
+						return ErrProviderAuthRuntimeUnqualified
+					}
+					return nil
+				}
 			}
 			r := providerAttempt(state)
 			h := r.Launch.Mandate.Hermes
@@ -69,6 +120,12 @@ func TestModernNativeAttemptIntegration(t *testing.T) {
 			r.Launch.AuthorityContext.Authority.Hermes = h
 			r.Model = h.Model
 			r.Provider = h.Provider
+			if name == "node-model" {
+				h.AllowedLanes = []core.HermesLane{{ID: "default", Provider: h.Provider, Model: h.Model, ProviderAuthentication: h.ProviderAuthentication}, {ID: "node", Provider: h.Provider, Model: "node-selected-model", ProviderAuthentication: h.ProviderAuthentication}}
+				r.Launch.Mandate.Hermes = h
+				r.Launch.AuthorityContext.Authority.Hermes = h
+				r.Model = "node-selected-model"
+			}
 			r.Launch.Mandate.Runtime = d
 			r.Launch.AuthorityContext.Runtime = d
 			if name == "expire" {
@@ -77,7 +134,7 @@ func TestModernNativeAttemptIntegration(t *testing.T) {
 				r.Launch.AuthorityContext.ExpiresAt = expiry
 			}
 			r.Launch.AuthorityContext.Digest = core.AuthorityContextDigest(r.Launch.AuthorityContext)
-			r.Bounds.Duration = 30 * time.Second
+			r.Bounds.Duration = 60 * time.Second
 			r.Bounds.OutputBytes = 1024
 			if name == "output" {
 				r.Bounds.OutputBytes = 4
@@ -111,11 +168,46 @@ func TestModernNativeAttemptIntegration(t *testing.T) {
 			a.SetProviderAuthenticationResolver(func(context.Context, core.HermesConfig) (ProviderAccessToken, error) {
 				return NewProviderAccessToken(h.Provider, token, time.Now())
 			})
+			if os.Getenv("AEGIS_TEST_INSTALLED_NATIVE_SOURCE") != "" {
+				// Observer-qualified path; the unchanged production record is tested separately. Resolve
+				// actual source entries over FD3 through the supported code command.
+				home := nativeFixture(t)
+				nativeStore(t, home, "UNSELECTED_SINGLETON", []any{map[string]any{"id": "chosen", "auth_type": "oauth", "source": "device_code", "access_token": token, "refresh_token": "NEVER_REFRESH"}, map[string]any{"id": "other", "auth_type": "oauth", "source": "device_code", "access_token": syntheticProviderToken(expiry.Add(time.Hour))}})
+				before, _ := os.ReadFile(filepath.Join(home, "auth.json"))
+				id := fmt.Sprintf("nc-%x", sha256.Sum256([]byte("aegis-native-codex-id-v1\x00chosen")))
+				candidates, err := a.InspectNativeCodexCandidates(ctx, home, time.Now())
+				if err != nil || candidates.DistinctEligibleGrants != 2 {
+					t.Fatal("native inspection", err)
+				}
+				metadata, err := a.PreviewNativeCodexLogin(ctx, home, time.Now(), id)
+				if err != nil || metadata.AccountID != "synthetic-account" {
+					t.Fatal("native metadata", err)
+				}
+				a.SetProviderAuthenticationResolver(func(ctx context.Context, cfg core.HermesConfig) (ProviderAccessToken, error) {
+					if cfg.Model != r.Model || cfg.Provider != r.Provider {
+						return ProviderAccessToken{}, ErrProviderAuthUnauthorized
+					}
+					return a.ResolveNativeCodexLogin(ctx, cfg.Provider, home, metadata.AccountID, time.Now(), id)
+				})
+				t.Cleanup(func() {
+					after, _ := os.ReadFile(filepath.Join(home, "auth.json"))
+					if string(before) != string(after) {
+						t.Error("native auth mutated")
+					}
+				})
+			}
+			beforeAuthority := core.Digest(r.Launch)
 			start := time.Now()
 			result, err := a.AttemptTurn(ctx, r)
+			if core.Digest(r.Launch) != beforeAuthority {
+				t.Error("immutable authority changed")
+			}
 			success := err == nil
-			wantSuccess := name == "complete" || name == "tool" || name == "tool-text"
-			evidence := map[string]any{"case": name, "scope": "native AttemptTurn with synthetic qualifier and vendor boundary; NOT production qualification", "state": result.Attempt.State, "reason": result.Attempt.Reason, "success": success, "elapsed_ms": time.Since(start).Milliseconds(), "output_bytes": len(result.Output), "runtime_version": d.Version, "production_gate_closed": true}
+			wantSuccess := name == "complete" || name == "tool" || name == "tool-text" || name == "node-model"
+			evidence := map[string]any{"case": name, "scope": "native AttemptTurn with exact observer-only source record and synthetic SDK vendor boundary; uninstrumented production gate proven separately", "state": result.Attempt.State, "reason": result.Attempt.Reason, "success": success, "elapsed_ms": time.Since(start).Milliseconds(), "output_bytes": len(result.Output), "runtime_version": d.Version, "production_gate_closed": !productionQualified}
+			if productionQualified {
+				evidence["scope"] = "production exact installed qualification; actual native parser/AttemptTurn and synthetic vendor boundary"
+			}
 			if err != nil {
 				evidence["error"] = err.Error()
 			}
@@ -164,6 +256,8 @@ func TestModernNativeAttemptIntegration(t *testing.T) {
 				Run       int              `json:"agent_run"`
 				PID       int              `json:"pid"`
 				Forbidden int              `json:"forbidden_effect_attempts"`
+				Leased    bool             `json:"generation_leased"`
+				NoSync    bool             `json:"no_sync"`
 			}
 			if err = json.Unmarshal(wire, &w); err != nil {
 				t.Fatal(err)
@@ -171,12 +265,18 @@ func TestModernNativeAttemptIntegration(t *testing.T) {
 			if w.Network != 0 || w.Init == 0 || w.Run == 0 || len(w.Requests) == 0 || len(w.Requests) > 4 {
 				t.Errorf("native path/bounds invalid: %+v", w)
 			}
+			if os.Getenv("AEGIS_TEST_INSTALLED_NATIVE_SOURCE") != "" && (!w.Leased || !w.NoSync) {
+				t.Error("installed activation lease/sync contract")
+			}
 			if w.Forbidden != 0 || w.PID <= 0 || !errors.Is(syscall.Kill(w.PID, 0), syscall.ESRCH) {
 				t.Error("forbidden effect or surviving gateway")
 			}
 			for _, req := range w.Requests {
 				if req["bearer_exact"] != true || req["account_exact"] != true {
 					t.Error("account drift")
+				}
+				if req["route"] == "codex_responses" && (req["model"] != r.Model || req["model_exact"] != true) {
+					t.Error("immutable selected model drift")
 				}
 			}
 		})

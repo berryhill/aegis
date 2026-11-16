@@ -1,5 +1,7 @@
 # Native Codex gateway: reproduced qualification blockers
 
+**Current qualification:** [installation-bound module/code integration](native-profile-installed-integration.md) supersedes the earlier installed-dependency blocker and adds exact reviewed records. The investigations below remain historical evidence, not current blanket denial or live-provider acceptance.
+
 **Historical diagnostic below.** The later isolated Hermes terminal-stream repair and actual modern Aegis AttemptTurn integration are described in [the current launch report](native-profile-modern-launch.md). Native no-effect correction is distinct from strict diagnostic tool rejection; same-account metadata is distinct from fallback. The old observations and failed diagnostics are retained, not promoted into current production qualification. The earlier owner-selection statement does not by itself prove read-only dependency activation under a disposable home.
 
 This is a **blocked qualification prerequisite**, not implemented provider reuse.

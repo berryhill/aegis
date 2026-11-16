@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:8af4e88b444502d0c01eee26e41527985035a57ba036a8190649eb84c180880f",
+    "content_digest": "sha256:9e78a308bd9536004113d7c6b8d4bc8e2c10be8ef8cf05679ecc7927a4f8d9f2",
     "source_revision": "repository"
   },
   "operations": [
@@ -330,12 +330,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:edfced88f7b92d79f74d8c512a8b2488e9091a5b1d20594620971ad2b6c03ab0",
+      "content_digest": "sha256:bcd5a26afcf9276d51550e598995e76fe7ba1590539dd55d44c495364780123e",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:e2ebd8f64d0dd3a2105738a35e2ba70c522023c02f34bb153f7da7f20a524353",
-          "size": 59875
+          "sha256": "sha256:a135bb45f76d2e8ecdd9ae7c613590350af0e0b8f9219a397bb006da59e32a1e",
+          "size": 60208
         },
         {
           "path": "references/authoring-contract.v1.md",

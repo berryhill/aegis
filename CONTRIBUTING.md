@@ -1,6 +1,6 @@
 # Contributing to Aegis
 
-For modern Hermes adapter work, retain the complete public runtime-command argv and distinguish PM-built developer proof from installed clean-home dependency activation. Use synthetic tokens and networkless native fixtures; do not promote the existing test qualifier seam into production. See [launch evidence and remaining gates](docs/implementation/native-profile-modern-launch.md).
+For modern Hermes adapter work, use the complete supported installed-dependency module/code argv, real PM-created generations and synthetic native auth in networkless fixtures. Production qualification must bind frozen source/interpreter/dependency evidence; an observer-only test record is not production policy. See [installed integration and remaining gates](docs/implementation/native-profile-installed-integration.md).
 
 Before launching an engineering acceptance candidate, read the repository-owned
 [port-isolation workflow](.hermes/acceptance-port-isolation.md). Main 8448/8098 is

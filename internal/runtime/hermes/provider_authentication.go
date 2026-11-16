@@ -55,6 +55,17 @@ var qualifiedProviderTransport = map[string]string{
 }
 
 func qualifyProviderTransport(d core.RuntimeDescriptor) error {
+	if d.Version == "0.23.0" {
+		var records []installedCodexRecord
+		if json.Unmarshal(installedCodexRecordJSON, &records) == nil {
+			for _, record := range records {
+				if record.Accepted && validateInstalledCodexRecord(d.Installation, d.Version, record) == nil {
+					return nil
+				}
+			}
+		}
+		return ErrProviderAuthRuntimeUnqualified
+	}
 	if d.Version != "0.21.3" || !filepath.IsAbs(d.Installation) || gatewayPython(d) == "" {
 		return ErrProviderAuthRuntimeUnqualified
 	}

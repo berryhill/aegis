@@ -1,5 +1,7 @@
 # Modern Hermes gateway launch — source integration, not qualification
 
+**Current qualification:** [installation-bound module/code integration](native-profile-installed-integration.md) supersedes the earlier installed-dependency blocker and adds exact reviewed records. The investigations below remain historical evidence, not current blanket denial or live-provider acceptance.
+
 The adapter now discovers the supported installation command with
 `<installation>/.hermes/bin/hermes --print-runtime-command --module tui_gateway.entry`.
 It executes the **complete returned argv**, including isolated Python, bootstrap,

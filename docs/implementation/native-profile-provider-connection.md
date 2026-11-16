@@ -2,9 +2,9 @@
 
 This adds a supported file-free composition, **not live-provider readiness**.
 Registration, operational source/account consent, exact charter approval and
-runtime execution remain different decisions. The installed Codex qualification
-gate described in [the gateway boundary report](native-codex-gateway-boundary.md)
-remains unqualified; the 0.21.3/fingerprint gate is unchanged. Antigravity stays represented
+runtime execution remain different decisions. The additive installed Codex qualification is described in
+[the installed integration report](native-profile-installed-integration.md); the
+legacy 0.21.3/fingerprint record remains unchanged. It is not live entitlement. Antigravity stays represented
 by `configured-provider.v1`, not an executable adapter.
 
 ## Supported principal journey

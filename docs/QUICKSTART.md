@@ -1,6 +1,6 @@
 # Five-Minute Quickstart
 
-Modern Hermes launch support is not blanket provider qualification. See [complete runtime-command integration and the still-unqualified installed dependency path](implementation/native-profile-modern-launch.md); the no-key workflow below is not replaced by a synthetic provider result.
+Modern Hermes launch support is not blanket provider qualification. See [installation-bound runtime commands and exact source/dependency qualification](implementation/native-profile-installed-integration.md); the no-key workflow below is not replaced by a synthetic provider result.
 
 Ordinary explicit local-profile registration offers model-read consent; follow its generated confirmation and `setup default` continuation. The [file-free provider setup](implementation/native-profile-provider-connection.md) displays actual account choices and returns exact next inputs for connection and separate successor approval. It preserves the configured default, including unavailable Antigravity. This is not part of the no-key proof and does not qualify real execution.
 

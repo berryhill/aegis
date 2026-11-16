@@ -132,7 +132,7 @@ consent is rechecked at publication boundaries after native validation; connecti
 and charter-successor approval remain distinct and do not qualify execution.
 [Procedure and remaining gates](docs/implementation/native-profile-provider-connection.md).
 
-Modern bounded gateway turns preserve Hermes's complete installation runtime command and write an isolated bounded config. The exact provider gate remains closed pending installed dependency-selection and qualification proof; see [launch integration and evidence limits](docs/implementation/native-profile-modern-launch.md).
+Modern bounded gateway turns and native credential parsing use Hermes's supported installation-bound dependency activation with complete argv and normal generation leases. The additive exact source/interpreter/dependency record is documented in [installed integration and remaining live gates](docs/implementation/native-profile-installed-integration.md); it is not a version-wide grant or live-account entitlement.
 
 ## Retained task execution (source candidate)
 

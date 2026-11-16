@@ -43,6 +43,13 @@ func commandFixture(t *testing.T, mutate func([]string) any) (core.RuntimeDescri
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(python, "/tools/") {
+		// Protocol-only fake source must not borrow a real PM tool-store owner.
+		python, err = filepath.EvalSymlinks("/usr/bin/python3")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	argv := []string{python, "-I", "-c", gatewayBootstrap(root)}
 	var payload any = argv
 	if mutate != nil {
@@ -54,9 +61,12 @@ func commandFixture(t *testing.T, mutate func([]string) any) (core.RuntimeDescri
 	}
 	// json string literal is also a Python string for these ASCII-only fixtures.
 	literal, _ := json.Marshal(string(encoded))
-	script := "import os, sys; assert sys.argv[1:] == ['--print-runtime-command', '--module', 'tui_gateway.entry']; assert os.environ['HOME'] == os.environ['HERMES_HOME']; assert not any(os.environ.get(k) for k in ['OPENAI_API_KEY', 'HTTP_PROXY', 'HERMES_RUNTIME_DIR', 'PYTHONPATH']); print(" + string(literal) + ")"
+	script := "import os, sys; assert sys.argv[1:] == ['--print-runtime-command', '--installed-dependencies', '--module', 'tui_gateway.entry']; assert os.environ['HOME'] == os.environ['HERMES_HOME']; assert not any(os.environ.get(k) for k in ['OPENAI_API_KEY', 'HTTP_PROXY', 'HERMES_RUNTIME_DIR', 'PYTHONPATH']); print(" + string(literal) + ")"
+	probe, _ := json.Marshal([]string{python, "-I", "-c", installedBootstrap(root, "exec('pass')")})
+	probeLiteral, _ := json.Marshal(string(probe))
+	script = "import sys; " + "print(" + string(probeLiteral) + ") if sys.argv[1:] == ['--print-runtime-command', '--installed-dependencies', '--code', 'pass', '--'] else exec(" + controllerCodeLiteral(script) + ")"
 	launcher := "#!/bin/sh\nexec " + python + " -I -c '" + strings.ReplaceAll(script, "'", "'\"'\"'") + "' \"$@\"\n"
-	for name, data := range map[string]string{".hermes/bin/hermes": launcher, "hermes_cli/_launchers.py": "def print_runtime_command(): pass\n", "hermes_bootstrap.py": "# fixture", "hermes_constants.py": "# fixture", "pm/environments.py": "# fixture", "pm/__init__.py": "# lazy PM facade fixture", "pm/paths.py": "# install stamp path fixture", "pm/filesystem.py": "# lease lock fixture", "hermes_cli/venv_sync.py": "# launch preparation fixture", "hermes_cli/runtime_state.py": "# generation lease fixture", "pyproject.toml": "# fixture", "setup.py": "# dependency setup fixture", "pm/lock.json": "{}", "uv.lock": "# fixture"} {
+	for name, data := range map[string]string{".hermes/bin/hermes": launcher, "hermes_cli/_launchers.py": "def print_runtime_command(): pass\n", "hermes_bootstrap.py": "# fixture", "hermes_constants.py": "# fixture", "pm/environments.py": "# fixture", "pm/installed_activation.py": "# fixture", "hermes_cli/_early_recovery.py": "# fixture", "hermes_cli/update_lock.py": "# fixture", "pm/__init__.py": "# lazy PM facade fixture", "pm/paths.py": "# install stamp path fixture", "pm/filesystem.py": "# lease lock fixture", "hermes_cli/venv_sync.py": "# launch preparation fixture", "hermes_cli/runtime_state.py": "# generation lease fixture", "pyproject.toml": "# fixture", "setup.py": "# dependency setup fixture", "pm/lock.json": "{}", "uv.lock": "# fixture"} {
 		path := filepath.Join(root, name)
 		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			t.Fatal(err)

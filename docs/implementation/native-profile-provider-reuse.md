@@ -1,5 +1,7 @@
 # Native-profile provider reuse: partial source result
 
+**Current qualification:** [installation-bound module/code integration](native-profile-installed-integration.md) supersedes the earlier installed-dependency blocker and adds exact reviewed records. The investigations below remain historical evidence, not current blanket denial or live-provider acceptance.
+
 ## Status
 
 **The requested registration-to-provider-reuse feature is not complete.** This

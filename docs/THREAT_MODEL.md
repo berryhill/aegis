@@ -1,6 +1,6 @@
 # Aegis MVP Threat Model
 
-Modern runtime-command freshness checks detect changed launch assets/interpreter but do not atomically seal a host filesystem or attest a PM-selected dependency generation. Ordinary same-account catalog metadata and rejected unavailable-tool correction are not automatically authority violations; exact diagnostic gates remain separate. See [bounded launch contract](implementation/native-profile-modern-launch.md).
+Modern runtime commands validate installation-bound PM activation before native credential custody. The additive compiled record binds exact source, interpreter/package identity, input locks, committed manifest, editable workspace source and dependency bytes; runtime children hold normal source-read/GC leases. Freshness checks are not an atomic host-filesystem seal or protection from hostile same-UID mutation. Ordinary same-account catalog metadata and rejected unavailable-tool correction are not automatically authority violations; the separate one-POST diagnostic remains closed for this runtime. See [the installed boundary](implementation/native-profile-installed-integration.md).
 
 Imported-Agent provider setup retains separate native source/account consent and
 exact charter-digest approval. Fresh human Unix-peer identity is required; a

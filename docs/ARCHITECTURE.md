@@ -1,6 +1,6 @@
 # Aegis MVP Architecture
 
-Modern stdio launch resolves the installation's complete JSON argv, retains bootstrap/dependency selection, and rechecks launch identity before starting the child. Modern AttemptTurn writes only its bounded private lane config. Legacy transport records and controller authority boundaries are unchanged; [installed PM selection remains unqualified](implementation/native-profile-modern-launch.md).
+Modern stdio launch and bounded native account parsing execute Hermes's complete installed-dependency argv. Credential-free activation validates the real PM generation before native custody; exact source/interpreter/dependency qualification and pre-start freshness remain separate from controller authority. Hermes retains its normal source-read lock and generation lease. Modern AttemptTurn writes only its bounded private lane config. See [the additive exact qualification](implementation/native-profile-installed-integration.md); legacy records and authority boundaries are unchanged.
 
 The imported-Agent `providers` follow-up composes existing ControllerCodex and
 exact Agent successor services through manager/CLI/API adapters. It adds no

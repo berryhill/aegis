@@ -11,7 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,6 +28,8 @@ var errGatewayCommand = errors.New("Hermes installation runtime command unavaila
 type gatewayLaunch struct {
 	argv       []string
 	modern     bool
+	sourceRoot string
+	sourceHash string
 	identities map[string]launchIdentity
 }
 type launchIdentity struct {
@@ -40,14 +44,27 @@ type launchIdentity struct {
 var launchPath = regexp.MustCompile(`^/[A-Za-z0-9_./ +:@-]+$`)
 
 func gatewayBootstrap(root string) string {
+	return installedBootstrap(root, "runpy.run_module('tui_gateway.entry', run_name='__main__', alter_sys=True)")
+}
+
+func installedBootstrap(root, entry string) string {
 	return "import os, sys, runpy; " +
 		"os.environ.pop('PYTHONHOME', None); os.environ.pop('PYTHONPATH', None); " +
 		"os.environ.pop('VIRTUAL_ENV', None); " +
 		"sys.path.insert(0, '" + root + "'); " +
-		"sys._hermes_pin_default_home = True; import hermes_bootstrap; " +
-		"os.environ.get('HERMES_HOME') or os.environ.__setitem__('HERMES_HOME', " +
-		"str(__import__('hermes_constants').get_default_hermes_root())); " +
-		"runpy.run_module('tui_gateway.entry', run_name='__main__', alter_sys=True)"
+		"sys._hermes_installed_dependencies = True; sys.dont_write_bytecode = True; " +
+		"import hermes_bootstrap; " + entry
+}
+
+// Python repr for fixed ASCII controller programs, not caller-owned code.
+func controllerCodeLiteral(code string) string {
+	quote := "'"
+	if strings.Contains(code, quote) && !strings.Contains(code, `"`) {
+		quote = `"`
+	}
+	const slash = `\`
+	return quote + strings.NewReplacer(slash, slash+slash, quote, slash+quote,
+		string(rune(10)), slash+"n", string(rune(13)), slash+"r", string(rune(9)), slash+"t").Replace(code) + quote
 }
 
 func readLaunchIdentity(path string) (launchIdentity, error) {
@@ -82,6 +99,12 @@ func readLaunchIdentity(path string) (launchIdentity, error) {
 }
 
 func (g gatewayLaunch) fresh() error {
+	if g.sourceRoot != "" {
+		hash, err := qualificationTree(g.sourceRoot, false, "")
+		if err != nil || hash != g.sourceHash {
+			return errGatewayCommand
+		}
+	}
 	for path, previous := range g.identities {
 		current, err := readLaunchIdentity(path)
 		if err != nil || previous.resolved != current.resolved || !os.SameFile(previous.entry, current.entry) || !os.SameFile(previous.info, current.info) || previous.info.Mode() != current.info.Mode() || previous.info.ModTime() != current.info.ModTime() || previous.hash != current.hash {
@@ -112,6 +135,10 @@ func readCommandFile(path string, limit int64) ([]byte, error) {
 }
 
 func discoverGatewayCommand(ctx context.Context, d core.RuntimeDescriptor, home string) (gatewayLaunch, error) {
+	return discoverRuntimeCommand(ctx, d, home, "", nil)
+}
+
+func discoverRuntimeCommand(ctx context.Context, d core.RuntimeDescriptor, home, code string, args []string) (gatewayLaunch, error) {
 	g := gatewayLaunch{identities: map[string]launchIdentity{}}
 	marker := filepath.Join(d.Installation, "hermes_cli", "_launchers.py")
 	markerBytes, markerErr := readCommandFile(marker, 2<<20)
@@ -121,6 +148,9 @@ func discoverGatewayCommand(ctx context.Context, d core.RuntimeDescriptor, home 
 			return g, errGatewayCommand
 		}
 		g.argv = []string{python, "-m", "tui_gateway.entry"}
+		if code != "" {
+			g.argv = append([]string{python, "-I", "-B", "-c", code}, args...)
+		}
 		return g, nil
 	} else if markerErr != nil || len(markerBytes) > 2<<20 {
 		return g, errGatewayCommand
@@ -138,6 +168,7 @@ func discoverGatewayCommand(ctx context.Context, d core.RuntimeDescriptor, home 
 		"hermes_bootstrap.py", "hermes_constants.py",
 		"hermes_cli/venv_sync.py", "hermes_cli/runtime_state.py",
 		"pm/__init__.py", "pm/environments.py", "pm/paths.py", "pm/filesystem.py",
+		"pm/installed_activation.py", "hermes_cli/_early_recovery.py", "hermes_cli/update_lock.py",
 		"pyproject.toml", "setup.py", "uv.lock", "pm/lock.json",
 	} {
 		paths = append(paths, filepath.Join(root, name))
@@ -165,33 +196,90 @@ func discoverGatewayCommand(ctx context.Context, d core.RuntimeDescriptor, home 
 		return g, errGatewayCommand
 	}
 	g.identities[python] = id
-	output, err := queryRuntimeCommand(ctx, launcher, home)
+	g.sourceRoot = root
+	g.sourceHash, err = qualificationTree(root, false, "")
+	if err != nil {
+		return g, errGatewayCommand
+	}
+	metadata, err := installedLaunchMetadata(root, python)
+	if err != nil {
+		return g, errGatewayCommand
+	}
+	for _, path := range metadata {
+		id, err := readLaunchIdentity(path)
+		if err != nil {
+			return g, errGatewayCommand
+		}
+		g.identities[path] = id
+	}
+	query := []string{"--module", "tui_gateway.entry"}
+	expected := []string{python, "-I", "-c", gatewayBootstrap(root)}
+	if code != "" {
+		query = append([]string{"--code", code, "--"}, args...)
+		expected = append([]string{python, "-I", "-c", installedBootstrap(root, "exec("+controllerCodeLiteral(code)+")")}, args...)
+	}
+	output, err := queryRuntimeCommand(ctx, launcher, home, query...)
 	if err != nil {
 		return g, err
 	}
-	if err = json.Unmarshal(output, &g.argv); err != nil || len(g.argv) != 4 || g.argv[0] != python || g.argv[1] != "-I" || g.argv[2] != "-c" || g.argv[3] != gatewayBootstrap(root) {
+	if err = json.Unmarshal(output, &g.argv); err != nil || !slices.Equal(g.argv, expected) {
 		return g, errGatewayCommand
 	}
 	if err = g.fresh(); err != nil {
 		return g, err
 	}
 	g.modern = true
+	if code != "pass" {
+		// Querying argv validates the launcher owner, not activation. Execute a
+		// credential-free public code command to validate the committed manifest,
+		// ABI and actual lease before any native auth file can be opened.
+		probe, err := discoverRuntimeCommand(ctx, d, home, "pass", nil)
+		if err != nil {
+			return g, err
+		}
+		output, status, err := runBoundedRuntime(ctx, probe, home, home, 1024)
+		if err != nil {
+			return g, err
+		}
+		if status != 0 || len(output) != 0 {
+			return g, errGatewayCommand
+		}
+		if err = g.fresh(); err != nil {
+			return g, err
+		}
+	}
 	return g, nil
 }
 
 type commandOutput struct {
 	// Do not embed Buffer: its promoted ReadFrom lets io.Copy (including
 	// os/exec's stdout copier) bypass Write and the retained-byte budget.
+	mutex    sync.Mutex
+	limit    int
 	buffer   bytes.Buffer
 	overflow bool
+}
+
+func (b *commandOutput) discard() {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+	b.overflow = true
+	clear(b.buffer.Bytes())
+	b.buffer.Reset()
 }
 
 func (b *commandOutput) Len() int      { return b.buffer.Len() }
 func (b *commandOutput) Bytes() []byte { return b.buffer.Bytes() }
 
 func (b *commandOutput) Write(p []byte) (int, error) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	n := len(p)
-	if b.overflow || n > (16<<10)-b.Len() {
+	limit := b.limit
+	if limit == 0 {
+		limit = 16 << 10
+	}
+	if b.overflow || n > limit-b.Len() {
 		b.overflow = true
 		return n, nil // Drain without retaining; the query fails closed afterward.
 	}
@@ -199,7 +287,7 @@ func (b *commandOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func queryRuntimeCommand(ctx context.Context, launcher, home string) ([]byte, error) {
+func queryRuntimeCommand(ctx context.Context, launcher, home string, entry ...string) ([]byte, error) {
 	queryHome, err := os.MkdirTemp(home, "command-")
 	if err != nil {
 		return nil, errGatewayCommand
@@ -213,10 +301,13 @@ func queryRuntimeCommand(ctx context.Context, launcher, home string) ([]byte, er
 	home = queryHome
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, launcher, "--print-runtime-command", "--module", "tui_gateway.entry")
+	if len(entry) == 0 {
+		entry = []string{"--module", "tui_gateway.entry"}
+	}
+	cmd := exec.CommandContext(ctx, launcher, append([]string{"--print-runtime-command", "--installed-dependencies"}, entry...)...)
 	cmd.Dir = home
 	// No native profile, credentials, proxy, Python override or PM override.
-	cmd.Env = []string{"HOME=" + home, "HERMES_HOME=" + home, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "PYTHONDONTWRITEBYTECODE=1", "HERMES_SKIP_VERSION_CHECK=1", "HERMES_ENABLE_PROJECT_PLUGINS=false", "HERMES_DISABLE_LAZY_INSTALLS=1"}
+	cmd.Env = []string{"HOME=" + home, "HERMES_HOME=" + home, "TMPDIR=" + home, "PATH=/usr/bin:/bin", "LANG=C.UTF-8", "PYTHONDONTWRITEBYTECODE=1", "HERMES_SKIP_VERSION_CHECK=1", "HERMES_ENABLE_PROJECT_PLUGINS=false", "HERMES_DISABLE_LAZY_INSTALLS=1"}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output commandOutput
 	cmd.Stdout = &output
