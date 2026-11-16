@@ -20,7 +20,9 @@ facts rather than promote the wrapper to success.
 `scripts/verify-go-shard.py` uses the existing orchestration partition mechanism:
 
 - `implementation-contribution` selects exactly the anchored, escaped top-level
-  `TestManagedContributionRepairAndCustody` parent.
+  `TestManagedContributionRepairAndCustody`,
+  `TestManagedContributionProductiveDeliveryRepair` and
+  `TestManagedContributionSameAgentSeparateSessions` parents.
 - `implementation` dynamically selects every other default entry returned by the
   actual mode's Go test inventory, including future tests, runnable examples and
   fuzz targets. No static exclusion list or skipped test is introduced.

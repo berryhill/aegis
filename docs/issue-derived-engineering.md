@@ -77,6 +77,26 @@ Local replacements and excludes are unsupported. Tool declarations require their
 module to be pinned in the immutable dependency graph. Native
 repository code is **not sandboxed**; bundle approval is a host trust decision.
 
+The controller may populate a process-owned tool-only compilation image from a
+separate lockfiles-only tree through the admitted literal compiler. Reuse binds
+complete toolchain, module-lock, approved dependency-bundle and controlled
+environment identities. Every retained path/hash/length entry is authenticated
+before an independent fresh private cache copy. Ambient or candidate cache input,
+hardlinks and candidate writeback are prohibited; unsuccessful, canceled or
+unjoined population is not published. Native generation/check and actual candidate
+tests still execute under their original deadlines.
+
+Repeated contract reads fetch complete actual bytes from the current Badger
+transaction. One Store-local successful decode, limited to an input of at most
+2 MiB, may be reused only after full-byte equality; larger contracts use the
+unchanged strict decoder without retention. Returned contracts are typed deep
+copies, and close/restart discards retained decoded state. Changed bytes take the
+original duplicate-key/unknown-field/trailing-data/digest validation path. This is
+immutable parsing reuse, not cached authorization: current ownership, revocation,
+expiry, cancellation, head/membership and every continuity-event byte remain fresh.
+The existing validated replay prefix compares the exact newly read contract bytes
+rather than serializing and validating the same contract a second time.
+
 ## Large assets and generated templates
 
 Large approved text assets accept bounded exact byte hunks against a complete

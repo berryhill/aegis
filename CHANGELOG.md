@@ -4,6 +4,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Reduce contribution/native-check overhead without extending deadlines: authenticate
+  fresh complete stored bytes before reusing one bounded Store-local successful
+  decode, return independent typed deep copies, and retain fresh authority/control
+  and complete continuity-history checks. Seed fresh private caches only from
+  authenticated controller-populated pinned-tool images; never reuse candidate
+  compilation/test results or ambient caches. Preserve literal generation/checks,
+  source/output admission and all execution/resource limits.
+
 - Integrate supported installed-dependency module and bounded controller-code launches,
   with credential-free activation before native authentication custody. Add exact
   Hermes 0.23.0 source/interpreter/package/PM workspace/dependency qualification

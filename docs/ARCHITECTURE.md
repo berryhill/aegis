@@ -508,6 +508,8 @@ The installed `--target` adapter selects an existing console origin, uses only i
 
 ## Verified implementation dependency boundary
 
+Immutable tool-only bytes may seed fresh private native caches; they confer neither current authority nor a passing candidate result. Stored contribution parsing may reuse one bounded Store-owned successful decode only after rereading and comparing the complete current bytes. Independent typed deep copies prevent callers from mutating retained contract data. No current authority, control decision, expiry or revocation outcome is cached. Full fresh history-byte checks and existing execution deadlines remain. Native repository execution is still not a host sandbox.
+
 The native `internal/implementation` kernel depends on the Loop contract and an opaque custody port. Only `internal/persistence/fleet/badger` implements that port against the existing fleet-v1 writer. Orchestration connects independent native-check reloads to an evidence-owned callback DTO; `internal/evidence` imports neither Loop nor the executor. Terminal completion rechecks the immutable Loop contract, stored test evidence and current workspace, not an in-memory PASS. No second implementation database is opened.
 
 The kernel also owns a typed native-checker lifecycle port and a closed unknown

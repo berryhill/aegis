@@ -275,6 +275,8 @@ A maintainer should acknowledge a private report, reproduce and classify it, coo
 
 ## Current security boundaries
 
+Immutable tool-only bytes may seed fresh private native caches; they confer neither current authority nor a passing candidate result. Stored contribution parsing may reuse one bounded Store-owned successful decode only after rereading and comparing the complete current bytes. Independent typed deep copies prevent callers from mutating retained contract data. No current authority, control decision, expiry or revocation outcome is cached. Full fresh history-byte checks and existing execution deadlines remain. Native repository execution is still not a host sandbox.
+
 Empty-tool Hermes `AttemptTurn` and design turns reject observed `tool.*` events
 for the selected session or with missing session identity before normal event
 filtering. Attempt denial uses `unexpected_tool_event`, exposes no model output,

@@ -177,6 +177,8 @@ Local model digest rechecks detect drift but do not atomically pin the server mo
 
 ## Verified implementation native-code boundary
 
+Immutable tool-only bytes may seed fresh private native caches; they confer neither current authority nor a passing candidate result. Stored contribution parsing may reuse one bounded Store-owned successful decode only after rereading and comparing the complete current bytes. Independent typed deep copies prevent callers from mutating retained contract data. No current authority, control decision, expiry or revocation outcome is cached. Full fresh history-byte checks and existing execution deadlines remain. Native repository execution is still not a host sandbox.
+
 The Linux implementation checker requires a controller-injected native lifecycle
 port: pinned leader, group-wide fork barrier, fresh quiescence observation and
 sole joined Wait before return. Qualified command/digest/reservation and private

@@ -95,6 +95,25 @@ Waits already-expired fixture processes before closing stores, then verifies
 No authority TTL (300s), native check timeout (60s), cumulative budget, real context
 deadline, process-liveness gate or exact drift callback assertion is relaxed.
 
+### Native manager partition balancing
+
+`TestEngineeringProseHugeAssetsLocalTarget` remains in the dynamic `manager`
+group and existing `manager-a` lane with offline-dependency preparation. To avoid
+competing native fixture compilation inside the same two-core group, five complete
+roots move into existing groups in both normal and race modes:
+
+- `manager-contribution-final`: `TestManagerJoinedContributionCompletion`,
+  `TestContributionDeliveryControllerNativeLocal`,
+  `TestContributionDeliveryLocalNarrowJourney` and
+  `TestContributionManagerJoinedPublicResultHistoricalPolicy`.
+- `manager-contribution-readback`: `TestManagerTerminalContributionReadback`,
+  `TestEngineeringProseRepairLocalTarget` and `TestRetainedDeliveryNativeComposition`.
+
+All children/seeds remain selected. The dynamic remainder retains every other
+current/future default test. Existing workflow jobs, evidence names, group-to-lane
+assignments, dependency preflight, package/native deadlines and resource limits
+remain unchanged. Local supervised group PASS is not hosted whole-workflow PASS.
+
 ## Release transaction
 
 `make release VERSION=MAJOR.MINOR.PATCH` retains its explicit publication authority,
