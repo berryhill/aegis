@@ -8,6 +8,14 @@ The authenticated interactive manager exposes exactly 15 canonical base names fr
 
 ## Routing and syntax
 
+Imported-profile registration renders an explicit `with-models` option without
+reading model config automatically. `/agents providers AGENT setup default
+[CREDENTIAL_ID]` then guides the approved default through exact account choices,
+source connection and separate canonical successor approval. Generated next
+inputs contain actual identifiers/digests; connecting prepares but never approves
+the default-lane review. Advanced status/models/candidates/review/connect/promote/
+approve commands remain available. Unavailable Antigravity never falls back.
+
 Only composer submissions can invoke dispatch. Aegis detects command position after bounded leading whitespace, parses exact lowercase names and typed arguments locally, and consumes recognized, unknown, and malformed slash input before any Hermes path. Prefix and fuzzy matching are suggestions only. Model, runtime, tool, sensor, report, audit, and subagent text are typed untrusted presentation events and cannot invoke dispatch.
 
 The parser supports bounded single- or double-quoted literal arguments. Inside a quoted literal only its quote character or a backslash can be escaped. It does not implement a shell: pipes, redirects, chaining, backgrounding, backticks, `$` expansion, `!`, or unquoted backslash escaping are rejected. `//` at command position removes one slash and then sends the resulting ordinary text through the normal ingress guard; it is not a bypass.
@@ -38,6 +46,41 @@ Every executed base command emits canonical metadata-only `manager_command` audi
 ```
 
 The first command verifies the configured principal/process account and opens only the canonical default `~/.hermes` directory plus its non-empty regular `config.yaml` marker without following symlinks. Linux uses metadata-only `O_PATH` descriptors; other supported platforms use non-following descriptors that the import path only stats and never reads. It rejects owner or group/world-write mismatches, requires the marker to be at most 1 MiB from metadata, and derives its provenance fingerprint only from stable filesystem metadata—not from `config.yaml` bytes. It returns a deterministic proposal with principal-stable Agent/fleet/source identities, a metadata-bound revision digest, and the exact confirmation command; preparation performs no write. Confirmation recomputes the proposal from fresh evidence, requires exact digest equality, saves the deterministic canonical charter, registers one immutable enabled Agent revision, and requires exact post-write readback. Exact replay is idempotent and any source, Agent, charter, or digest collision denies. Neither command reads, hashes, copies, or persists profile contents; provisions or mutates Hermes; activates the Agent; issues a mandate; launches a runtime; or grants credential/model authority.
+
+### File-free provider follow-up (source candidate)
+
+Registration confirmation now links `/agents providers AGENT status` or `models`
+for an existing metadata-only import. The closed operations are `status`, `models`,
+`candidates SOURCE`, `review SOURCE [CREDENTIAL_ID]`, `connect REVIEW_ID`,
+`promote PROVIDER MODEL`, and `approve REVIEW_ID CHARTER_DIGEST`. `SOURCE` is
+explicit `default` or an exact permitted native profile home. Source/account consent
+and exact successor approval remain separate; no prose confirmation or manager
+identity manufactures Unix-peer human authority. See [full procedure and gates](implementation/native-profile-provider-connection.md).
+
+### Explicit configured-model snapshot (source candidate)
+
+```text
+/agents import hermes default with-models
+/agents import hermes default with-models confirm REVISION_DIGEST
+```
+
+Unlike the legacy commands above, `with-models` explicitly consents to bounded
+reading of the fixed owner-verified config marker. The preview shows its configured
+default provider/model, all proposed lanes, `authentication: not_connected` and
+`qualification: not_checked`. Confirmation binds these selections into the exact
+immutable charter. Supported metadata is deliberately limited to `codex`,
+`openai-codex`, and `antigravity-oauth`, with bounded model identifiers and at most
+16 lanes from `model.provider`/`model.default` plus explicit `fallback_providers`
+(or the legacy single `fallback_model`). Fallback entries become selectable lanes,
+not automatic fallback behavior. Other profile fields are never copied.
+
+Fresh file-change metadata and selections must match an unconsumed preview.
+Consumed confirmations and bootstrap replay read stored facts instead, so later
+profile edits cannot change approved authority. A previous metadata-only import
+cannot be upgraded by this command; a separately approved charter successor is
+required. No credential source is connected, and configuration-only snapshots
+cannot run until independent connection/authority and transport gates are met.
+See [snapshot boundary and tests](implementation/native-profile-provider-reuse.md).
 
 Registration fixtures default only omitted lifecycle to `enabled` before preview and exact-digest approval. Explicit disabled/retired values remain supported; malformed values deny. Enabled is Registry eligibility, not runtime readiness, activation, workspace delegation, or execution/credential authority. Existing imports and lifecycle decisions remain unchanged.
 

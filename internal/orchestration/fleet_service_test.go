@@ -172,7 +172,12 @@ func (repository *fleetServiceRepository) LatestAgentRevision(_ context.Context,
 	}
 	return repository.agent, repository.loadErr
 }
-func (repository *fleetServiceRepository) PublishAgentRevision(_ context.Context, revision registry.AgentRevision, fact fleet.AuditFact) error {
+func (repository *fleetServiceRepository) PublishAgentRevision(_ context.Context, revision registry.AgentRevision, fact fleet.AuditFact, admission ...func() error) error {
+	for _, admit := range admission {
+		if err := admit(); err != nil {
+			return err
+		}
+	}
 	repository.agent = revision
 	repository.revisionFact = fact
 	return nil

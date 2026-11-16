@@ -55,6 +55,17 @@ var qualifiedProviderTransport = map[string]string{
 }
 
 func qualifyProviderTransport(d core.RuntimeDescriptor) error {
+	if d.Version == "0.23.0" {
+		var records []installedCodexRecord
+		if json.Unmarshal(installedCodexRecordJSON, &records) == nil {
+			for _, record := range records {
+				if record.Accepted && validateInstalledCodexRecord(d.Installation, d.Version, record) == nil {
+					return nil
+				}
+			}
+		}
+		return ErrProviderAuthRuntimeUnqualified
+	}
 	if d.Version != "0.21.3" || !filepath.IsAbs(d.Installation) || gatewayPython(d) == "" {
 		return ErrProviderAuthRuntimeUnqualified
 	}
@@ -158,6 +169,9 @@ func (a *Adapter) ResolveProviderAuthentication(ctx context.Context, h core.Herm
 		return ProviderAccessToken{}, ErrProviderAuthUnauthorized
 	}
 	if h.ProviderAuthentication == nil || core.ValidateProviderAuthentication(h, nil, nil) != nil {
+		return ProviderAccessToken{}, ErrProviderAuthUnauthorized
+	}
+	if h.ProviderAuthentication.Mode != core.ControllerCodexAccessTokenV1 {
 		return ProviderAccessToken{}, ErrProviderAuthUnauthorized
 	}
 	if a == nil || a.providerAuthentication == nil {

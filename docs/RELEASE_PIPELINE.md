@@ -49,8 +49,8 @@ and `metrics-40888280401.json` are in the parent's `issue404-evidence` directory
 This supersedes the earlier 40884797403 packing estimates; the fixture-only
 baseline **40882148345** remains 57 PASS, 209.13 runner-minutes and 999s peak.
 
-The mapping below is specifically **40888280401 -> this revision**. All other
-lanes/groups are unchanged. `cli` means `cmd/aegis` + `internal/console`, not the
+The historical mapping below records the **40888280401** packing repair; later
+adjustments are described separately. `cli` means `cmd/aegis` + `internal/console`, not the
 separate command/default or contribution partitions.
 
 | Mode / lane | 40888280401 groups | Revised groups |
@@ -77,7 +77,7 @@ consumed compile ~85s + restart 392.73s + final 111.75s, leaving no setup margin
 Moving final to manager-e projects ~550s (existing ~438.9s + final), while manager-b
 projects ~478s. These are planning sums, **not fresh hosted success**.
 
-All 25 groups remain exact-once in each mode, with the same seven normal and
+All 26 current groups remain exact-once in each mode, with the same seven normal and
 thirteen race lane names. The packing change above did not alter partitions,
 resource budgets or native unexpected-zero-exit guards.
 Compile/list reuse remains once per split package per lane. Compiler, inventory
@@ -94,6 +94,72 @@ Waits already-expired fixture processes before closing stores, then verifies
 `InspectSession` reports no surviving process.
 No authority TTL (300s), native check timeout (60s), cumulative budget, real context
 deadline, process-liveness gate or exact drift callback assertion is relaxed.
+
+### Native manager partition balancing
+
+`TestEngineeringProseHugeAssetsLocalTarget` remains in the dynamic `manager`
+group and existing `manager-a` lane with offline-dependency preparation. To avoid
+competing native fixture compilation inside the same two-core group, five complete
+roots move into existing groups in both normal and race modes:
+
+- `manager-contribution-final`: `TestManagerJoinedContributionCompletion`,
+  `TestContributionDeliveryControllerNativeLocal`,
+  `TestContributionDeliveryLocalNarrowJourney` and
+  `TestContributionManagerJoinedPublicResultHistoricalPolicy`.
+- `manager-contribution-readback`: `TestManagerTerminalContributionReadback`,
+  `TestEngineeringProseRepairLocalTarget` and `TestRetainedDeliveryNativeComposition`.
+
+All children/seeds remain selected. The dynamic remainder retains every other
+current/future default test. That partition balancing preserved workflow jobs,
+evidence names, group-to-lane assignments, dependency preflight, package/native
+deadlines and resource limits. Local supervised group PASS is not hosted
+whole-workflow PASS.
+
+### Normal manager whole-group packing
+
+Hosted run **43969794998** cancelled normal `manager-a` at its unchanged 600s job
+deadline during readback, after compile 41.289s and passing manager 153.167s,
+restart 127.838s and final 162.732s phases. Move only the existing whole restart
+group between the two existing normal lanes; race mappings and test partitions
+are unchanged:
+
+| Normal lane | Revised groups |
+| --- | --- |
+| manager-a | manager, manager-contribution-final, manager-contribution-readback |
+| manager-b | manager-contribution-repair, manager-contribution-disconnect, manager-contribution-resume, manager-contribution-joint, manager-contribution-cancel, manager-contribution-restart |
+
+The passing normal `manager-b` measured 121.316s + 72.636s + 73.750s + 58.145s +
+35.543s for its existing groups. Adding restart projects **489.228s** of execution,
+or **523.897s** with its measured 34.669s compile, leaving **76.103s** for inventory,
+setup and cleanup within 600s. Normal `manager-a` gains 127.838s of room. These are
+planning sums, not fresh hosted success. All groups/roots remain exact-once per
+mode; job names/counts, 480s manager process alarms, 600s normal job alarms,
+resource limits and offline-dependency preparation remain unchanged.
+
+### Race API whole-group packing
+
+The same hosted run **43969794998** also cancelled race `api-b` at its unchanged
+960s job deadline, just after api-b (423.410s), cli (92.241s) and remainder-b
+(328.890s) completed and the missing-host group started. This is an aggregate
+deadline, not a product-test failure or superseded-run cancellation. Move only
+two existing whole groups; the normal correction above remains unchanged:
+
+| Race lane | Revised groups | Measured-phase planning sum, before setup/cleanup |
+| --- | --- | --- |
+| api-b | api-b, remainder-b | 100.553s compile + 1.080s inventory + 423.410s + 328.890s = 853.933s of 960s |
+| cli-command | cli-command, cli-contribution-host | 82.361s compile + 1.064s inventory + 282.494s + historical approximately 164s host = approximately 529.919s of 600s |
+| support-a | remainder-a, cli-contribution-disconnect, cli | 84.593s compile + 1.064s inventory + 200.161s + 106.907s + 92.241s = 484.966s of 600s |
+
+The host estimate is the earlier run 42089450269 observation, not a newly measured
+passing host group. Keep its exact existing partition and run it **after defaults
+in a separate process** using cli-command's already compiled binary. It must not
+rejoin the defaults process and delay that process's early upgrade child behind
+the missing-host cleanup barrier. Neither destination nor the source had locked
+offline-dependency preparation; its existing implementation/manager-a routing is
+unchanged. All group definitions, mode inventories, selectors, test bodies,
+TestMain invocations, process alarms, lane counts and resource bounds remain
+unchanged. These sums are planning evidence, **not fresh hosted PASS**; complete
+exact-head hosted timing remains the acceptance gate.
 
 ## Release transaction
 

@@ -1,5 +1,22 @@
 # Aegis MVP Architecture
 
+Modern stdio launch and bounded native account parsing execute Hermes's complete installed-dependency argv. Credential-free activation validates the real PM generation before native custody; exact source/interpreter/dependency qualification and pre-start freshness remain separate from controller authority. Hermes retains its normal source-read lock and generation lease. Modern AttemptTurn writes only its bounded private lane config. See [the additive exact qualification](implementation/native-profile-installed-integration.md); legacy records and authority boundaries are unchanged.
+
+The imported-Agent `providers` follow-up composes existing ControllerCodex and
+exact Agent successor services through manager/CLI/API adapters. It adds no
+credential store, authority source, scheduler or daemon. Source validation runs
+before the Agent effect fence; connection/charter filesystem publication and
+successor transaction admission repeat fresh consent after staging. The fence
+also covers supported lifecycle and generic charter-successor mutations.
+[Contract and limits](implementation/native-profile-provider-connection.md).
+
+The additive `setup default` action derives its lane from the immutable approved
+charter and composes existing candidate/preview services. Its existing connection
+review records whether to prepare that default's exact successor after connect.
+There is no new onboarding persistence or approval authority. Typed results carry
+human-readable decisions and exact manager/owning-CLI continuations; the actual
+manager renderer consumes them. Approval still uses the original successor service.
+
 [Issue engineering](issue-derived-engineering.md) prepares ordinary prose through
 bounded clean-session role turns and seals exact context in existing contribution
 custody. Optional explicit templ generated-write policy derives only approved
@@ -381,9 +398,30 @@ flowchart TB
 
 The model proposes; it never authenticates, approves, or provisions. Design uses a disposable Hermes gateway process with explicit `context_engine` selection and verifies a zero-tool, empty-section `tools.show` response before prompting. It bounds requirements and accumulated proposal output to 1 MiB and accepts exactly one enveloped charter proposal. Aegis separately bounds import, then strictly decodes, validates, canonicalizes, digests, and persists it.
 
+During empty-tool design and `AttemptTurn` response waits, `tool.*` events for the
+selected session or with missing session identity are rejected before ordinary
+event filtering. Attempt denial exposes only `unexpected_tool_event`, never model
+output, and runs process/home/reader cleanup. Linux turn cleanup holds the leader
+waitable (WNOWAIT) while reusing the native group barrier and complete fresh census;
+only then does its sole Cmd.Wait reap the leader. A cooperative leader's exit is
+not group quiescence. Cleanup failure discards output and retains the home; readers
+are cancelled, their pipes closed and joins completed even on that failure path.
+Non-Linux disposable turns deny before launch. Explicit foreign-session events,
+non-tool progress/usage and authorized tool-bearing turns retain their behavior.
+This is post-event detection, not tool-effect prevention or runtime qualification;
+it cannot restore terminal SSE evidence already erased by Hermes normalization.
+
 The authenticated manager intercepts a closed set of low-ambiguity local-Hermes-profile intents before model dispatch. Closed, anchored ordinary-text forms also return deterministic Aegis-owned guidance for installing the official Hermes skill suite, the fact that Registry import does not copy profile skills/configuration/prompts/memories/plugins/credentials/model bindings, and immutable Agent-ID versus unsupported display-alias semantics. Those guidance routes perform no installation, rename, Registry mutation, or authority grant. One shared deterministic dispatcher also intercepts complete credential count, list, filtered-search, and exact-reference value-read requests in both in-process and supervised-gateway sessions, executes them through authenticated typed authority, and returns `aegis_authoritative`; supervised value output is sensitivity-typed on the authenticated local manager transport and never enters Hermes. Educational, quoted, negated, multiline, and incomplete follow-up text does not become an operation. The manager also intercepts generic and polite Agent-registration and credential-create imperatives: Agent requests receive deterministic `/agents` guidance, while a capable authenticated Linux terminal receives a metadata-only credential-intake handoff without mutation. The separate session-bound metadata review/approve/cancel and raw-value routes implement protected creation outside Hermes; unsupported clients retain unavailable guidance. Review freezes metadata, approval enables intake, and consumption precedes fresh principal admission and canonical creation. An uncertain persistence result requires metadata inspection, never automatic replay. See [Terminal Credentials](TERMINAL_CREDENTIALS.md). Its exact digest-bound expertise-v3 projection covers Registry, Loop, Graph, Queue, evidence, authority, and credential separation and participates in policy/certification identity without granting authority. The gateway resolves the configured principal's operating-system account, requires the gateway process UID to match, inspects only canonical `~/.hermes` and direct `profiles/<name>` directories without following symlinks, and returns typed `aegis_authoritative` sanitized descriptors. Model turns remain typed `model_untrusted`. Profile inventory is read-only provenance discovery. Default-profile import is a separate deterministic application transaction: proposal verifies the configured principal/process identity and an owner-safe, non-empty canonical `~/.hermes/config.yaml` no larger than 1 MiB; derives principal-stable Agent/fleet/source identities plus a metadata-bound revision digest without reading or hashing marker bytes; and writes nothing; exact-digest confirmation recomputes that evidence, immutably saves the canonical charter, registers one enabled Agent revision, and requires exact readback. Exact replay is idempotent and collisions deny. The transaction never copies or modifies the Hermes profile, selects authority, provisions or launches a runtime, issues a mandate, activates the Agent, or grants credential/model authority.
 
 After the built-in `aegis` Registry record is verified, fresh and resumed offline bootstrap reuses this same default-profile import transaction before manager activation. It first verifies any stable existing imported Agent without reopening mutable profile evidence; otherwise it offers a metadata-only candidate through separate default-decline review and exact-registration decisions. The CLI's direct local-process authentication route is admitted separately from the manager's Unix-peer route, and both retain the same configured UID/user, freshness, owner/type/mode/no-follow, deterministic proposal, exact digest, enabled initial lifecycle (Registry eligibility only), no-capability/no-policy, and full-readback invariants. Bootstrap adds no profile parser, copier, activation path, or ambient-authority bridge.
+
+The separate explicit `/agents import hermes default with-models` transaction
+uses the same application/Registry persistence path, but reads bounded configuration
+and commits reviewed default/fallback selections as configuration-only authority.
+Legacy import and bootstrap preparation remain metadata-only. Per-step/per-node
+selection uses the stored charter, never the live profile. Runtime resolvers deny
+`configured-provider.v1` before credential resolution. No new service or transport
+is introduced; see [model snapshot boundary](implementation/native-profile-provider-reuse.md).
 
 Provisioning currently supports only atomic creation of deterministic Aegis-owned mapping files. File modification, Hermes profile creation, MCP/plugin configuration, gateways, services, cron, and external network effects are explicitly classified and denied.
 
@@ -469,6 +507,8 @@ Terminal cancellation, expiry, authority revocation, retry exhaustion, denial, f
 The installed `--target` adapter selects an existing console origin, uses only its configured authenticated Unix API, and compares `/v1/config` identity before Agent reads or Loop validation/publication/readback. It never opens a local-store fallback, starts a service, activates a Loop or queues work. Template validation is structural, not execution verification. See [online publication](ONLINE_LOOP_PUBLICATION.md).
 
 ## Verified implementation dependency boundary
+
+Immutable tool-only bytes may seed fresh private native caches; they confer neither current authority nor a passing candidate result. Stored contribution parsing may reuse one bounded Store-owned successful decode only after rereading and comparing the complete current bytes. Independent typed deep copies prevent callers from mutating retained contract data. No current authority, control decision, expiry or revocation outcome is cached. Full fresh history-byte checks and existing execution deadlines remain. Native repository execution is still not a host sandbox.
 
 The native `internal/implementation` kernel depends on the Loop contract and an opaque custody port. Only `internal/persistence/fleet/badger` implements that port against the existing fleet-v1 writer. Orchestration connects independent native-check reloads to an evidence-owned callback DTO; `internal/evidence` imports neither Loop nor the executor. Terminal completion rechecks the immutable Loop contract, stored test evidence and current workspace, not an in-memory PASS. No second implementation database is opened.
 

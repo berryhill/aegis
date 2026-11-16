@@ -3,6 +3,7 @@ package slash
 import (
 	"errors"
 	"fmt"
+	"github.com/berryhill/aegis/internal/app"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -245,6 +246,12 @@ func validateGrammar(request Request) error {
 			return usage()
 		}
 	case "agents":
+		if len(args) >= 3 && args[0] == "providers" {
+			if _, err := app.NewAgentProviderSetupInput(args[2:]); err == nil {
+				return nil
+			}
+			return usage()
+		}
 		if len(args) == 1 && (args[0] == "readiness" || args[0] == "list") {
 			return nil
 		}
@@ -259,6 +266,12 @@ func validateGrammar(request Request) error {
 		}
 		if len(args) == 3 && args[0] == "import" && args[1] == "hermes" && args[2] == "default" {
 			return nil
+		}
+		if len(args) >= 4 && args[0] == "import" && args[1] == "hermes" && args[2] == "default" && args[3] == "with-models" {
+			if len(args) == 4 || (len(args) == 6 && args[4] == "confirm" && strings.HasPrefix(args[5], "sha256:")) {
+				return nil
+			}
+			return usage()
 		}
 		if len(args) == 5 && args[0] == "import" && args[1] == "hermes" && args[2] == "default" && args[3] == "confirm" && strings.HasPrefix(args[4], "sha256:") {
 			return nil

@@ -42,6 +42,12 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 	method, path := http.MethodGet, ""
 	var input any
 	switch operation {
+	case "agents providers":
+		proposal, err := app.NewAgentProviderSetupInput(args[1:])
+		if err != nil {
+			return usage(errors.New("use providers AGENT status|models|setup default [CREDENTIAL_ID]|candidates PROFILE_HOME|review PROFILE_HOME [CREDENTIAL_ID]|connect REVIEW_ID|promote PROVIDER MODEL|approve REVIEW_ID CHARTER_DIGEST"))
+		}
+		method, path, input = http.MethodPost, "/v1/agents/"+url.PathEscape(args[0])+"/providers", proposal
 	case "controller-codex probe":
 		var value app.ControllerCodexProbeInput
 		if err := decodeJSONFile(args[0], &value); err != nil {

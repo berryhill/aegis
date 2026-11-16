@@ -1,5 +1,22 @@
 # Security Policy
 
+Modern gateway argv is installation-bound and byte/identity-rechecked before spawn; the complete bootstrap remains intact. Bounded disposable-turn configuration is not a host sandbox, universal HTTP firewall or provider qualification. Installed PM dependency selection remains a separate gate: [modern launch boundary](docs/implementation/native-profile-modern-launch.md).
+
+Provider setup uses separate fresh Unix-peer source/account consent and exact
+charter-successor approval; registration never grants provider access. Only the
+explicit Codex lane is promoted, with zero Agent credential rights. The existing
+runtime qualification gate is unchanged. Connection and successor consent is
+rechecked at publication/commit boundaries after source validation and staging;
+supported Agent mutations are fenced against exact reviewed references. No
+cross-store rollback or wall-clock commit-completion guarantee is claimed.
+See [composition boundaries](docs/implementation/native-profile-provider-connection.md).
+
+Guided `setup default` is explicit source inspection, not automatic connection.
+One eligible grant may be previewed; multiple grants require an exact operator
+choice. Connect may prepare only the approved default's successor review; the
+separate canonical digest approval remains mandatory. Ordinary registration
+offers model-read consent without taking it. No identity upgrade or fallback.
+
 Issue engineering admits ordinary issue prose only as untrusted task data.
 Optional [deterministic templ generation](docs/issue-derived-engineering.md#large-assets-and-generated-templates)
 requires independently approved offline tool/dependency policy and explicit
@@ -129,6 +146,35 @@ Show and inference still deny until the latest commitment matches all current
 config bytes. Qualified-parser integration proof remains separate from config tests.
 See [the exact procedure](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
+## Approved model snapshots (explicit source candidate)
+
+`/agents import hermes default with-models` is separate consent to read one bounded
+owner-verified `config.yaml`, extracting only explicit provider/model strings from
+`model` and the fallback list. Exact digest confirmation creates an immutable
+configuration-only charter; `configured-provider.v1` cannot resolve credentials.
+The closed metadata set includes Codex and Antigravity even when their transports
+are unavailable. No credential scopes, accounts, endpoints, paths, plugins or
+native authentication are imported. Duplicate keys, aliases, unknown providers,
+unsafe model identifiers, unsafe files and unconsumed-preview drift deny with
+source-free diagnostics. Fingerprints cover sanitized selections and file-change
+metadata, not raw secret-bearing config bytes. Consumed replay and bootstrap use
+stored immutable facts without reopening the profile. Historical metadata-only
+approvals do not authorize this path. Same-UID/root races and process-memory
+inspection remain outside host isolation; this is not a general secret scanner.
+See [scope and connection seam](docs/implementation/native-profile-provider-reuse.md).
+
+## Approved session launch lanes
+
+Direct Loop Queue preparation may select only a provider/model already sealed
+in its exact mandate. Transport preparation uses that lane, while the persisted
+mandate and authority keep the full immutable envelope. Optional Session
+`launch_provider` / `launch_model` fields are observational, never grants. Each
+attempt repeats lane resolution, provider authentication and fresh admission.
+No profile settings, plugins, native credentials or consent are inherited by this
+change. The installed Antigravity plugin remains unqualified for Aegis; its
+post-event process termination is not pre-execution tool denial. See the
+[bounded source/synthetic evidence](docs/implementation/native-profile-provider-reuse.md).
+
 ## Interrupted operational authority
 
 The source-only explicit `authority recover-interrupted --quarantine-orphan-transport`
@@ -164,7 +210,7 @@ Guided successor setup is a credential-only design proposal, never runtime stanz
 
 The optional charter field `hermes.provider_authentication: {"mode":"controller-codex-access-token.v1"}` separates controller-owned inference transport from Agent credential authority. It accepts only an explicit Codex provider/model with zero Agent tools, toolsets, credential scopes, plugins, MCP servers or persistent/profile home. Historical omitted fields preserve canonical encoding; existing provider credential scopes are not reclassified or removed. An exact successor, authenticated approval, provisioning receipt and fresh session admission remain independent gates.
 
-The resolver uses only the explicitly configured `credentials.provider_auth` environment binding: `type: environment`, an operator-chosen `source_env`, and `target_env: AEGIS_CODEX_ACCESS_TOKEN`. The target is a binding discriminator, not an exported environment variable. The controller validates bounded access-token shape and expiry, materializes only disposable OAuth transport state, and supplies no refresh token, Agent credential tool or management grant. This access-only transport is qualified narrowly for Hermes 0.21.3 with the exact source fingerprints in the adapter; other versions or changed transport sources deny `doer_provider_auth_runtime_unqualified`. An offline synthetic-token test exercises the real pool loader and provider resolver without network access; it proves schema consumption, not provider authentication or entitlement. The token must remain outside the 120-second refresh margin throughout the approved session. Controller-authenticated processes repeat admission immediately before start and terminate on caller cancellation or the authority deadline. This is tool/model isolation, not a host-process sandbox: the trusted Hermes process necessarily handles the access token. Missing, invalid, expired or unauthorized bindings fail closed with fixed diagnostics. These controls are not a host sandbox or cryptographic JWT issuer verification. Independent security review and installed/live provider qualification remain required. No live binding, secret, charter, Agent, Loop or service was modified for this candidate.
+The resolver uses only the explicitly configured `credentials.provider_auth` environment binding: `type: environment`, an operator-chosen `source_env`, and `target_env: AEGIS_CODEX_ACCESS_TOKEN`. The target is a binding discriminator, not an exported environment variable. The controller validates bounded access-token shape and expiry, materializes only disposable OAuth transport state, and supplies no refresh token, Agent credential tool or management grant. This access-only transport requires either the retained exact Hermes 0.21.3 source record or the additive Hermes 0.23.0 installation-bound source/interpreter/dependency record; unknown versions or changed qualified bytes deny `doer_provider_auth_runtime_unqualified`. The additive record is described in [the installed integration report](docs/implementation/native-profile-installed-integration.md). An offline synthetic-token test exercises the real pool loader and provider resolver without network access; it proves schema consumption, not provider authentication or entitlement. The token must remain outside the 120-second refresh margin throughout the approved session. Controller-authenticated processes repeat admission immediately before start and terminate on caller cancellation or the authority deadline. This is tool/model isolation, not a host-process sandbox: the trusted Hermes process necessarily handles the access token. Missing, invalid, expired or unauthorized bindings fail closed with fixed diagnostics. These controls are not a host sandbox or cryptographic JWT issuer verification. Independent security review and installed/live provider qualification remain required. No live binding, secret, charter, Agent, Loop or service was modified for this candidate.
 
 `loops readiness FILE [--probe]`, `draft-save FILE`, `draft-show ID` and `draft-continue FILE` use strict typed CLI/API adapters and the configured authenticated owning-service Unix transport with `--target`. Readiness distinguishes `can_author` from `can_execute`; inspect before execution-intended publication, while intentional inactive registry-only publication remains possible. Plain inspection never invokes the helper; explicit probing is bounded to 10 seconds and does not judge task eligibility or create authority/work. Draft updates require exact version CAS; continuation requires the old exact Agent and an already-approved immediate successor charter, archives the old binding and retains the exact contract, lifetime, Loop revision and publication identity. An existing publication must match its canonical definition, validation, stable owner and historical publisher provenance; task execution reuses it rather than republishing under the successor. Frozen intent, accepted or unknown Graph/Queue outcomes and incompatible bindings deny continuation. None of these continuation operations publishes, approves, provisions, activates or executes. Fresh worker admission and exact host-write approval still apply. See the canonical Loop skill for request fields.
 
@@ -228,6 +274,23 @@ Include the affected revision, impact, prerequisites, a minimal reproduction, an
 A maintainer should acknowledge a private report, reproduce and classify it, coordinate a fix and regression test, prepare an advisory, and agree on disclosure timing with the reporter. Response-time commitments will be published only after maintainers establish a staffed reporting route.
 
 ## Current security boundaries
+
+Immutable tool-only bytes may seed fresh private native caches; they confer neither current authority nor a passing candidate result. Stored contribution parsing may reuse one bounded Store-owned successful decode only after rereading and comparing the complete current bytes. Independent typed deep copies prevent callers from mutating retained contract data. No current authority, control decision, expiry or revocation outcome is cached. Full fresh history-byte checks and existing execution deadlines remain. Native repository execution is still not a host sandbox.
+
+Empty-tool Hermes `AttemptTurn` and design turns reject observed `tool.*` events
+for the selected session or with missing session identity before normal event
+filtering. Attempt denial uses `unexpected_tool_event`, exposes no model output,
+and joins its reader. Linux turn cleanup retains the exact unreaped leader through
+TERM/KILL and fresh owned-group quiescence before the sole leader Wait and home
+removal. Unknown cleanup (including an uninterruptible task) returns failure,
+discards output and retains the home; non-Linux disposable turns deny before
+process start. Deliberate group/session escape is not covered. Explicit
+foreign-session events and authorized tool-bearing turns
+are not subjected to this zero-tool denial. This is post-event detection, not
+pre-effect prevention, a host sandbox or proof that native tools cannot execute;
+silent or suppressed events are not detected. It does not repair erased terminal
+SSE evidence or qualify a newer Hermes transport. See
+[the corrected diagnostic](docs/implementation/native-codex-gateway-boundary.md).
 
 Explicit Linux development reset has a separate missing-config orphan recovery path: see [Reset authority](docs/PATH_LAYOUT.md#reset-authority). It requires exact-profile scope, OS-operator approval, private owned socket/ancestors, kernel-unbound and connection-refused evidence, digest-bound identities, and fresh descriptor-anchored removal under the API startup lifecycle flock through absence readback. Kernel evidence uses UNIX diagnostic VFS device/inode identity, not bind-name strings; unavailable/incomplete diagnostics deny. Production authority is unchanged.
 

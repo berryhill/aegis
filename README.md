@@ -115,6 +115,25 @@ trust block or one later exact-contract addition to its existing allowlist;
 it never automatically repairs drift. See [the connection
 procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
+Direct Loop Queue preparation now uses a requested approved Hermes effect lane
+without requiring an unused default provider. The explicit manager import
+`/agents import hermes default with-models` additionally reviews and snapshots
+bounded configured provider/model selections. Legacy imports stay metadata-only;
+configuration is neither connection nor transport qualification. See
+[provider-reuse limits](docs/implementation/native-profile-provider-reuse.md).
+The file-free `/agents providers AGENT setup default` follow-up (also the owning-service CLI)
+guides independent native-account review and exact charter-successor approval,
+with actual account choices and generated exact next inputs. Ordinary registration
+offers explicit model-read consent; connecting prepares but never approves the
+configured default's successor. Antigravity stays visible and unavailable, without fallback.
+The advanced commands remain supported,
+including explicit migration of historical metadata-only registrations. Fresh
+consent is rechecked at publication boundaries after native validation; connection
+and charter-successor approval remain distinct and do not qualify execution.
+[Procedure and remaining gates](docs/implementation/native-profile-provider-connection.md).
+
+Modern bounded gateway turns and native credential parsing use Hermes's supported installation-bound dependency activation with complete argv and normal generation leases. The additive exact source/interpreter/dependency record is documented in [installed integration and remaining live gates](docs/implementation/native-profile-installed-integration.md); it is not a version-wide grant or live-account entitlement.
+
 ## Retained task execution (source candidate)
 
 For an owner-requested Doer create-and-execute operation, use the owning-service
@@ -218,7 +237,7 @@ The updater selects only the latest exact published stable GitHub release and fa
 ./scripts/build-source.sh ./aegis
 ```
 
-Go 1.26.10 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Executables built into the verified source checkout report `dev` and are mechanically bound to the ignored `<repository>/.aegis` profile beside `./aegis`, even when Go embeds the checkout's clean release tag as its module version. Tagged release archives and stable versioned `go install` binaries outside a worktree use the `production` profile at `~/.aegis`. Each profile has separate configuration, encrypted authority, deployment identifier, audit/checkpoint state, manager certification, and runtime state. Development refuses paths outside its verified repository profile, and destructive reset is restricted to each binary's own exact profile layout.
+Go 1.26.11 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Executables built into the verified source checkout report `dev` and are mechanically bound to the ignored `<repository>/.aegis` profile beside `./aegis`, even when Go embeds the checkout's clean release tag as its module version. Tagged release archives and stable versioned `go install` binaries outside a worktree use the `production` profile at `~/.aegis`. Each profile has separate configuration, encrypted authority, deployment identifier, audit/checkpoint state, manager certification, and runtime state. Development refuses paths outside its verified repository profile, and destructive reset is restricted to each binary's own exact profile layout.
 
 The source builder pins Git subprocesses to the verified checkout and checks Go's embedded revision, commit time, and dirty flag before publishing the binary. Use it for linked worktrees nested inside another Git repository: plain Go builds on toolchains that ignore `.git` files can stamp the enclosing repository. A truthful dirty development build is not clean release-candidate acceptance.
 
@@ -372,6 +391,11 @@ The optional Linux [session credential broker](docs/CREDENTIAL_BROKER.md) implem
 
 ## Runtime behavior and limits
 
+- Disposable `AttemptTurn`/design execution requires Linux owned-group custody.
+  Cleanup keeps the gateway leader unreaped through bounded group shutdown;
+  a cooperative leader cannot hide a TERM-resistant ordinary descendant.
+  Unverified cleanup returns failure without output and retains the home.
+  This is not containment of processes that deliberately escape the group.
 - Accepted Hermes minimum: stable Hermes Agent `>=0.18.0`, without an arbitrary upper cap; charter constraints are enforced. Version acceptance is not blanket compatibility qualification: retained live evidence names 0.18.2, and protocol/capability/authority checks still fail closed. See [runtime contract](specs/RUNTIME_AND_SESSIONS.md).
 - Design uses the real Hermes structured TUI gateway in safe mode with explicit `context_engine` selection and verifies an empty `tools.show` inventory before submitting a prompt; never `-z`/one-shot. `no_mcp` remains an Aegis authority spelling, not a Hermes TUI toolset pin.
 - Every operational session gets a new process and a unique disposable `HERMES_HOME`; manager sessions never reuse one another's home or inherit normal `~/.hermes`.

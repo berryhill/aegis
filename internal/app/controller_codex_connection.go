@@ -10,8 +10,21 @@ import (
 
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 )
+
+type controllerCodexMetadataSource interface {
+	InspectNativeCodexCandidates(context.Context, string, time.Time) (hermes.NativeCodexCandidates, error)
+	PreviewNativeCodexLogin(context.Context, string, time.Time, ...string) (hermes.NativeCodexMetadata, error)
+}
+
+func (s *Service) controllerCodexSource() controllerCodexMetadataSource {
+	if s.nativeCodexMetadata != nil {
+		return s.nativeCodexMetadata
+	}
+	return s.Hermes
+}
 
 type ControllerCodexCandidatesInput struct {
 	ProfileHome string `json:"profile_home"`
@@ -22,7 +35,7 @@ func (s *Service) InspectControllerCodexCandidatesAs(ctx context.Context, sub co
 	if s.nativeConnectionAdmission(sub, in.ProfileHome) != nil {
 		return hermes.NativeCodexCandidates{}, ErrDenied
 	}
-	return s.Hermes.InspectNativeCodexCandidates(ctx, in.ProfileHome, s.Now().UTC())
+	return s.controllerCodexSource().InspectNativeCodexCandidates(ctx, in.ProfileHome, s.Now().UTC())
 }
 
 type ControllerCodexPreviewInput struct {
@@ -43,11 +56,12 @@ type ControllerCodexConnection struct {
 	Status       string    `json:"status"`
 }
 type nativeConnectionReview struct {
-	Subject      core.Subject
-	Metadata     ControllerCodexConnection
-	Config       []byte
-	Previous     *config.ControllerCodexLogin
-	ConfigReview config.ControllerCodexConfigReview
+	Subject       core.Subject
+	Metadata      ControllerCodexConnection
+	Config        []byte
+	Previous      *config.ControllerCodexLogin
+	ConfigReview  config.ControllerCodexConfigReview
+	ExpectedAgent *reference.RevisionRef // composition pin also applies to direct apply
 }
 
 func connectionIdentity(s core.Subject) core.Subject {
@@ -76,6 +90,11 @@ func (s *Service) nativeConnectionAdmission(sub core.Subject, home string) error
 	}
 	u, e := s.Current()
 	if e != nil || u == nil || u.Uid != s.Config.Principal.UID || u.Username != s.Config.Principal.User || !nativeControllerSourceAllowed(home, u.HomeDir) {
+		return ErrDenied
+	}
+	// Current-user lookup may itself block; do not carry freshness across it.
+	now := s.Now()
+	if !now.Before(sub.ExpiresAt) || sub.AuthenticatedAt.IsZero() || sub.AuthenticatedAt.After(now) || !now.Before(sub.AuthenticatedAt.Add(s.Config.Principal.AuthTTL)) {
 		return ErrDenied
 	}
 	return nil
@@ -114,7 +133,7 @@ func (s *Service) PreviewControllerCodexAs(ctx context.Context, sub core.Subject
 	if cfg.Validate() != nil {
 		return ControllerCodexConnection{}, ErrDenied
 	}
-	metadata, e := s.Hermes.PreviewNativeCodexLogin(ctx, in.ProfileHome, s.Now().UTC(), in.CredentialID)
+	metadata, e := s.controllerCodexSource().PreviewNativeCodexLogin(ctx, in.ProfileHome, s.Now().UTC(), in.CredentialID)
 	if e != nil {
 		return ControllerCodexConnection{}, e
 	}
@@ -138,7 +157,7 @@ func (s *Service) PreviewControllerCodexAs(ctx context.Context, sub core.Subject
 		return ControllerCodexConnection{}, ErrDenied
 	}
 	out := ControllerCodexConnection{ProfileHome: in.ProfileHome, CredentialID: in.CredentialID, AccountID: metadata.AccountID, PrincipalID: sub.PrincipalID, ReviewID: hex.EncodeToString(entropy[:]), ExpiresAt: now.Add(5 * time.Minute), Status: "review"}
-	s.nativeReviews[out.ReviewID] = nativeConnectionReview{Subject: connectionIdentity(sub), Metadata: out, Config: snapshot, Previous: existing, ConfigReview: configReview}
+	s.nativeReviews[out.ReviewID] = nativeConnectionReview{Subject: cloneConnectionSubject(sub), Metadata: out, Config: snapshot, Previous: existing, ConfigReview: configReview}
 	return out, nil
 }
 
@@ -150,7 +169,7 @@ func (s *Service) ApplyControllerCodexAs(ctx context.Context, sub core.Subject, 
 		return ControllerCodexConnection{}, ErrDenied
 	}
 	delete(s.nativeReviews, in.ReviewID)
-	current, e := s.Hermes.PreviewNativeCodexLogin(ctx, r.Metadata.ProfileHome, s.Now().UTC(), r.Metadata.CredentialID)
+	current, e := s.controllerCodexSource().PreviewNativeCodexLogin(ctx, r.Metadata.ProfileHome, s.Now().UTC(), r.Metadata.CredentialID)
 	if e != nil {
 		return ControllerCodexConnection{}, e
 	}
@@ -158,12 +177,35 @@ func (s *Service) ApplyControllerCodexAs(ctx context.Context, sub core.Subject, 
 		return ControllerCodexConnection{}, ErrConflict
 	}
 	binding := config.ControllerCodexLogin{ProfileHome: r.Metadata.ProfileHome, CredentialID: r.Metadata.CredentialID, AccountID: current.AccountID, ApprovedBy: sub.PrincipalID}
+	s.agentRevisionMu.Lock()
+	defer s.agentRevisionMu.Unlock()
+	admit := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if r.ExpectedAgent != nil {
+			agent, err := s.GetFleetAgentAs(ctx, sub, r.ExpectedAgent.ID, 0)
+			if err != nil {
+				return err
+			}
+			if agentRevisionRef(agent.Revision) != *r.ExpectedAgent {
+				return ErrConflict
+			}
+		}
+		if s.nativeConnectionAdmission(sub, r.Metadata.ProfileHome) != nil || !s.Now().Before(r.Metadata.ExpiresAt) {
+			return ErrDenied
+		}
+		return ctx.Err()
+	}
+	if e = admit(); e != nil {
+		return ControllerCodexConnection{}, e
+	}
 	if r.ConfigReview.Additive && r.Previous != nil {
-		e = config.ReplaceControllerCodexReviewed(s.ConfigFile, r.Config, *r.Previous, binding, r.ConfigReview)
+		e = config.ReplaceControllerCodexReviewed(s.ConfigFile, r.Config, *r.Previous, binding, r.ConfigReview, admit)
 	} else if r.Previous != nil {
-		e = config.ReplaceControllerCodex(s.ConfigFile, r.Config, *r.Previous, binding)
+		e = config.ReplaceControllerCodex(s.ConfigFile, r.Config, *r.Previous, binding, admit)
 	} else {
-		e = config.ConnectControllerCodex(s.ConfigFile, r.Config, binding)
+		e = config.ConnectControllerCodex(s.ConfigFile, r.Config, binding, admit)
 	}
 	if e != nil {
 		return ControllerCodexConnection{}, ErrConflict

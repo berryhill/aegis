@@ -211,18 +211,18 @@ class ShardTests(unittest.TestCase):
         self.assertIsNotNone(re.fullmatch(defaults, target + 'Future'))
         self.assertIsNotNone(re.fullmatch(defaults, 'TestInstalledUpgradeFullCommand'))
         self.assertEqual([name for name in names if re.fullmatch(isolated, name)], [target])
-        self.assertIn(group, shard.bundle_groups('api-b', True))
+        self.assertNotIn(group, shard.bundle_groups('api-b', True))
         self.assertIn(group, shard.bundle_groups('cli', False))
-        self.assertNotIn(group, shard.bundle_groups('cli-command', True))
+        self.assertEqual(shard.bundle_groups('cli-command', True), ('cli-command', group))
 
     def test_manager_exact_once_current_future_and_missing_heavy(self):
         for count in (0, 1, 47, 48):
-            names = sorted(list(shard.MANAGER_TESTS.values()) + ['Example', 'FuzzFuture', 'TestContributionManagerApprovedNativeRepairFuture'] + [f'TestFuture{i}' for i in range(count)])
+            names = sorted(list(shard.manager_required_tests()) + ['Example', 'FuzzFuture', 'TestContributionManagerApprovedNativeRepairFuture'] + [f'TestFuture{i}' for i in range(count)])
             seen = []
             for group in ('manager', *shard.MANAGER_TESTS):
                 pattern = shard.test_pattern(names, group)
                 seen.extend(name for name in names if re.fullmatch(pattern, name))
-                for missing in shard.MANAGER_TESTS.values():
+                for missing in shard.manager_required_tests():
                     with self.assertRaises(ValueError):
                         shard.test_pattern([name for name in names if name != missing], group)
             self.assertEqual(Counter(seen), Counter(names))
@@ -234,18 +234,47 @@ class ShardTests(unittest.TestCase):
             'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
             'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
         }
-        names = sorted(list(shard.MANAGER_TESTS.values()) + [name + 'Future' for name in required.values()] + ['Example', 'FuzzFuture'])
+        names = sorted(list(shard.manager_required_tests()) + [name + 'Future' for name in required.values()] + ['Example', 'FuzzFuture'])
         remainder = shard.test_pattern(names, 'manager')
         for group, target in required.items():
             self.assertEqual(shard.MANAGER_TESTS[group], target)
             pattern = shard.test_pattern(names, group)
-            self.assertEqual([name for name in names if re.fullmatch(pattern, name)], [target])
+            self.assertEqual([name for name in names if re.fullmatch(pattern, name)], sorted(shard.manager_targets(group)))
             self.assertIsNone(re.fullmatch(remainder, target))
             self.assertIsNotNone(re.fullmatch(remainder, target + 'Future'))
 
+    def test_huge_assets_keeps_offline_lane_without_native_competitors(self):
+        expected = {
+            'manager-contribution-final': (
+                'TestContributionDeliveryControllerNativeLocal',
+                'TestContributionDeliveryLocalNarrowJourney',
+                'TestContributionManagerJoinedPublicResultHistoricalPolicy',
+            ),
+            'manager-contribution-readback': (
+                'TestEngineeringProseRepairLocalTarget',
+                'TestRetainedDeliveryNativeComposition',
+            ),
+        }
+        self.assertEqual(shard.MANAGER_COMPANION_TESTS, expected)
+        huge = 'TestEngineeringProseHugeAssetsLocalTarget'
+        names = sorted([*shard.manager_required_tests(), huge, huge + 'Future', 'Example', 'FuzzFuture'])
+        remainder = shard.test_pattern(names, 'manager')
+        self.assertIsNotNone(re.fullmatch(remainder, huge))
+        self.assertIsNotNone(re.fullmatch(remainder, huge + 'Future'))
+        for group, moved in expected.items():
+            pattern = shard.test_pattern(names, group)
+            for name in moved:
+                self.assertIsNone(re.fullmatch(remainder, name))
+                self.assertIsNotNone(re.fullmatch(pattern, name))
+                self.assertIsNone(re.fullmatch(pattern, name + 'Future'))
+                # Go splits -run/test paths at '/', so selecting the exact
+                # parent preserves all its children without a child filter.
+                self.assertIsNotNone(re.fullmatch(pattern, (name + '/nested_child').split('/')[0]))
+        self.assertEqual(shard.bundle_groups('manager-a', True), ('manager',))
+
     def test_implementation_exact_once_current_future_defaults_and_missing_target(self):
         for count in (0, 1, 47, 48):
-            names = sorted([shard.IMPLEMENTATION_TEST, shard.IMPLEMENTATION_TEST + 'Future',
+            names = sorted([*shard.IMPLEMENTATION_CONTRIBUTION_TESTS, shard.IMPLEMENTATION_TEST + 'Future',
                             'TestManagedNoApplyContinuation', 'Example', 'FuzzFuture'] +
                            [f'TestFuture{i}' for i in range(count)])
             seen = []
@@ -253,10 +282,11 @@ class ShardTests(unittest.TestCase):
                 pattern = shard.test_pattern(names, group)
                 selected = [name for name in names if re.fullmatch(pattern, name)]
                 if group == 'implementation-contribution':
-                    self.assertEqual(selected, [shard.IMPLEMENTATION_TEST])
+                    self.assertEqual(selected, sorted(shard.IMPLEMENTATION_CONTRIBUTION_TESTS))
                 seen.extend(selected)
-                with self.assertRaises(ValueError):
-                    shard.test_pattern([name for name in names if name != shard.IMPLEMENTATION_TEST], group)
+                for target in shard.IMPLEMENTATION_CONTRIBUTION_TESTS:
+                    with self.assertRaises(ValueError):
+                        shard.test_pattern([name for name in names if name != target], group)
             self.assertEqual(Counter(seen), Counter(names))
 
     def test_implementation_missing_inventory_never_executes_in_both_modes(self):
@@ -293,9 +323,11 @@ class ShardTests(unittest.TestCase):
                 partition = api or group in shard.PARTITIONS or group.startswith('manager') or group == 'cli-command' or group in shard.CLI_CONTRIBUTION_TESTS
                 package, target = shard.PARTITIONS.get(group, (shard.API, ''))
                 group_listing = listing if api else listing.replace(shard.API, package).replace('TestOne\n', target + '\nTestOne\n')
+                if group.startswith('implementation'):
+                    group_listing = self.all_listing(package)
                 if group.startswith('manager'):
                     package = shard.MANAGER
-                    group_listing = '\n'.join(list(shard.MANAGER_TESTS.values()) + ['TestFuture', 'Example']) + '\nok\t' + package + '\t0.001s\n'
+                    group_listing = '\n'.join(list(shard.manager_required_tests()) + ['TestFuture', 'Example']) + '\nok\t' + package + '\t0.001s\n'
                 if group == 'cli-command' or group in shard.CLI_CONTRIBUTION_TESTS:
                     package = shard.COMMAND
                     group_listing = self.all_listing(package)
@@ -319,11 +351,11 @@ class ShardTests(unittest.TestCase):
                         names = shard.test_inventory(group_listing, package)
                         selected = names[0 if group == 'api-a' else 1::2] if api else [name for name in names if (name == target) == group.endswith('-contribution')]
                         if group.startswith('manager'):
-                            selected = [shard.MANAGER_TESTS[group]] if group in shard.MANAGER_TESTS else [name for name in names if name not in shard.MANAGER_TESTS.values()]
+                            selected = list(shard.manager_targets(group)) if group in shard.MANAGER_TESTS else [name for name in names if name not in shard.manager_required_tests()]
                         if group == 'cli-command' or group in shard.CLI_CONTRIBUTION_TESTS:
                             selected = [shard.CLI_CONTRIBUTION_TESTS[group]] if group in shard.CLI_CONTRIBUTION_TESTS else [n for n in names if n not in shard.CLI_CONTRIBUTION_TESTS.values()]
                         if group.startswith('implementation'):
-                            selected = [name for name in names if (name == shard.IMPLEMENTATION_TEST) == (group == 'implementation-contribution')]
+                            selected = [name for name in names if (name in shard.IMPLEMENTATION_CONTRIBUTION_TESTS) == (group == 'implementation-contribution')]
                         self.assertEqual(inventory[-1], package)
                         for name in names:
                             self.assertEqual(bool(re.search(pattern, name)), name in selected)
@@ -332,12 +364,12 @@ class ShardTests(unittest.TestCase):
     def test_implementation_exact_once_and_missing_target(self):
         target = 'TestManagedContributionRepairAndCustody'
         for race in (False, True):
-            names = sorted([target, target + 'Future', 'TestFuture', 'Example', 'FuzzSeed'])
+            names = sorted([*shard.IMPLEMENTATION_CONTRIBUTION_TESTS, target + 'Future', 'TestFuture', 'Example', 'FuzzSeed'])
             seen = []
             for group in ('implementation', 'implementation-contribution'):
                 pattern = shard.test_pattern(names, group)
                 selected = [name for name in names if re.fullmatch(pattern, name)]
-                self.assertEqual(selected, [target] if group.endswith('-contribution') else [n for n in names if n != target])
+                self.assertEqual(selected, sorted(shard.IMPLEMENTATION_CONTRIBUTION_TESTS) if group.endswith('-contribution') else [n for n in names if n not in shard.IMPLEMENTATION_CONTRIBUTION_TESTS])
                 self.assertIsNone(re.search(pattern, target + 'Suffix'))
                 seen.extend(selected)
                 with self.assertRaises(ValueError):
@@ -349,9 +381,9 @@ class ShardTests(unittest.TestCase):
         if package == shard.ORCHESTRATION:
             names.append(shard.CONTRIBUTION_TEST)
         if package == shard.IMPLEMENTATION:
-            names.append(shard.IMPLEMENTATION_CONTRIBUTION_TEST)
+            names.extend(shard.IMPLEMENTATION_CONTRIBUTION_TESTS)
         if package == shard.MANAGER:
-            names.extend(shard.MANAGER_TESTS.values())
+            names.extend(shard.manager_required_tests())
         if package == shard.COMMAND:
             names.extend(shard.CLI_CONTRIBUTION_TESTS.values())
         return '\n'.join(names) + '\nok\t' + package + '\t0.001s\n'
@@ -392,7 +424,7 @@ class ShardTests(unittest.TestCase):
                     self.assertEqual(Counter(names), Counter(shard.test_inventory(self.all_listing(package), package)))
 
     def test_all_missing_partition_fails_before_any_execution(self):
-        for missing in (shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_CONTRIBUTION_TEST, *shard.MANAGER_TESTS.values(), *shard.CLI_CONTRIBUTION_TESTS.values()):
+        for missing in (shard.CONTRIBUTION_TEST, *shard.IMPLEMENTATION_CONTRIBUTION_TESTS, *shard.manager_required_tests(), *shard.CLI_CONTRIBUTION_TESTS.values()):
             def respond(command, **kwargs):
                 if command[:2] == ['go', 'list']:
                     return mock.Mock(stdout='\n'.join(self.packages()))
@@ -438,9 +470,9 @@ class ShardTests(unittest.TestCase):
 
     def test_parent_patterns_are_escaped_and_anchored(self):
         target = 'TestManagedContributionRepairAndCustody'
-        names = [target, 'TestLiteral.Dot', 'TestLiteral+Plus']
+        names = [*shard.IMPLEMENTATION_CONTRIBUTION_TESTS, 'TestLiteral.Dot', 'TestLiteral+Plus']
         pattern = shard.test_pattern(names, 'implementation')
-        for name in names[1:]:
+        for name in ('TestLiteral.Dot', 'TestLiteral+Plus'):
             self.assertIsNotNone(re.fullmatch(pattern, name))
             self.assertIsNone(re.search(pattern, 'prefix' + name))
             self.assertIsNone(re.search(pattern, name + 'suffix'))
@@ -466,7 +498,7 @@ class ShardTests(unittest.TestCase):
             },
             'race': {
                 'orchestration': ('orchestration', 'orchestration-contribution'),
-                'api-b': ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'),
+                'api-b': ('api-b', 'remainder-b'),
                 'manager-b': ('manager-contribution-restart',),
                 'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
             },
@@ -476,7 +508,7 @@ class ShardTests(unittest.TestCase):
                 self.assertEqual(shard.BUNDLES[mode][lane], groups)
         self.assertEqual(len(shard.GROUPS), 26)
         self.assertEqual(shard.BUNDLES['race']['cli-command'],
-                         ('cli-command',))
+                         ('cli-command', 'cli-contribution-host'))
         self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):
             with self.assertRaises(ValueError):
@@ -507,9 +539,9 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence'))
         self.assertEqual(shard.bundle_groups('api-b', True),
-                         ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'))
+                         ('api-b', 'remainder-b'))
         self.assertEqual(shard.bundle_groups('support-a', True),
-                         ('remainder-a', 'cli-contribution-disconnect'))
+                         ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
         self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
                          {'normal': 7, 'race': 13})
@@ -529,7 +561,7 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
-    def test_repacked_modes_preserve_exact_once_group_union_and_only_four_moves(self):
+    def test_repacked_modes_preserve_exact_once_union_six_race_moves_one_normal_move(self):
         # Freeze the pre-repack maps, accounting separately for the new exact
         # missing-host partition in api-b. No lane or unrelated group changes.
         before = {
@@ -558,7 +590,12 @@ class ShardTests(unittest.TestCase):
                 'support-b': ('update',),
             },
         }
-        self.assertEqual(shard.BUNDLES['normal'], before['normal'])
+        # Hosted 43969794998: move only the complete restart group from normal
+        # manager-a to manager-b; preserve every other group's order and owner.
+        expected_normal = dict(before['normal'])
+        expected_normal['manager-a'] = ('manager', 'manager-contribution-final', 'manager-contribution-readback')
+        expected_normal['manager-b'] = (*before['normal']['manager-b'], 'manager-contribution-restart')
+        self.assertEqual(shard.BUNDLES['normal'], expected_normal)
         for mode, lanes in before.items():
             self.assertEqual(set(shard.BUNDLES[mode]), set(lanes))
             old_union = Counter(group for groups in lanes.values() for group in groups)
@@ -574,14 +611,22 @@ class ShardTests(unittest.TestCase):
             'manager-contribution-cancel': ('manager-c', 'manager-d'),
             'cli-contribution-disconnect': ('cli', 'support-a'),
             'remainder-b': ('cli', 'api-b'),
+            'cli': ('api-b', 'support-a'),
+            'cli-contribution-host': ('api-b', 'cli-command'),
         })
         self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
+        # Both newly moved whole groups must remain present exactly once.
+        for group, destination in (('cli', 'support-a'), ('cli-contribution-host', 'cli-command')):
+            for invalid in (tuple(g for g in shard.BUNDLES['race'][destination] if g != group),
+                            (*shard.BUNDLES['race'][destination], group)):
+                with mock.patch.dict(shard.BUNDLES['race'], {destination: invalid}), self.assertRaises(ValueError):
+                    shard.bundle_groups(destination, True)
 
     def test_race_persistence_uses_existing_api_a_lane_budget(self):
         # Two hosted attempts exhausted support-a with both complete groups.
         # Reuse api-a's existing job budget; package alarms stay unchanged.
         self.assertEqual(shard.bundle_groups('support-a', True),
-                         ('remainder-a', 'cli-contribution-disconnect'))
+                         ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
@@ -687,6 +732,8 @@ func TestOnePrefix(t *testing.T) { ready(t) }
 func TestFuture(t *testing.T) { ready(t); if os.Getenv("AEGIS_FIXTURE_EXIT_ZERO") == "1" { os.Exit(0) } }
 func TestContributionQueueNativeRepairIntegration(t *testing.T) { ready(t); t.Run("handoff", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("repair", func(t *testing.T) { ready(t) }) }
+func TestManagedContributionProductiveDeliveryRepair(t *testing.T) { ready(t); t.Run("productive", func(t *testing.T) { ready(t) }) }
+func TestManagedContributionSameAgentSeparateSessions(t *testing.T) { ready(t); t.Run("same-agent", func(t *testing.T) { ready(t) }) }
 func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
 }
 func FuzzSeed(f *testing.F) { if !mainReady { f.Fatal("TestMain did not run") }; f.Add("seed"); f.Fuzz(func(t *testing.T, s string) { ready(t) }) }
@@ -701,7 +748,7 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                 subprocess.run(['go', 'test', *(['-race'] if race else []), '-c', '-ldflags=-s -w', '-o', str(binary), pkg], cwd=root, check=True)
                 native_listing = subprocess.run([str(binary), '-test.list=.', '-test.timeout=8m'], cwd=package, capture_output=True, text=True, check=True)
                 self.assertEqual(shard.default_inventory(native_listing.stdout.splitlines()), names)
-                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_CONTRIBUTION_TEST, 'Example', 'FuzzSeed'])
+                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, *shard.IMPLEMENTATION_CONTRIBUTION_TESTS, 'Example', 'FuzzSeed'])
                 for partitions in (('api-a', 'api-b'), ('orchestration', 'orchestration-contribution'), ('implementation', 'implementation-contribution')):
                     seen = []
                     for group in partitions:
@@ -712,7 +759,7 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                         result = subprocess.run([str(binary), '-test.v', '-test.count=1', '-test.timeout=8m', '-test.run=' + shard.test_pattern(names, group)], cwd=package, capture_output=True, text=True, check=True)
                         native_seen.extend(re.findall(r'^=== RUN\s+(\S+)', result.stdout, re.M))
                     self.assertEqual(Counter(native_seen), Counter(seen))
-                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair']))
+                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair', 'TestManagedContributionProductiveDeliveryRepair/productive', 'TestManagedContributionSameAgentSeparateSessions/same-agent']))
                 # Exercise the actual compact command planner, not a separately
                 # hand-written binary invocation. TestMain's os.Exit(m.Run())
                 # above must pass, but an unexpected test-body os.Exit(0) must not.

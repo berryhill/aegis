@@ -107,10 +107,14 @@ portable schema or runtime-capability attestation.
 
 The protected owning-service adapter explicitly supports charter import/validate/show,
 plan preview/show, approval request/approve/reject/show, provision, session
-preview/start/show/authority/list, Agent register/list/show/history/approve-charter,
+preview/start/show/authority/list, Agent register/list/show/history/providers/approve-charter,
 Loop retained task/readiness/setup/queue/publication/lifecycle/availability operations,
 Graph list/show/publish/submit and Queue preparations/list/result/show/process/bind-runtime.
 See the router allowlist and installed help for exact command spellings and inputs.
+`agents providers AGENT ACTION [VALUES...]` uses `POST /v1/agents/:agent/providers`
+through the owning service. Native-source connection consent and exact
+charter-successor approval remain separate fresh-principal decisions; neither
+connection nor approval proves provider execution qualification.
 `POST /v1/queue/:item/bind-runtime` is implemented and used by the online
 `queue bind-runtime FILE` adapter; it repeats controller-authority admission.
 This is explicit forwarding, not transparent forwarding of every direct-service
@@ -137,7 +141,7 @@ A release build runs `go run ./internal/skillbundle/cmd build . DIST VERSION SOU
 
 ## Hermes tap and direct install
 
-Aegis accepts stable Hermes Agent `>=0.18.0` without an arbitrary upper cap. Existing narrower approved charter constraints remain unchanged. General eligibility grants no authority and is distinct from controller-Codex access-only transport qualification, which requires Hermes 0.21.3 and the adapter's exact qualified transport-source fingerprints. The inspected Hermes skill-discovery contract uses immediate skill directories beneath a configured tap's `skills/` path; a later accepted version still needs exact-version skill/protocol qualification, not an assumption of compatibility. Against the published `berryhill/aegis` repository:
+Aegis accepts stable Hermes Agent `>=0.18.0` without an arbitrary upper cap. Existing narrower approved charter constraints remain unchanged. General eligibility grants no authority and is distinct from controller-Codex access-only transport qualification, which requires the retained exact Hermes 0.21.3 record or the additive Hermes 0.23.0 installation-bound source/interpreter/dependency record (see [the qualification boundary](implementation/native-profile-installed-integration.md)). The inspected Hermes skill-discovery contract uses immediate skill directories beneath a configured tap's `skills/` path; a later accepted version still needs exact-version skill/protocol qualification, not an assumption of compatibility. Against the published `berryhill/aegis` repository:
 
 1. `hermes skills tap add berryhill/aegis` records the tap in the selected `HERMES_HOME`.
 2. `hermes skills search aegis` shows the repository path and provenance.

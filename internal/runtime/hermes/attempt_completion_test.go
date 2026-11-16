@@ -2,7 +2,11 @@ package hermes
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -56,30 +60,53 @@ while read rest; do :; done
 	}
 }
 
-type completionRevocation struct{ calls int }
+type completionRevocation struct {
+	promptMarker string
+	denied       bool
+}
 
 func (a *completionRevocation) CheckRuntimeAdmission(ctx context.Context, launch execution.LaunchContract, at time.Time) (execution.AdmissionDecision, error) {
-	a.calls++
-	return (attemptAdmission{allowed: a.calls < 3}).CheckRuntimeAdmission(ctx, launch, at)
+	_, err := os.Stat(a.promptMarker)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return execution.AdmissionDecision{}, err
+	}
+	a.denied = err == nil
+	return (attemptAdmission{allowed: !a.denied}).CheckRuntimeAdmission(ctx, launch, at)
 }
 
 func TestAttemptCompletionRechecksAuthority(t *testing.T) {
-	adapter, root := attemptTestAdapter(t, `#!/bin/sh
-printf '%s\n' '{"method":"event","params":{"type":"gateway.ready"}}'
+	// Revoke only after the actual gateway received the prompt and started its
+	// response. Earlier launch-validation admissions must remain authorized.
+	marker := filepath.Join(t.TempDir(), "prompt-received")
+	adapter, root := attemptTestAdapter(t, fmt.Sprintf(`#!/bin/sh
+set -eu
+printf '%%s\n' '{"method":"event","params":{"type":"gateway.ready"}}'
 read tools
-printf '%s\n' '{"id":"aegis-tools","result":{"total":0,"sections":[]}}'
+printf '%%s\n' '{"id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
-printf '%s\n' '{"id":"create","result":{"session_id":"installed"}}'
-read prompt
-printf '%s\n' '{"method":"event","params":{"type":"message.start","session_id":"installed","payload":{}}}'
-printf '%s\n' '{"method":"event","params":{"type":"message.complete","session_id":"installed","payload":{"text":"hello","status":"complete"}}}'
+printf '%%s\n' '{"id":"create","result":{"session_id":"installed"}}'
+IFS= read -r prompt
+printf '%%s\n' '{"method":"event","params":{"type":"message.start","session_id":"installed","payload":{}}}'
+printf '%%s\n' "$prompt" > %q
+printf '%%s\n' '{"method":"event","params":{"type":"message.complete","session_id":"installed","payload":{"text":"hello","status":"complete"}}}'
 while read rest; do :; done
-`)
+`, marker))
 	request := validAttemptTurnRequest(root)
-	admission := &completionRevocation{}
+	admission := &completionRevocation{promptMarker: marker}
 	request.Admission = admission
 	result, err := adapter.AttemptTurn(context.Background(), request)
-	if err == nil || result.Attempt.State != execution.StateDenied || result.Output != "" || admission.calls != 3 {
-		t.Fatalf("result=%+v err=%v checks=%d", result, err, admission.calls)
+	if !errors.Is(err, ErrAttemptDenied) || result.Attempt.State != execution.StateDenied || result.Attempt.Reason != "authority_no_longer_effective" || result.Output != "" || !admission.denied {
+		t.Fatalf("result=%+v err=%v completion_denied=%v", result, err, admission.denied)
+	}
+	if result.Attempt.StartedAt == nil || result.Attempt.FinishedAt == nil || result.Attempt.RuntimeSessionID != "installed" {
+		t.Fatalf("denial was not a terminal started attempt: %+v", result.Attempt)
+	}
+	wire, err := os.ReadFile(marker)
+	var prompt struct {
+		ID     string `json:"id"`
+		Method string `json:"method"`
+	}
+	if err != nil || json.Unmarshal(wire, &prompt) != nil || prompt.ID != "prompt" || prompt.Method != "prompt.submit" {
+		t.Fatalf("gateway did not receive the actual prompt: %s err=%v", wire, err)
 	}
 }

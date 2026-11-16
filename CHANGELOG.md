@@ -1,10 +1,97 @@
 # Changelog
 
-Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
-
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
 
 ## Unreleased
+
+- Move only the complete race cli and cli-contribution-host groups out of api-b
+  into existing support-a and cli-command lanes after its hosted aggregate timeout.
+  Preserve the normal correction, separate missing-host process, every test,
+  dependency preparation, job count and all deadlines/resource limits.
+
+- Repack the complete manager restart test group from normal manager-a to normal
+  manager-b after a hosted job-packing timeout; preserve exact-once coverage,
+  race lanes, job counts, dependency preparation and all deadlines/resource limits.
+
+- Reduce contribution/native-check overhead without extending deadlines: authenticate
+  fresh complete stored bytes before reusing one bounded Store-local successful
+  decode, return independent typed deep copies, and retain fresh authority/control
+  and complete continuity-history checks. Seed fresh private caches only from
+  authenticated controller-populated pinned-tool images; never reuse candidate
+  compilation/test results or ambient caches. Preserve literal generation/checks,
+  source/output admission and all execution/resource limits.
+
+- Integrate supported installed-dependency module and bounded controller-code launches,
+  with credential-free activation before native authentication custody. Add exact
+  Hermes 0.23.0 source/interpreter/package/PM workspace/dependency qualification
+  records while preserving legacy 0.21.3 and separate diagnostic-probe gates.
+  Synthetic native acceptance is not live-provider entitlement or task completion.
+
+- Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
+
+- Raise the development, CI and release Go toolchain floor to 1.26.11 for
+  [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859), the `net/http`
+  HTTP/1 MaxBytesReader header race. Preserve the pinned vulnerability scanner
+  and security gates; no unrelated dependency upgrades or waivers.
+- Synchronize the published operation matrix and owning-service inventory for
+  `agents providers` and `POST /v1/agents/:agent/providers`, with Registry ownership,
+  actual source/test references and unchanged fail-closed coverage checks.
+
+- Guide imported-profile setup through real native-manager rendering and owning
+  CLI continuations: offer explicit model-read consent, preserve the configured
+  default, show exact source/account choices, and prepare (never approve) the
+  default-lane successor after connect. Exact next inputs retain Agent, review,
+  digest and CLI target. No new store, automatic grant or fallback; unsupported
+  Antigravity remains visible and native execution remains unqualified.
+
+- Repair modern launch validation before credential custody, close the stdout `io.Copy` budget bypass, and include declared activation inputs plus reviewed selection/lease sources in freshness checks. These are source-contract repairs, not installed PM dependency qualification.
+
+- Integrate complete modern Hermes runtime-command discovery with bounded JSON, installation/interpreter identity and fresh pre-spawn checks; retain legacy launch and exact provider gates. Modern AttemptTurn writes a private lane-bound iteration/retry/memory/auxiliary policy without copying profiles or inventing model capacity. Native Python-3.14 developer-environment tests are not installed PM qualification. See [scope](docs/implementation/native-profile-modern-launch.md).
+
+- Repair disposable Hermes turn cleanup when a cooperative gateway leader leaves
+  a TERM-resistant ordinary descendant. Linux WNOWAIT custody, the existing
+  native group barrier/census, sole Wait and joined readers precede home removal.
+  Unknown cleanup retains the home and fails without output; non-Linux turns
+  deny before launch rather than claim unimplemented group custody. No sandbox,
+  escaped-session, installed-provider or native transport qualification claim.
+
+- Repair provider-connection and charter-successor consent at effect boundaries:
+  recheck after native validation and staging, fence supported Agent changes,
+  deny stale/cancelled publication, and retain single-use native reviews plus
+  exact source-free replay and legitimately admitted orphan recovery. Ordinary
+  and race tests include durable absence and full owning-service synthetic
+  integration; native qualification and installed execution are unchanged.
+
+- Reject observed `tool.*` events in empty-tool Hermes attempt/design turns
+  before event filtering; deny without model output and stop/reap the child,
+  join its reader and clean disposable state. Authorized tool-bearing turns and
+  unrelated-session/non-tool notifications are preserved. This is detection,
+  not pre-effect confinement or a fix for native truncated-SSE normalization;
+  Codex qualification records remain unchanged. See
+  [the corrected diagnostic](docs/implementation/native-codex-gateway-boundary.md).
+
+- Add file-free imported-Agent provider setup through manager, owning-service CLI
+  and protected API: separate exact native connection review from exact charter
+  successor approval, preserve untouched lanes and legacy registration, and offer
+  explicit metadata-only migration. Synthetic composition is not live transport
+  qualification; the existing Codex gate and Antigravity unavailability remain.
+  See `docs/implementation/native-profile-provider-connection.md`.
+
+- Add explicit manager `/agents import hermes default with-models` review and
+  exact-digest confirmation for immutable default/fallback model selections.
+  Historical metadata-only import/bootstrap approvals stay unchanged; profile
+  drift invalidates unconsumed previews and never rewrites registered authority.
+  Configuration-only Codex/Antigravity metadata grants no credentials or usable
+  authentication. Connection composition and transport qualification remain
+  separate; see [scope](docs/implementation/native-profile-provider-reuse.md).
+
+- Direct Loop Queue session preparation selects a Hermes effect lane from the
+  exact Loop rather than always authenticating the charter default. The adapter
+  re-resolves the approved lane without rewriting the mandate or authority, and
+  explicit launch provenance is retained in Session readback. Default session
+  starts and per-effect fresh admission remain unchanged. Native-profile provider
+  reuse, including Antigravity OAuth, is **not implemented** by this correction;
+  see [scope and qualification blockers](docs/implementation/native-profile-provider-reuse.md).
 
 - Fix signed-in Loop and terminal Queue Archive controls using the existing live
   dashboard action policy, without changing authentication lifetimes or checks.

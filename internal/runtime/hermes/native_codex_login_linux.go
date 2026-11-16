@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -36,15 +34,19 @@ func (a *Adapter) ResolveNativeCodexLogin(ctx context.Context, provider, profile
 	if err = a.qualifyProviderDescriptor(d); err != nil {
 		return ProviderAccessToken{}, err
 	}
-	return resolveNativeCodexLogin(ctx, d, provider, profileHome, accountID, now, credentialID...)
+	return resolveNativeCodexLoginChecked(ctx, d, provider, profileHome, accountID, now, func() error { return a.qualifyProviderDescriptor(d) }, credentialID...)
 }
 
 func resolveNativeCodexLogin(ctx context.Context, d core.RuntimeDescriptor, provider, profileHome, accountID string, now time.Time, credentialID ...string) (ProviderAccessToken, error) {
+	return resolveNativeCodexLoginChecked(ctx, d, provider, profileHome, accountID, now, nil, credentialID...)
+}
+
+func resolveNativeCodexLoginChecked(ctx context.Context, d core.RuntimeDescriptor, provider, profileHome, accountID string, now time.Time, qualify func() error, credentialID ...string) (ProviderAccessToken, error) {
 	selector, err := nativeCredentialSelector(credentialID)
 	if err != nil {
 		return ProviderAccessToken{}, err
 	}
-	output, err := runNativeCodexProtocol(ctx, d, profileHome, "resolve", selector)
+	output, err := runNativeCodexProtocolChecked(ctx, d, profileHome, "resolve", selector, qualify)
 	if err != nil {
 		return ProviderAccessToken{}, err
 	}
@@ -63,42 +65,58 @@ func resolveNativeCodexLogin(ctx context.Context, d core.RuntimeDescriptor, prov
 }
 
 func runNativeCodexProtocol(ctx context.Context, d core.RuntimeDescriptor, profileHome, mode, selector string) ([]byte, error) {
+	return runNativeCodexProtocolChecked(ctx, d, profileHome, mode, selector, nil)
+}
+
+func runNativeCodexProtocolChecked(ctx context.Context, d core.RuntimeDescriptor, profileHome, mode, selector string, qualify func() error) ([]byte, error) {
+	childCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	// This private home is credential-free; never query in the approved source.
+	scratch, err := os.MkdirTemp("", "aegis-native-command-")
+	if err != nil {
+		return nil, errGatewayCommand
+	}
+	removeHome := true
+	defer func() {
+		if removeHome {
+			_ = os.RemoveAll(scratch)
+		}
+	}()
+	launch, err := discoverRuntimeCommand(childCtx, d, scratch, nativeCodexLoginProtocol, []string{d.Installation, mode, selector})
+	if err != nil {
+		removeHome = !errors.Is(err, ErrAttemptCleanup)
+		return nil, err
+	}
+	if err = childCtx.Err(); err != nil {
+		return nil, err
+	}
+	if qualify != nil {
+		if err := qualify(); err != nil {
+			return nil, err
+		}
+	}
+	if err := childCtx.Err(); err != nil {
+		return nil, err
+	}
 	f, err := openNativeLogin(profileHome)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	childCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(childCtx, gatewayPython(d), "-I", "-B", "-c", nativeCodexLoginProtocol, d.Installation, mode, selector)
-	cmd.Env = []string{"PYTHONDONTWRITEBYTECODE=1", "HERMES_SKIP_VERSION_CHECK=1", "HERMES_ENABLE_PROJECT_PLUGINS=false", "HOME=/nonexistent", "HERMES_HOME=/nonexistent"}
-	cmd.Dir = d.Installation
-	cmd.ExtraFiles = []*os.File{f}
-	pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, ErrProviderAuthInvalid
-	}
-	cmd.Stderr = io.Discard
-	if cmd.Start() != nil {
-		return nil, ErrProviderAuthInvalid
-	}
 	limit := 32 << 10
 	if mode == "candidates" {
 		limit = 2 << 20
 	}
-	output, readErr := io.ReadAll(io.LimitReader(pipe, int64(limit+1)))
-	if len(output) > limit {
-		_ = cmd.Process.Kill()
+	output, status, err := runBoundedRuntime(childCtx, launch, "/nonexistent", scratch, limit, f)
+	if err != nil {
+		removeHome = !errors.Is(err, ErrAttemptCleanup)
+		return nil, err
 	}
-	waitErr := cmd.Wait()
-	if readErr != nil || waitErr != nil || len(output) > limit {
+	if status != 0 {
 		clear(output)
-		var exit *exec.ExitError
-		if errors.As(waitErr, &exit) {
-			stages := map[int]string{20: "import_failed", 21: "mode_denied", 22: "pool_invalid", 23: "source_suppressed", 24: "source_ambiguous", 25: "pool_unusable", 26: "protocol_failed", 27: "source_approval_required", 28: "credential_selection_invalid"}
-			if stage, ok := stages[exit.ExitCode()]; ok {
-				return nil, nativeProviderFailure{stage: stage}
-			}
+		stages := map[int]string{20: "import_failed", 21: "mode_denied", 22: "pool_invalid", 23: "source_suppressed", 24: "source_ambiguous", 25: "pool_unusable", 26: "protocol_failed", 27: "source_approval_required", 28: "credential_selection_invalid"}
+		if stage, ok := stages[status]; ok {
+			return nil, nativeProviderFailure{stage: stage}
 		}
 		return nil, ErrProviderAuthInvalid
 	}
@@ -118,7 +136,7 @@ func (a *Adapter) PreviewNativeCodexLogin(ctx context.Context, profileHome strin
 	if e = a.qualifyProviderDescriptor(d); e != nil {
 		return NativeCodexMetadata{}, e
 	}
-	p, e := resolveNativeCodexLogin(ctx, d, "codex", profileHome, "", now, credentialID...)
+	p, e := resolveNativeCodexLoginChecked(ctx, d, "codex", profileHome, "", now, func() error { return a.qualifyProviderDescriptor(d) }, credentialID...)
 	if e != nil {
 		return NativeCodexMetadata{}, e
 	}
@@ -136,11 +154,15 @@ func (a *Adapter) InspectNativeCodexCandidates(ctx context.Context, profileHome 
 	if e = a.qualifyProviderDescriptor(d); e != nil {
 		return NativeCodexCandidates{}, e
 	}
-	return inspectNativeCodexCandidates(ctx, d, profileHome, now)
+	return inspectNativeCodexCandidatesChecked(ctx, d, profileHome, now, func() error { return a.qualifyProviderDescriptor(d) })
 }
 
 func inspectNativeCodexCandidates(ctx context.Context, d core.RuntimeDescriptor, profileHome string, now time.Time) (NativeCodexCandidates, error) {
-	output, e := runNativeCodexProtocol(ctx, d, profileHome, "candidates", "")
+	return inspectNativeCodexCandidatesChecked(ctx, d, profileHome, now, nil)
+}
+
+func inspectNativeCodexCandidatesChecked(ctx context.Context, d core.RuntimeDescriptor, profileHome string, now time.Time, qualify func() error) (NativeCodexCandidates, error) {
+	output, e := runNativeCodexProtocolChecked(ctx, d, profileHome, "candidates", "", qualify)
 	if e != nil {
 		return NativeCodexCandidates{}, e
 	}

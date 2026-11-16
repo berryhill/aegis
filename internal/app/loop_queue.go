@@ -488,6 +488,18 @@ func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Sub
 	return result, err
 }
 
+// queuedLoopSessionLane bootstraps a session on a lane the Loop actually uses.
+// It is not effect admission: each step resolves and authenticates again. No
+// override retains historical charter-default behavior.
+func queuedLoopSessionLane(revision loop.LoopRevision) (string, string) {
+	for _, step := range revision.Steps {
+		if step.Kind == loop.StepAction && (step.Executable == nil || step.Executable.Backend == "hermes") {
+			return step.EffectiveLane()
+		}
+	}
+	return "", ""
+}
+
 func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string, work **orchestration.WorkRequest) (QueueLoopResult, error) {
 	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
 	readback := func(reason string) (QueueLoopResult, error) {
@@ -604,7 +616,8 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		if previewErr != nil {
 			return readback("session_mandate_preparation_failed")
 		}
-		if _, startErr := s.StartSessionAs(ctx, subject, mandate.ID); startErr != nil {
+		provider, model := queuedLoopSessionLane(lv.Revision)
+		if _, startErr := s.startSessionLaneAs(ctx, subject, mandate.ID, provider, model); startErr != nil {
 			return s.recordSessionPreparationFailure(ctx, subject, input, result, reservationID, startErr)
 		}
 		authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)

@@ -27,7 +27,7 @@ var AdapterVersion = buildinfo.Version
 const maximumVersionOutput = 64 << 10
 
 var versionRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$`)
-var versionOutputRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)(?:\+[1-9][0-9]*[.]g[0-9a-f]{7,40})?( \(([0-9]+[.]){2,3}[0-9]+\)(?: · (?:stable|canary)(?: · local [0-9a-f]{8,40})?| · upstream [0-9a-f]{8,40}(?: · local [0-9a-f]{8,40} \(\+[1-9][0-9]* carried commits?\))?)?)?$`)
+var versionOutputRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)(?:\+[1-9][0-9]*[.]g[0-9a-f]{7,40}(?:[.]dirty)?)?( \(([0-9]+[.]){2,3}[0-9]+\)(?: · (?:stable|canary)(?: · local [0-9a-f]{8,40})?| · upstream [0-9a-f]{8,40}(?: · local [0-9a-f]{8,40} \(\+[1-9][0-9]* carried commits?\))?)?)?$`)
 var requiredCapabilities = []string{"design-stdio", "process-isolation", "disposable-home", "lifecycle-termination", "toolset-selection", "safe-mode", "no-ambient-mcp", "no-ambient-plugins"}
 var supportedToolsets = map[string]bool{
 	"web": true, "browser": true, "terminal": true, "file": true,
@@ -212,12 +212,15 @@ func ResolveTools(requested []string) ([]string, error) {
 type providerLaunchGuard struct {
 	fresh  func(context.Context) error
 	cutoff time.Time
+	// Explicit credential-free lanes retain the same lifecycle/admission guard
+	// without qualifying an unused Codex transport.
+	skipProviderQualification bool
 }
 
 func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, model, provider string, credentials []Credential, bridge BrokerBridge, expectedRuntime *core.RuntimeDescriptor, guards ...providerLaunchGuard) (int, []string, error) {
-	controllerAuth := len(guards) == 1
+	guarded := len(guards) == 1
 	var cancel context.CancelFunc
-	if controllerAuth {
+	if guarded {
 		ctx, cancel = context.WithDeadline(ctx, guards[0].cutoff)
 	} else {
 		cancel = func() {}
@@ -243,7 +246,7 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	if expectedRuntime != nil && (desc.Runtime != expectedRuntime.Runtime || desc.Version != expectedRuntime.Version) {
 		return 0, nil, errors.New("runtime binding does not match authority context")
 	}
-	if controllerAuth {
+	if guarded && !guards[0].skipProviderQualification {
 		if err = a.qualifyProviderDescriptor(desc); err != nil {
 			return 0, nil, err
 		}
@@ -274,24 +277,25 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		args = append(args, "--provider", provider)
 	}
 	// Existing persistent sessions outlive the request that launches them.
-	// Only the explicitly approved controller-auth path is caller-bound.
+	// Controller-auth and explicit tool-free lane starts are caller-bound.
 	cmd := exec.Command(desc.Executable, args...)
-	if controllerAuth {
+	if guarded {
 		cmd = exec.CommandContext(ctx, desc.Executable, args...)
 	}
-	if bridge.Enabled || controllerAuth {
-		python := gatewayPython(desc)
-		if python == "" {
-			return 0, nil, errors.New("Hermes TUI gateway Python executable not found")
+	var gateway gatewayLaunch
+	if bridge.Enabled || guarded {
+		gateway, err = discoverGatewayCommand(ctx, desc, home)
+		if err != nil {
+			return 0, nil, err
 		}
-		cmd = exec.Command(python, "-m", "tui_gateway.entry")
-		if controllerAuth {
-			cmd = exec.CommandContext(ctx, python, "-m", "tui_gateway.entry")
+		cmd = exec.Command(gateway.argv[0], gateway.argv[1:]...)
+		if guarded {
+			cmd = exec.CommandContext(ctx, gateway.argv[0], gateway.argv[1:]...)
 		}
 	}
 	cmd.Dir = home
 	cmd.Env = minimalEnv(home, credentials)
-	if controllerAuth {
+	if guarded {
 		cmd.Env = append(providerAuthenticationEnv(cmd.Env), "HERMES_PYTHON_SRC_ROOT="+desc.Installation,
 			"HERMES_TUI_TOOLSETS="+pin, "HERMES_TUI_SKILLS=", "HERMES_DISABLE_AUTO_SKILLS=1",
 			"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1",
@@ -301,7 +305,7 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		cmd.Env = append(cmd.Env, "HERMES_PYTHON_SRC_ROOT="+desc.Installation, "HERMES_TUI_TOOLSETS=aegis", "HERMES_TUI_SKILLS=", "HERMES_DISABLE_AUTO_SKILLS=1")
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if controllerAuth {
+	if guarded {
 		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	}
 	cmd.WaitDelay = time.Second
@@ -322,15 +326,20 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	if err = ctx.Err(); err != nil {
 		return 0, nil, err
 	}
-	if controllerAuth {
+	if guarded {
 		if guards[0].fresh == nil || guards[0].fresh(ctx) != nil {
 			return 0, nil, ErrProviderAuthUnauthorized
 		}
-		if err = a.qualifyProviderDescriptor(desc); err != nil {
-			return 0, nil, err
+		if !guards[0].skipProviderQualification {
+			if err = a.qualifyProviderDescriptor(desc); err != nil {
+				return 0, nil, err
+			}
 		}
 	}
 	if err = ctx.Err(); err != nil {
+		return 0, nil, err
+	}
+	if err = gateway.fresh(); err != nil {
 		return 0, nil, err
 	}
 	if err = cmd.Start(); err != nil {
@@ -346,7 +355,7 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		waitErr := cmd.Wait()
 		cancel()
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if controllerAuth {
+		if guarded {
 			_ = os.RemoveAll(home)
 		}
 		a.mu.Lock()
@@ -363,12 +372,12 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 			<-ps.done // No retry-safe error until the exact launched process is reaped.
 		}
 	}()
-	if bridge.Enabled || controllerAuth {
+	if bridge.Enabled || guarded {
 		messages := make(chan gatewayMessage, 32)
 		readErrors := make(chan error, 1)
 		go readGateway(stdout, messages, readErrors)
 		verifyContext, cancel := context.WithTimeout(ctx, 20*time.Second)
-		if controllerAuth {
+		if guarded {
 			_, err = waitGateway(verifyContext, messages, readErrors, func(m gatewayMessage) bool {
 				return m.Method == "event" && m.Params.Type == "gateway.ready"
 			})
@@ -574,14 +583,39 @@ func (a *Adapter) RunDesignForeground(ctx context.Context, stateRoot string, ret
 var ErrLaunchCleanupUnconfirmed = errors.New("hermes_launch_cleanup_unconfirmed")
 
 func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, authority core.AuthorityContext, credentials []Credential, bridge BrokerBridge, fresh ...func(context.Context) error) (string, string, int, []string, error) {
+	return a.LaunchLane(ctx, stateRoot, m, authority, "", "", credentials, bridge, fresh...)
+}
+
+// LaunchLane selects only a provider/model pair already sealed in the mandate.
+// Selection changes transport preparation, never the immutable authority envelope.
+// Every AttemptTurn independently resolves its own lane and repeats admission.
+func (a *Adapter) LaunchLane(ctx context.Context, stateRoot string, m core.Mandate, authority core.AuthorityContext, provider, model string, credentials []Credential, bridge BrokerBridge, fresh ...func(context.Context) error) (string, string, int, []string, error) {
 	if err := core.ValidateAuthorityContext(authority, m); err != nil {
 		return "", "", 0, nil, fmt.Errorf("runtime launch denied: %w", err)
 	}
-	if authority.Authority.Hermes.LocalInference != nil && (len(fresh) != 1 || fresh[0] == nil || len(credentials) != 0 || bridge.Enabled) {
+	lane, err := m.Hermes.ResolveLane(provider, model)
+	if err != nil {
+		return "", "", 0, nil, err
+	}
+	h := m.Hermes.WithLane(lane)
+	explicitLane := provider != "" || model != ""
+	if explicitLane && (len(m.Tools) != 0 || len(h.Toolsets) != 0 || len(m.Scopes.Credentials) != 0 || len(credentials) != 0 || bridge.Enabled || (h.LocalInference == nil && (len(fresh) != 1 || fresh[0] == nil))) {
+		return "", "", 0, nil, errors.New("explicit session launch lane requires fresh credential-free and tool-free authority")
+	}
+	if err = core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials); err != nil {
+		return "", "", 0, nil, ErrProviderAuthUnauthorized
+	}
+	if err = core.ValidateLocalInferenceAuthority(m.Hermes, m.Tools, m.Scopes.Credentials); err != nil {
+		return "", "", 0, nil, err
+	}
+	if h.LocalInference != nil && (len(fresh) != 1 || fresh[0] == nil || len(credentials) != 0 || bridge.Enabled) {
 		return "", "", 0, nil, errors.New("local inference transport requires fresh authority and no credentials or bridge")
 	}
-	controllerAuth := m.Hermes.ProviderAuthentication != nil
+	controllerAuth := h.ProviderAuthentication != nil
 	if controllerAuth && (core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials) != nil || len(credentials) != 0 || bridge.Enabled || len(fresh) != 1 || fresh[0] == nil) {
+		return "", "", 0, nil, ErrProviderAuthUnauthorized
+	}
+	if explicitLane && fresh[0](ctx) != nil {
 		return "", "", 0, nil, ErrProviderAuthUnauthorized
 	}
 	id := store.ID("hermes-session")
@@ -601,7 +635,7 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 			cutoff = authority.ExpiresAt
 		}
 		prepareContext, cancel := context.WithDeadline(ctx, cutoff)
-		err = a.prepareProviderAuthentication(prepareContext, home, m.Hermes, fresh[0], cutoff)
+		err = a.prepareProviderAuthentication(prepareContext, home, h, fresh[0], cutoff)
 		cancel()
 		if err != nil {
 			if os.RemoveAll(home) != nil {
@@ -610,18 +644,18 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 			return "", "", 0, nil, err
 		}
 	}
-	if authority.Authority.Hermes.LocalInference != nil {
-		pid, err = a.launchLocal(ctx, id, home, authority, fresh[0])
+	if h.LocalInference != nil {
+		pid, err = a.launchLocal(ctx, id, home, authority, h, fresh[0])
 	} else {
 		var guards []providerLaunchGuard
-		if controllerAuth {
+		if controllerAuth || explicitLane {
 			cutoff := m.ExpiresAt
 			if authority.ExpiresAt.Before(cutoff) {
 				cutoff = authority.ExpiresAt
 			}
-			guards = []providerLaunchGuard{{fresh: fresh[0], cutoff: cutoff}}
+			guards = []providerLaunchGuard{{fresh: fresh[0], cutoff: cutoff, skipProviderQualification: !controllerAuth}}
 		}
-		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge, &m.Runtime, guards...)
+		pid, configuredToolsets, err = a.launch(ctx, id, home, h.Toolsets, h.Model, h.Provider, credentials, bridge, &m.Runtime, guards...)
 	}
 	if err != nil {
 		if os.RemoveAll(home) != nil {

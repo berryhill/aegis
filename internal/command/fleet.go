@@ -130,6 +130,9 @@ func fleetAgentsCmd(build builder) *cobra.Command {
 		return output(cmd, value)
 	}}
 	command.AddCommand(register, list, show, history, enable, disable, retire, approveCharter)
+	command.AddCommand(&cobra.Command{Use: "providers AGENT status|models|setup|candidates|review|connect|promote|approve [VALUES...]", Short: "Guided setup: setup default [CREDENTIAL_ID]; separate source consent and exact charter approval", Args: cobra.RangeArgs(2, 4), RunE: func(*cobra.Command, []string) error {
+		return errors.New("owning_service_required: use --config OWNER_CONFIG --target CONSOLE_URL; fresh Unix-peer human authority required; no local-store fallback")
+	}})
 	return command
 }
 

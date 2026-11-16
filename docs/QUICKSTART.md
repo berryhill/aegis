@@ -1,5 +1,9 @@
 # Five-Minute Quickstart
 
+Modern Hermes launch support is not blanket provider qualification. See [installation-bound runtime commands and exact source/dependency qualification](implementation/native-profile-installed-integration.md); the no-key workflow below is not replaced by a synthetic provider result.
+
+Ordinary explicit local-profile registration offers model-read consent; follow its generated confirmation and `setup default` continuation. The [file-free provider setup](implementation/native-profile-provider-connection.md) displays actual account choices and returns exact next inputs for connection and separate successor approval. It preserves the configured default, including unavailable Antigravity. This is not part of the no-key proof and does not qualify real execution.
+
 For separately authorized repository coding, see [bounded Doer CODING](BOUNDED_CODING.md).
 Its explicit source/test manifest, native-code trust and behavioral acceptance are
 not part of this no-key quickstart and are not granted by publication.
@@ -41,7 +45,7 @@ Protected principal prompts are operation-neutral. On Linux with terminal-backed
 ## Prerequisites
 
 - Linux
-- Go 1.26.10+
+- Go 1.26.11+
 - Stable Hermes Agent `>=0.18.0` on `PATH` (no arbitrary upper cap; exact-version protocol checks still apply, and acceptance does not guarantee future-release compatibility)
 - On Linux, a real terminal with terminal-backed stdin and diagnostic stderr for bounded no-echo protected prompts, or a compatible `pinentry` in the operator's desktop session
 

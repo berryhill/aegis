@@ -1,5 +1,7 @@
 # Native controller Codex connection candidate — launch review
 
+**Current qualification:** [installation-bound module/code integration](native-profile-installed-integration.md) supersedes the earlier installed-dependency blocker and adds exact reviewed records. The investigations below remain historical evidence, not current blanket denial or live-provider acceptance.
+
 ## Delivered contract
 
 The owning daemon now exposes typed `controller-codex candidates PROFILE_HOME`,

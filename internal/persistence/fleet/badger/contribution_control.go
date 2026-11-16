@@ -39,9 +39,9 @@ func decodeContributionControl(b []byte) (contribution.Control, error) {
 	}
 	return c, nil
 }
-func loadContributionControl(txn *badgerdb.Txn, id string) (contribution.Control, error) {
+func loadContributionControl(txn *badgerdb.Txn, id string, caches ...*contributionReplayCache) (contribution.Control, error) {
 	var out contribution.Control
-	contract, e := loadContribution(txn, id)
+	contract, e := loadContribution(txn, id, caches...)
 	if e != nil {
 		return out, e
 	}
@@ -90,16 +90,20 @@ func loadContributionControl(txn *badgerdb.Txn, id string) (contribution.Control
 	return out, nil
 }
 func (s *Store) GetContributionControl(ctx context.Context, id string) (out contribution.Control, err error) {
-	err = s.view(ctx, func(txn *badgerdb.Txn) error { var e error; out, e = loadContributionControl(txn, id); return e })
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		var e error
+		out, e = loadContributionControl(txn, id, &s.contributionReplay)
+		return e
+	})
 	return
 }
 func (s *Store) AppendContributionControl(ctx context.Context, c contribution.Control) error {
 	return s.update(ctx, func(txn *badgerdb.Txn) error {
-		contract, e := loadContribution(txn, c.QueueItemID)
+		contract, e := loadContribution(txn, c.QueueItemID, &s.contributionReplay)
 		if e != nil {
 			return e
 		}
-		prior, e := loadContributionControl(txn, c.QueueItemID)
+		prior, e := loadContributionControl(txn, c.QueueItemID, &s.contributionReplay)
 		if e != nil {
 			return e
 		}

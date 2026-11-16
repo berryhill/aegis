@@ -72,6 +72,10 @@ func ID(prefix string) string {
 	return prefix + "-" + hex.EncodeToString(b)
 }
 func writeAtomic(path string, v any) error {
+	return writeAtomicAdmitted(path, v, nil)
+}
+
+func writeAtomicAdmitted(path string, v any, admit func() error) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
@@ -98,6 +102,11 @@ func writeAtomic(path string, v any) error {
 	}
 	if err != nil {
 		return err
+	}
+	if admit != nil {
+		if err = admit(); err != nil {
+			return err
+		}
 	}
 	if err = os.Rename(n, path); err != nil {
 		return err
@@ -300,6 +309,13 @@ func read(path string, v any) error {
 	return nil
 }
 func (s *Store) SaveCharter(c core.CanonicalCharter) error {
+	return s.SaveCharterAdmitted(c, nil)
+}
+
+// SaveCharterAdmitted repeats caller admission under the store lock after file
+// staging/fsync, immediately before publication. The callback must not take the
+// store lock or perform another write. A denied stage is removed, not published.
+func (s *Store) SaveCharterAdmitted(c core.CanonicalCharter, admit func() error) error {
 	if err := core.VerifyCanonical(c); err != nil {
 		return fmt.Errorf("invalid canonical charter: %w", err)
 	}
@@ -315,7 +331,7 @@ func (s *Store) SaveCharter(c core.CanonicalCharter) error {
 		if len(matches) > 0 {
 			return errors.New("charter revision already exists with another digest")
 		}
-		return writeAtomic(p, c)
+		return writeAtomicAdmitted(p, c, admit)
 	})
 }
 func (s *Store) GetCharter(agent string, rev uint64) (core.CanonicalCharter, error) {

@@ -1,5 +1,39 @@
 # Aegis MVP Threat Model
 
+Modern runtime commands validate installation-bound PM activation before native credential custody. The additive compiled record binds exact source, interpreter/package identity, input locks, committed manifest, editable workspace source and dependency bytes; runtime children hold normal source-read/GC leases. Freshness checks are not an atomic host-filesystem seal or protection from hostile same-UID mutation. Ordinary same-account catalog metadata and rejected unavailable-tool correction are not automatically authority violations; the separate one-POST diagnostic remains closed for this runtime. See [the installed boundary](implementation/native-profile-installed-integration.md).
+
+Imported-Agent provider setup retains separate native source/account consent and
+exact charter-digest approval. Fresh human Unix-peer identity is required; a
+manager label, snapshot or connection is not executable authority. Unreviewed
+lanes and runtime qualification gates stay unchanged. Native validation and file
+staging cannot carry stale consent into publication: fresh checks guard binding,
+charter and successor publication, with supported Agent mutation serialization.
+Already-admitted charter-first orphans are distinct from denied writes; syscall
+completion and cross-store atomicity are not promised. [Composition, replay and
+partial-state boundaries](implementation/native-profile-provider-connection.md).
+
+Guided next-input generation is presentation, not authority. Model-read consent,
+explicit source inspection, source/account connection and exact-charter approval
+remain distinct. A single eligible grant is only previewed; ambiguous accounts
+cannot be selected by model inference or priority. Connect prepares the approved
+default's review without approving it; unsupported defaults never silently switch.
+
+## Explicit profile model snapshots
+
+The opt-in `with-models` import is distinct from the historical metadata-only
+import described below. It reads only the fixed owner-verified config marker,
+with a 1 MiB byte cap, finite YAML depth/node/lane budgets, duplicate-key/alias
+rejection and closed provider/model extraction. No raw config, endpoint, path,
+credential or parser diagnostic is persisted or projected. Source fingerprints
+bind file identity/change metadata and sanitized selections, never secret bytes.
+Unconsumed previews deny drift; consumed confirmations and bootstrap reload exact
+immutable charter/Agent facts. Configuration-only mode is denied by both provider
+resolvers before any credential source or transport qualification call. Connecting
+requires separate consent and an exact approved successor, not a workspace grant.
+These descriptor/stat checks do not defeat malicious same-UID/root races or
+provide memory zeroization or general DLP. See
+[scope and tests](implementation/native-profile-provider-reuse.md).
+
 Issue-derived engineering treats prose, selected source and builder proposals as
 untrusted data under independently approved prefixes, immutable checks and
 cumulative budgets. [Pinned templ generation](issue-derived-engineering.md#large-assets-and-generated-templates)
@@ -142,6 +176,8 @@ Native continuation must retain the password-authenticated browser requester and
 Local model digest rechecks detect drift but do not atomically pin the server model through inference. Host processes and disposable homes are not sandboxes. Hello claims bind exact UTF-8 output without newline before execution; only independently verified persisted artifacts may satisfy them.
 
 ## Verified implementation native-code boundary
+
+Immutable tool-only bytes may seed fresh private native caches; they confer neither current authority nor a passing candidate result. Stored contribution parsing may reuse one bounded Store-owned successful decode only after rereading and comparing the complete current bytes. Independent typed deep copies prevent callers from mutating retained contract data. No current authority, control decision, expiry or revocation outcome is cached. Full fresh history-byte checks and existing execution deadlines remain. Native repository execution is still not a host sandbox.
 
 The Linux implementation checker requires a controller-injected native lifecycle
 port: pinned leader, group-wide fork barrier, fresh quiescence observation and
@@ -327,6 +363,14 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 
 ## Primary abuse cases and controls
 
+Disposable Hermes attempt/design cleanup on Linux keeps the exact child unreaped
+through TERM, the existing native KILL/fork barrier and fresh group observation.
+The sole Cmd.Wait follows quiescence; adopted terminal descendants are reaped by
+pidfd, not recycled PID numbers. An observation or bounded cleanup failure retains
+the home and denies successful output. Non-Linux disposable turns deny before
+launch. This covers ordinary owned-group descendants, not deliberate setsid/group
+escape, hostile same-UID processes or a host sandbox.
+
 | Abuse case | Control | Residual risk |
 |---|---|---|
 | Prompt claims principal identity | OS identity/SO_PEERCRED only | Compromised OS account remains authoritative |
@@ -343,7 +387,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Changed or substituted plan reuses approval | Plan preview requires fresh configured-principal authentication and the exact local environment; approval stores one immutable plan ID and complete typed plan digest, and request, decision, apply, and recovery revalidate the charter/plan/runtime/environment binding before atomic single use | Host admin can rewrite plan and approval state together |
 | Team session receives principal key | Exact `provider:<provider>` scope and typed binding | Granted terminal/file tools can access ambient host resources |
 | Ambient provider or proxy authority reaches Hermes | Minimal environment and explicit selected-provider injection outside the manager; the manager receives only a fixed non-secret parser-compatibility string | A deliberately selected provider credential remains present for design/operational launches that require it; the public manager compatibility string is readable but grants no authority |
-| Tool surface exceeds charter | Toolset allowlist and exact launch arguments | No individual-tool post-launch attestation in Hermes 0.18.x |
+| Tool surface exceeds charter | Toolset allowlist and exact launch arguments; empty-tool attempt/design turns check the pre-prompt snapshot and reject observed selected/missing-session `tool.*` events before filtering, returning no model output on denial and cleaning owned lifecycle resources | Event detection is not pre-effect prevention or individual-tool attestation; silent/suppressed events are undetectable. Explicit foreign sessions and authorized tool-bearing sessions are outside this denial. Native truncated-SSE normalization remains a separate unresolved qualification blocker |
 | Revoked/expired runtime continues | Supervisor, process start token, process-group termination | Crash recovery depends on persisted PID identity and OS state |
 | Runtime input, historical state, or model output widens authority or presents stale authority as current | One immutable per-session authority context is bound exactly to its canonical mandate, charter revision, runtime, and effective authority; each runtime effect requires a fresh authoritative admission decision for the exact context ID/digest; append-only revocation and half-open expiry deny stale use | Authority contexts persisted before a failed launch can remain as orphan evidence; they do not create a session or grant a running process authority, but transactional cleanup remains desirable |
 | Malformed, replayed, reordered, substituted, cross-context, expired, or ambiguous lifecycle intent changes authority | Closed activate/revoke/expire command vocabulary; authenticated actor and half-open acceptance window; exact sequence/previous-digest preconditions; one-to-one command/fact identity; strict versioned codecs; controller-authored immutable facts; complete digest-linked replay; one Badger transaction for command, fact, receipt, projection, and outbox; exact-retry deduplication and conflicting-digest denial | Command processing is currently an internal repository boundary rather than a wired CLI/API workflow; same-account/root replacement remains outside the application boundary |

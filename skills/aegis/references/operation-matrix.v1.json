@@ -7,7 +7,7 @@
       "charter import", "charter validate", "charter show",
       "plan preview", "plan show", "approval request", "approval approve", "approval reject", "approval show", "aegis provision",
       "session preview", "session start", "session show", "session authority", "session list",
-      "agents register", "agents approve-charter", "agents list", "agents show", "agents history", "agents enable", "agents disable", "agents retire",
+      "agents register", "agents providers", "agents approve-charter", "agents list", "agents show", "agents history", "agents enable", "agents disable", "agents retire",
       "loops readiness", "loops task-execute", "loops task-save", "loops draft-save", "loops task-show", "loops draft-show",
       "loops setup-protected", "loops setup-browser", "loops setup-review", "loops setup-decide", "loops task-continue", "loops draft-continue",
       "loops queue", "loops list", "loops inventory", "loops availability", "loops archive", "loops restore", "loops show", "loops publish", "loops validate", "loops activate", "loops retire",
@@ -309,11 +309,13 @@
     {
       "skill": "aegis-agent-registry",
       "classification": "shipped",
-      "authority": "Authenticated principal registration preserves immutable fleet, charter, runtime and stable owner provenance; exact revision lifecycle checks remain in product services. Registration is not runtime authority.",
+      "authority": "Authenticated principal registration preserves immutable fleet, charter, runtime and stable owner provenance; exact revision lifecycle checks remain in product services. Provider setup repeats fresh principal admission and keeps native-source connection consent separate from exact charter-successor approval. Registration, connection and approval are not runtime qualification or execution authority.",
       "sources": [
         "internal/command/fleet.go",
         "internal/command/fleet_online.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/api/controller_codex.go",
+        "internal/app/agent_provider_setup.go"
       ],
       "tests": [
         "internal/api/online_loop_installed_test.go",
@@ -321,11 +323,14 @@
         "internal/api/agent_console_detail_test.go",
         "internal/command/domain_surface_test.go",
         "internal/api/online_lifecycle_installed_test.go",
-        "internal/command/fleet_online_lifecycle_test.go"
+        "internal/command/fleet_online_lifecycle_test.go",
+        "internal/command/agent_provider_setup_test.go",
+        "internal/api/agent_provider_setup_test.go"
       ],
       "cli": [
         "aegis agents",
         "aegis agents register",
+        "aegis agents providers",
         "aegis agents list",
         "aegis agents show",
         "aegis agents history",
@@ -337,6 +342,7 @@
       "http": [
         "GET /v1/agents",
         "POST /v1/agents",
+        "POST /v1/agents/:agent/providers",
         "GET /v1/agents/:agent",
         "GET /v1/agents/:agent/revisions",
         "PUT /v1/agents/:agent/lifecycle",
@@ -737,7 +743,7 @@
       "skill": "aegis-operator-lifecycle-diagnostics",
       "operation": "Transparent daemon-online routing of direct-service CLI operations",
       "classification": "missing-adapter",
-      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent registration/readback/approve-charter/enable/disable/retire, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process/cancel/revoke/expired-lease retry reclaim. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding. Ordinary retry remains unavailable without durable runtime-stop acknowledgment; online expire/exhaust remain unsupported."
+      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent registration/readback/providers/approve-charter/enable/disable/retire, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process/cancel/revoke/expired-lease retry reclaim. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding. Ordinary retry remains unavailable without durable runtime-stop acknowledgment; online expire/exhaust remain unsupported."
     },
     {
       "skill": "aegis-evidence-disposition",

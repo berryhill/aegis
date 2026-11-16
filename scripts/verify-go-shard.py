@@ -24,6 +24,14 @@ ORCHESTRATION = ROOT + 'internal/orchestration'
 IMPLEMENTATION = ROOT + 'internal/implementation'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
 IMPLEMENTATION_CONTRIBUTION_TEST = 'TestManagedContributionRepairAndCustody'
+# Measured residual race cost after native-cache repair: these two complete
+# roots consumed 66.64s + 51.96s in the default partition's unchanged 480s alarm.
+# Rebalance existing partitions/lanes only; retain all defaults and evidence names.
+IMPLEMENTATION_CONTRIBUTION_TESTS = (
+    IMPLEMENTATION_CONTRIBUTION_TEST,
+    'TestManagedContributionProductiveDeliveryRepair',
+    'TestManagedContributionSameAgentSeparateSessions',
+)
 PARTITIONS = {
     'orchestration': (ORCHESTRATION, CONTRIBUTION_TEST),
     'orchestration-contribution': (ORCHESTRATION, CONTRIBUTION_TEST),
@@ -41,6 +49,32 @@ MANAGER_TESTS = {
     'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
     'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
 }
+# The complete huge-assets journey passes alone but its first cold pinned-tool
+# command exhausts the unchanged native deadline beside the other native roots
+# in manager (observed group failure at 475.557s). Keep it in manager-a, which
+# owns the offline dependency preflight. Move only its five native competitors
+# to existing native groups/lanes; do not add jobs or extend any alarm.
+MANAGER_COMPANION_TESTS = {
+    'manager-contribution-final': (
+        'TestContributionDeliveryControllerNativeLocal',
+        'TestContributionDeliveryLocalNarrowJourney',
+        'TestContributionManagerJoinedPublicResultHistoricalPolicy',
+    ),
+    'manager-contribution-readback': (
+        'TestEngineeringProseRepairLocalTarget',
+        'TestRetainedDeliveryNativeComposition',
+    ),
+}
+
+
+def manager_targets(group):
+    return (MANAGER_TESTS[group], *MANAGER_COMPANION_TESTS.get(group, ()))
+
+
+def manager_required_tests():
+    return tuple(name for group in MANAGER_TESTS for name in manager_targets(group))
+
+
 COMMAND = ROOT + 'internal/command'
 CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld', 'cli-contribution-host': 'TestPublicRootContributionMissingHostPreflight'}
 GROUPS = {
@@ -74,8 +108,11 @@ BUNDLES = {
         'api-b': ('api-b', 'cli', 'persistence'),
         'implementation': ('implementation', 'implementation-contribution'),
         'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
-        'manager-a': ('manager', 'manager-contribution-restart', 'manager-contribution-final', 'manager-contribution-readback'),
-        'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel'),
+        # Hosted 43969794998 exhausted manager-a's 600s job during readback.
+        # Move the whole 127.838s restart group: manager-b projects 523.897s
+        # including its measured compile, before setup; keep all alarms intact.
+        'manager-a': ('manager', 'manager-contribution-final', 'manager-contribution-readback'),
+        'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel', 'manager-contribution-restart'),
         'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {
@@ -87,12 +124,10 @@ BUNDLES = {
         # remainder-b previously took 186s. Move that complete existing group
         # to api-b, preserving every partition, alarm, lane and resource bound.
         'api-a': ('api-a', 'persistence'),
-        # Run 42089450269: missing-host held native cleanup for ~164s before
-        # cli-command's upgrade child could start, exhausting its unchanged
-        # 8m process / 10m job budgets. api-b used 635s of its existing 960s.
-        # Move this exact native root through the existing partition mechanism;
-        # keep all tests, jobs, resource limits and cleanup barriers unchanged.
-        'api-b': ('api-b', 'cli', 'remainder-b', 'cli-contribution-host'),
+        # Hosted 43969794998 exhausted 960s after the first three groups,
+        # just as missing-host started. Move only cli and missing-host to
+        # measured spare lanes; API + remainder projects 853.933s before setup.
+        'api-b': ('api-b', 'remainder-b'),
         # Hosted 41218036692: compile 65s + defaults 444s left too little
         # of 600s for contribution. Keep that group in a separate lane.
         'implementation': ('implementation',),
@@ -105,11 +140,15 @@ BUNDLES = {
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         # Hosted 41220874653: cli-command defaults took 462s plus 106s
         # compilation; support-a completed in 314s and takes disconnect.
-        'cli-command': ('cli-command',),
+        # Keep missing-host OUT of the defaults process: its historical ~164s
+        # cleanup must not block that process's early upgrade child. Reuse the
+        # binary in a separate sequential process, projecting ~529.919s total.
+        'cli-command': ('cli-command', 'cli-contribution-host'),
         # After main's remainder move, hosted 41225087087 completed CLI in
         # 319s; its already compiled dependencies leave room for contribution.
         'cli': ('cli-contribution-root', 'cli-contribution-final', 'implementation-contribution'),
-        'support-a': ('remainder-a', 'cli-contribution-disconnect'),
+        # Hosted compile/list + existing groups + cli projects 484.966s of 600s.
+        'support-a': ('remainder-a', 'cli-contribution-disconnect', 'cli'),
         'support-b': ('update',),
     },
 }
@@ -177,20 +216,22 @@ def test_pattern(names, group):
     if group in ('api-a', 'api-b'):
         selected = names[0 if group == 'api-a' else 1::2]
     elif group in PARTITIONS:
-        _, target = PARTITIONS[group]
-        if target not in names:
+        package, target = PARTITIONS[group]
+        targets = IMPLEMENTATION_CONTRIBUTION_TESTS if package == IMPLEMENTATION else (target,)
+        if not set(targets) <= set(names):
             raise ValueError('missing contribution integration test')
-        selected = [name for name in names if (name == target) == group.endswith('-contribution')]
+        selected = [name for name in names if (name in targets) == group.endswith('-contribution')]
     elif group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
         if not set(CLI_CONTRIBUTION_TESTS.values()) <= set(names):
             raise ValueError('missing CLI contribution integration test')
         selected = ([CLI_CONTRIBUTION_TESTS[group]] if group in CLI_CONTRIBUTION_TESTS else
                     [name for name in names if name not in CLI_CONTRIBUTION_TESTS.values()])
     elif group == 'manager' or group in MANAGER_TESTS:
-        if not set(MANAGER_TESTS.values()) <= set(names):
-            raise ValueError('missing manager contribution integration test')
-        selected = ([MANAGER_TESTS[group]] if group in MANAGER_TESTS else
-                    [name for name in names if name not in MANAGER_TESTS.values()])
+        required = manager_required_tests()
+        if len(required) != len(set(required)) or not set(required) <= set(names):
+            raise ValueError('missing or duplicate manager contribution integration test')
+        selected = ([name for name in names if name in manager_targets(group)] if group in MANAGER_TESTS else
+                    [name for name in names if name not in required])
     else:
         raise ValueError('unknown test partition')
     if not selected:

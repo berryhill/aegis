@@ -56,7 +56,7 @@ func prepareLocal(ctx context.Context, command *exec.Cmd, h core.HermesConfig, a
 	}
 	return release, cleanup, nil
 }
-func (a *Adapter) launchLocal(ctx context.Context, id, home string, authority core.AuthorityContext, admit func(context.Context) error) (int, error) {
+func (a *Adapter) launchLocal(ctx context.Context, id, home string, authority core.AuthorityContext, h core.HermesConfig, admit func(context.Context) error) (int, error) {
 	if admit == nil {
 		return 0, errors.New("local inference transport requires fresh authority callback")
 	}
@@ -67,7 +67,6 @@ func (a *Adapter) launchLocal(ctx context.Context, id, home string, authority co
 	if d.Runtime != authority.Runtime.Runtime || d.Version != authority.Runtime.Version {
 		return 0, errors.New("runtime binding does not match authority context")
 	}
-	h := authority.Authority.Hermes
 	lifetime, lifetimeCancel := context.WithDeadline(ctx, authority.ExpiresAt)
 	successLifetime := false
 	defer func() {

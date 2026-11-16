@@ -186,7 +186,7 @@ func (s *Store) RegisterAgent(ctx context.Context, registration registry.AgentRe
 	return created, err
 }
 
-func (s *Store) PublishAgentRevision(ctx context.Context, revision registry.AgentRevision, fact fleet.AuditFact) error {
+func (s *Store) PublishAgentRevision(ctx context.Context, revision registry.AgentRevision, fact fleet.AuditFact, admission ...func() error) error {
 	if revision.AgentID == registry.BuiltInAegisAgentID {
 		return registry.ErrBuiltInImmutable
 	}
@@ -222,7 +222,15 @@ func (s *Store) PublishAgentRevision(ctx context.Context, revision registry.Agen
 		if err = txn.Set(key(familyAgentLatest, revision.AgentID), []byte(revisionPart(revision.Revision))); err != nil {
 			return err
 		}
-		return appendAudit(txn, fact)
+		if err = appendAudit(txn, fact); err != nil {
+			return err
+		}
+		for _, admit := range admission {
+			if err = admit(); err != nil {
+				return err
+			}
+		}
+		return ctx.Err()
 	})
 }
 

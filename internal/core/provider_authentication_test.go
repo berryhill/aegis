@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestConfiguredProviderMetadataGrantsNoCredentials(t *testing.T) {
+	for _, provider := range []string{"codex", "openai-codex", "antigravity-oauth"} {
+		h := HermesConfig{Provider: provider, Model: "gpt-5.4", ProviderAuthentication: &ProviderAuthentication{Mode: ConfiguredProviderV1}}
+		if err := ValidateProviderAuthentication(h, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		if ValidateProviderAuthentication(h, []string{"terminal"}, nil) == nil || ValidateProviderAuthentication(h, nil, []string{"provider:" + provider}) == nil {
+			t.Fatal("configured selection widened Agent authority")
+		}
+		h.Provider = "unknown"
+		if ValidateProviderAuthentication(h, nil, nil) == nil {
+			t.Fatal("unknown configured provider accepted")
+		}
+	}
+}
+
 func TestControllerProviderAuthenticationRequiresExplicitNewAuthority(t *testing.T) {
 	h := HermesConfig{Provider: "codex", Model: "gpt-6.1-sol", ProviderAuthentication: &ProviderAuthentication{Mode: ControllerCodexAccessTokenV1}}
 	if err := ValidateProviderAuthentication(h, nil, nil); err != nil {

@@ -29,9 +29,10 @@ type localHermesProfileEvidence struct {
 
 type LocalHermesAgentImportProposal struct {
 	AgentRegistrationProposal
-	SelectedProfile    string `json:"selected_profile"`
-	ProfileFingerprint string `json:"profile_fingerprint"`
-	Confirmation       string `json:"confirmation"`
+	SelectedProfile    string                    `json:"selected_profile"`
+	ProfileFingerprint string                    `json:"profile_fingerprint"`
+	Confirmation       string                    `json:"confirmation"`
+	ModelSnapshot      *LocalHermesModelSnapshot `json:"model_snapshot,omitempty"`
 }
 
 func localHermesDefaultImportIdentity(principalID string) (string, string) {
@@ -202,20 +203,33 @@ func requireSingleLocalHermesImportCandidate(candidates []registry.Candidate, di
 	return candidates[0], nil
 }
 
-func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.Subject, authentication localHermesImportAuthentication) (LocalHermesAgentImportProposal, core.CanonicalCharter, []byte, error) {
+func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.Subject, authentication localHermesImportAuthentication, withModels ...bool) (LocalHermesAgentImportProposal, core.CanonicalCharter, []byte, error) {
 	if err := s.requireLocalHermesImportPrincipal(subject, authentication); err != nil {
+		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
 	home, err := s.LocalHermesHome(s.Config.Principal.User, s.Config.Principal.UID)
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
-	evidence, err := inspectLocalHermesDefaultProfile(home, s.Config.Principal.UID)
+	models := len(withModels) == 1 && withModels[0]
+	var evidence localHermesProfileEvidence
+	var selection core.HermesConfig
+	if models {
+		evidence, selection, err = inspectLocalHermesModels(home, s.Config.Principal.UID)
+	} else {
+		evidence, err = inspectLocalHermesDefaultProfile(home, s.Config.Principal.UID)
+	}
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
 	agentID, fleetID := localHermesDefaultImportIdentity(subject.PrincipalID)
 	charter, err := canonicalLocalHermesImportCharter(agentID, subject.PrincipalID, evidence.Fingerprint)
+	if models {
+		charter, err = canonicalLocalHermesModelCharter(agentID, subject.PrincipalID, evidence.Fingerprint, selection)
+	}
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
@@ -240,6 +254,10 @@ func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.S
 	}
 	base := AgentRegistrationProposal{AgentID: agentID, CharterDigest: charter.Digest, RevisionDigest: revision.Digest, Revision: 1, FleetID: fleetID, SourceID: sourceID, Runtime: "hermes / hermes-agent / aegis-owned-ephemeral", Owner: subject.PrincipalID, Accountability: subject.PrincipalID, Capabilities: "None declared", Policies: "None declared", Lifecycle: string(revision.Lifecycle)}
 	proposal := LocalHermesAgentImportProposal{AgentRegistrationProposal: base, SelectedProfile: "profile/default", ProfileFingerprint: evidence.Fingerprint, Confirmation: "/agents import hermes default confirm " + revision.Digest}
+	if models {
+		proposal.ModelSnapshot = &LocalHermesModelSnapshot{DefaultProvider: selection.Provider, DefaultModel: selection.Model, Lanes: selection.AllowedLanes, Authentication: "not_connected", Qualification: "not_checked"}
+		proposal.Confirmation = "/agents import hermes default with-models confirm " + revision.Digest
+	}
 	return proposal, charter, fixtureData, nil
 }
 
@@ -248,7 +266,11 @@ func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.S
 // revision and the current revision must retain the canonical import charter,
 // provenance, runtime, ownership, and no-capability/no-policy contract.
 func (s *Service) VerifyLocalHermesAgentImportForBootstrapAs(ctx context.Context, subject core.Subject) (FleetAgent, error) {
-	if err := s.requireLocalHermesImportPrincipal(subject, localHermesImportBootstrapCLI); err != nil {
+	return s.verifyLocalHermesAgentImportAs(ctx, subject, localHermesImportBootstrapCLI)
+}
+
+func (s *Service) verifyLocalHermesAgentImportAs(ctx context.Context, subject core.Subject, authentication localHermesImportAuthentication) (FleetAgent, error) {
+	if err := s.requireLocalHermesImportPrincipal(subject, authentication); err != nil {
 		return FleetAgent{}, err
 	}
 	if err := s.requireFleetPrincipal(subject); err != nil {
@@ -264,10 +286,17 @@ func (s *Service) VerifyLocalHermesAgentImportForBootstrapAs(ctx context.Context
 		return FleetAgent{}, fmt.Errorf("verify stored local Hermes import charter: %w", ErrConflict)
 	}
 	fingerprint, ok := localHermesImportFingerprint(storedCharter.Charter.Name)
+	models := strings.HasPrefix(storedCharter.Charter.Name, localHermesModelImportPrefix)
+	if models {
+		fingerprint, ok = localHermesImportFingerprint(strings.Replace(storedCharter.Charter.Name, localHermesModelImportPrefix, "Imported local Hermes default profile (", 1))
+	}
 	if !ok {
 		return FleetAgent{}, ErrConflict
 	}
 	expectedCharter, err := canonicalLocalHermesImportCharter(agentID, subject.PrincipalID, fingerprint)
+	if models && len(storedCharter.Charter.Stanzas) == 1 {
+		expectedCharter, err = canonicalLocalHermesModelCharter(agentID, subject.PrincipalID, fingerprint, storedCharter.Charter.Stanzas[0].Hermes)
+	}
 	if err != nil || storedCharter.Digest != expectedCharter.Digest || !localHermesDefaultAgentRevisionMatches(initial, subject.PrincipalID, expectedCharter.Digest, true) {
 		return FleetAgent{}, ErrConflict
 	}
@@ -328,14 +357,35 @@ func (s *Service) ConfirmLocalHermesAgentImportForBootstrapAs(ctx context.Contex
 	return s.confirmLocalHermesAgentImportAs(ctx, subject, expectedDigest, localHermesImportBootstrapCLI)
 }
 
-func (s *Service) confirmLocalHermesAgentImportAs(ctx context.Context, subject core.Subject, expectedDigest string, authentication localHermesImportAuthentication) (FleetAgent, bool, error) {
+func (s *Service) confirmLocalHermesAgentImportAs(ctx context.Context, subject core.Subject, expectedDigest string, authentication localHermesImportAuthentication, withModels ...bool) (FleetAgent, bool, error) {
 	if err := s.requireLocalHermesImportPrincipal(subject, authentication); err != nil {
 		return FleetAgent{}, false, err
 	}
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return FleetAgent{}, false, err
 	}
-	proposal, charter, fixture, err := s.localHermesImportArtifacts(ctx, subject, authentication)
+	models := len(withModels) == 1 && withModels[0]
+	if models {
+		// A consumed confirmation replays its immutable initial revision, not the
+		// current profile or latest Agent. No mutable config is opened on replay.
+		initial, lookupErr := s.GetFleetAgentAs(ctx, subject, LocalHermesDefaultAgentID(subject.PrincipalID), 1)
+		if lookupErr == nil {
+			stored, loadErr := s.Store.GetCharter(initial.Revision.AgentID, 1)
+			if loadErr != nil || initial.Revision.Digest != expectedDigest || len(stored.Charter.Stanzas) != 1 || !strings.HasPrefix(stored.Charter.Name, localHermesModelImportPrefix) {
+				return FleetAgent{}, false, ErrConflict
+			}
+			fingerprint, ok := localHermesImportFingerprint(strings.Replace(stored.Charter.Name, localHermesModelImportPrefix, "Imported local Hermes default profile (", 1))
+			expected, canonicalErr := canonicalLocalHermesModelCharter(initial.Revision.AgentID, subject.PrincipalID, fingerprint, stored.Charter.Stanzas[0].Hermes)
+			if !ok || canonicalErr != nil || stored.Digest != expected.Digest || !localHermesDefaultAgentRevisionMatches(initial, subject.PrincipalID, expected.Digest, true) {
+				return FleetAgent{}, false, ErrConflict
+			}
+			return initial, false, nil
+		}
+		if !IsFleetNotFound(lookupErr) {
+			return FleetAgent{}, false, lookupErr
+		}
+	}
+	proposal, charter, fixture, err := s.localHermesImportArtifacts(ctx, subject, authentication, models)
 	if err != nil {
 		return FleetAgent{}, false, err
 	}
@@ -361,6 +411,9 @@ func (s *Service) confirmLocalHermesAgentImportAs(ctx context.Context, subject c
 	// recoverable partial state is this exact immutable charter with no Agent
 	// registration: a retry reuses it and attempts the same digest-bound Agent
 	// registration. Any conflicting charter or registration was denied above.
+	if err := ctx.Err(); err != nil {
+		return FleetAgent{}, false, err
+	}
 	storedCharter, loadErr := s.Store.GetCharter(charter.Charter.AgentID, charter.Charter.Revision)
 	if loadErr == nil {
 		if storedCharter.Digest != charter.Digest {

@@ -19,7 +19,7 @@ from scripts.verification_process import process_exited, run_owned
 class ResourceTests(unittest.TestCase):
     def test_go_toolchain_pins_match_security_floor(self):
         root = Path(__file__).resolve().parent.parent
-        version = '1.26.10'
+        version = '1.26.11'
         self.assertIn('go ' + version, (root / 'go.mod').read_text().splitlines())
         self.assertIn('export GOTOOLCHAIN := go' + version,
                       (root / 'Makefile').read_text().splitlines())

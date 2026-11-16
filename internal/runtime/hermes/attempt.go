@@ -30,6 +30,7 @@ var (
 	ErrAttemptDenied      = errors.New("Hermes attempt denied")
 	ErrAttemptInputBound  = errors.New("Hermes attempt input exceeds bound")
 	ErrAttemptOutputBound = errors.New("Hermes attempt output exceeds bound")
+	ErrAttemptCleanup     = errors.New("Hermes runtime cleanup unavailable; runtime home retained")
 )
 
 // AttemptBounds are required per-turn limits. A caller may select smaller
@@ -71,7 +72,7 @@ type AttemptTurnResult struct {
 // AttemptTurn executes exactly one prompt in a clean disposable Hermes gateway
 // session. Identity, stanza selection, mandates, and revocation facts remain
 // Aegis-owned inputs; Hermes only supplies untrusted response bytes.
-func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (AttemptTurnResult, error) {
+func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (result AttemptTurnResult, retErr error) {
 	if err := validateAttemptRequest(request); err != nil {
 		return AttemptTurnResult{}, err
 	}
@@ -113,10 +114,6 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			return AttemptTurnResult{}, err
 		}
 	}
-	python := gatewayPython(descriptor)
-	if python == "" {
-		return AttemptTurnResult{}, errors.New("Hermes TUI gateway Python executable not found")
-	}
 	tools, err := ResolveTools(authority.Authority.Tools)
 	if err != nil {
 		return AttemptTurnResult{}, fmt.Errorf("%w: %v", ErrAttemptDenied, err)
@@ -135,11 +132,40 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	if err != nil {
 		return AttemptTurnResult{}, err
 	}
-	defer os.RemoveAll(home) //nolint:errcheck
+	cleanupHome := true
+	defer func() {
+		if cleanupHome {
+			if err := os.RemoveAll(home); err != nil {
+				result.Output = ""
+				result.Diagnostic = ProviderFormatDiagnostic{}
+				if result.Attempt.StartedAt != nil {
+					result.Attempt.State = execution.StateFailed
+					result.Attempt.Reason = "runtime_cleanup_failed"
+				}
+				retErr = errors.Join(retErr, ErrAttemptCleanup)
+			}
+		}
+	}()
 	if !request.ProviderFormatProbe {
 		if err = seedAttemptStateDB(home); err != nil {
 			return AttemptTurnResult{}, err
 		}
+	}
+	if effectiveHermes.ProviderAuthentication != nil {
+		if err = a.qualifyProviderDescriptor(descriptor); err != nil {
+			return AttemptTurnResult{}, err
+		}
+	}
+	// Validate the clean-home launch contract before any credential custody.
+	// ResolveProviderAuthentication still repeats transport qualification, and
+	// launch freshness is checked again immediately before Start below.
+	launch, err := discoverGatewayCommand(turnContext, descriptor, home)
+	if err != nil {
+		cleanupHome = !errors.Is(err, ErrAttemptCleanup)
+		return AttemptTurnResult{}, err
+	}
+	if err = checkAdmission(turnContext, request, a.now()); err != nil {
+		return AttemptTurnResult{}, err
 	}
 	var providerToken ProviderAccessToken
 	if effectiveHermes.ProviderAuthentication != nil {
@@ -159,9 +185,15 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	}
 
 	toolsets := launchToolsets(tools)
-	command := exec.CommandContext(turnContext, python, "-m", "tui_gateway.entry")
+	if launch.modern {
+		if err = writeDisposableTurnConfig(home, effectiveHermes.Provider, effectiveHermes.Model); err != nil {
+			return AttemptTurnResult{}, err
+		}
+	}
+	command := exec.CommandContext(turnContext, launch.argv[0], launch.argv[1:]...)
 	if request.ProviderFormatProbe {
-		command = exec.CommandContext(turnContext, python, "-I", "-B", "-c", providerFormatGateway)
+		// The separate exact legacy diagnostic gate above remains unchanged.
+		command = exec.CommandContext(turnContext, gatewayPython(descriptor), "-I", "-B", "-c", providerFormatGateway)
 	}
 	command.Dir = home
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -240,24 +272,49 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	attempt.State = execution.StateStarted
 	attempt.StartedAt = &startedAt
 
+	if err = prepareAttemptProcess(); err != nil {
+		return a.finishAttempt(attempt, execution.StateFailed, "runtime_start_failed", err)
+	}
+	if err = launch.fresh(); err != nil {
+		return a.finishAttempt(attempt, execution.StateDenied, "runtime_command_changed", err)
+	}
 	if err = command.Start(); err != nil {
 		return a.finishAttempt(attempt, execution.StateFailed, "runtime_start_failed", err)
 	}
-	if release != nil {
-		if err = release(); err != nil {
-			_ = command.Process.Kill()
-			_ = command.Wait()
-			return a.finishAttempt(attempt, execution.StateDenied, "local_inference_release_denied", err)
-		}
-	}
-	go func() { _, _ = io.Copy(io.Discard, stderr) }()
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	defer stopAttemptProcess(command, stdin, done)
+	cleanupHome = false
+	stderrDone := make(chan struct{})
+	go func() { defer close(stderrDone); _, _ = io.Copy(io.Discard, stderr) }()
 
 	messages := make(chan gatewayMessage, 32)
 	readErrors := make(chan error, 1)
-	go readGateway(stdout, messages, readErrors)
+	stopWatching := watchAttemptProcess(command, readErrors)
+	readerContext, cancelReader := context.WithCancel(turnContext)
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		readGatewayContext(readerContext, stdout, messages, readErrors)
+	}()
+	defer func() {
+		cancelReader()
+		stopWatching()
+		cleanupErr := stopOwnedAttemptProcess(command, stdin)
+		// Explicit closure also joins readers if an uninterruptible process
+		// prevents Cmd.Wait from completing inside the cleanup budget.
+		_ = stdout.Close()
+		_ = stderr.Close()
+		<-readerDone
+		<-stderrDone
+		cleanupHome = cleanupErr == nil
+		if cleanupErr != nil {
+			result, _ = a.finishAttempt(attempt, execution.StateFailed, "runtime_cleanup_failed", cleanupErr)
+			retErr = errors.Join(retErr, cleanupErr)
+		}
+	}()
+	if release != nil {
+		if err = release(); err != nil {
+			return a.finishAttempt(attempt, execution.StateDenied, "local_inference_release_denied", err)
+		}
+	}
 	if _, err = waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
 		return message.Method == "event" && message.Params.Type == "gateway.ready"
 	}); err != nil {
@@ -306,10 +363,13 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	var output strings.Builder
 	messageStarted := false
 	for {
-		message, waitErr := waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
+		message, waitErr := waitTurnGateway(turnContext, messages, readErrors, sessionID, toolsets == emptyToolset, func(message gatewayMessage) bool {
 			return (request.ProviderFormatProbe && message.Method == "event" && message.Params.Type == "aegis.provider-format-error") || (message.Method == "event" && message.Params.SessionID == sessionID && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
 		})
 		if waitErr != nil {
+			if errors.Is(waitErr, errUnexpectedToolEvent) {
+				return a.finishAttempt(attempt, execution.StateDenied, "unexpected_tool_event", ErrAttemptDenied)
+			}
 			return a.finishContextError(attempt, authority.ExpiresAt, turnContext, waitErr)
 		}
 		if message.Error != nil {
@@ -492,6 +552,8 @@ func finishAttemptAt(attempt execution.Turn, state execution.State, reason strin
 	return AttemptTurnResult{Attempt: attempt}, cause
 }
 
+// Legacy startup-probe lifecycle; disposable turns use stopOwnedAttemptProcess.
+// The probe's reader/lifecycle contract is separate from the turn repair.
 func stopAttemptProcess(command *exec.Cmd, stdin io.Closer, done <-chan error) {
 	_ = stdin.Close()
 	if command.Process != nil {
