@@ -648,6 +648,8 @@ func (s *Service) ListFleetAgentRevisions(ctx context.Context, id string) ([]reg
 }
 
 func (s *Service) SetAgentLifecycleAs(ctx context.Context, subject core.Subject, id string, input SetAgentLifecycleInput) (FleetAgent, error) {
+	s.agentRevisionMu.Lock()
+	defer s.agentRevisionMu.Unlock()
 	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return FleetAgent{}, err
 	}

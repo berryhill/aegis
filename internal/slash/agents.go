@@ -17,6 +17,26 @@ const maximumAgentInputBytes = 1 << 20
 
 func (s *Service) agents(ctx context.Context, result Result, manager Context, request Request) (Result, error) {
 	switch request.Arguments[0] {
+	case "providers":
+		input, err := app.NewAgentProviderSetupInput(request.Arguments[2:])
+		if err != nil {
+			return agentFailure(result, err)
+		}
+		value, err := s.app.AgentProviderSetupAs(ctx, manager.Subject, request.Arguments[1], input)
+		if err != nil {
+			// Never promote the manager subject to local-os human authority.
+			result.State, result.Reason = "denied", "provider_setup_denied"
+			result.Warnings = []string{"Provider setup requires fresh human local-os/linux-so-peercred authority and exact review; use the owning-service agents providers CLI if this manager cannot carry it. No authority was synthesized."}
+			if code := app.ProviderAuthenticationFailureCode(err); code != "" {
+				result.Reason = code
+				result.Warnings = []string{"Native source/transport admission failed. Registration and connection are not executable qualification; preserve the exact source and existing gate."}
+			} else if errors.Is(err, app.ErrConflict) {
+				result.Reason = "provider_setup_review_conflict"
+				result.Warnings = []string{"Exact review or source state changed. Read providers status and Agent history before preparing another review; do not create a replacement identity."}
+			}
+			return result, nil
+		}
+		return completed(result, "agent_provider_setup", map[string]any{"setup": value, "message": value.Message}), nil
 	case "readiness", "list":
 		agents, err := s.app.ListFleetAgentsAs(ctx, manager.Subject)
 		if err != nil {
@@ -25,7 +45,7 @@ func (s *Service) agents(ctx context.Context, result Result, manager Context, re
 		if request.Arguments[0] == "readiness" {
 			return completed(result, "agent_registry_ready", map[string]any{
 				"ready": true, "agent_count": len(agents), "empty_registry_valid": true,
-				"operations": []string{"readiness", "list", "show", "import hermes default", "prepare", "register"},
+				"operations": []string{"readiness", "list", "show", "import hermes default", "import hermes default with-models", "providers", "prepare", "register"},
 			}), nil
 		}
 		return completed(result, "agent_registry_list", map[string]any{"agents": agents, "count": len(agents), "empty_registry_valid": true}), nil
@@ -44,18 +64,34 @@ func (s *Service) agents(ctx context.Context, result Result, manager Context, re
 		}
 		return completed(result, "agent_registry_exact_readback", map[string]any{"agent": agent}), nil
 	case "import":
+		if len(request.Arguments) >= 4 && request.Arguments[3] == "with-models" {
+			if len(request.Arguments) == 4 {
+				proposal, err := s.app.PrepareLocalHermesModelImportAs(ctx, manager.Subject)
+				if err != nil {
+					return agentFailure(result, err)
+				}
+				return completed(result, "local_hermes_agent_import_prepared", map[string]any{"proposal": proposal, "message": app.LocalHermesImportGuidance(proposal), "authorizing": false, "registered": false, "activation": false}), nil
+			}
+			agent, created, err := s.app.ConfirmLocalHermesModelImportAs(ctx, manager.Subject, request.Arguments[5])
+			if err != nil {
+				return agentFailure(result, err)
+			}
+			next, message := app.LocalHermesImportContinuation(agent, true)
+			return completed(result, "local_hermes_agent_import_confirmed", map[string]any{"agent": agent, "created": created, "message": message, "exact_readback_verified": true, "activation": false, "authentication": "not_connected", "qualification": "not_checked", "next": next}), nil
+		}
 		if len(request.Arguments) == 3 {
 			proposal, err := s.app.PrepareLocalHermesAgentImportAs(ctx, manager.Subject)
 			if err != nil {
 				return agentFailure(result, err)
 			}
-			return completed(result, "local_hermes_agent_import_prepared", map[string]any{"proposal": proposal, "authorizing": false, "registered": false, "activation": false}), nil
+			return completed(result, "local_hermes_agent_import_prepared", map[string]any{"proposal": proposal, "message": app.LocalHermesImportGuidance(proposal), "authorizing": false, "registered": false, "activation": false}), nil
 		}
 		agent, created, err := s.app.ConfirmLocalHermesAgentImportAs(ctx, manager.Subject, request.Arguments[4])
 		if err != nil {
 			return agentFailure(result, err)
 		}
-		return completed(result, "local_hermes_agent_import_confirmed", map[string]any{"agent": agent, "created": created, "exact_readback_verified": true, "activation": false}), nil
+		next, message := app.LocalHermesImportContinuation(agent, false)
+		return completed(result, "local_hermes_agent_import_confirmed", map[string]any{"agent": agent, "created": created, "message": message, "exact_readback_verified": true, "activation": false, "next": next}), nil
 	case "prepare", "register":
 		charter, err := readBoundedAgentInput(request.Arguments[1])
 		if err != nil {

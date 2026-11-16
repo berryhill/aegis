@@ -22,12 +22,12 @@ func runtimeFailureReason(payload map[string]any) string {
 // It never validates model text, remote authority or terminal success.
 func IsAttemptFailureReason(reason string) bool {
 	switch reason {
-	case "runtime_start_failed", "local_inference_release_denied", "tool_isolation_failed",
+	case "runtime_start_failed", "local_inference_release_denied", "tool_isolation_failed", "unexpected_tool_event",
 		"session_create_write_failed", "session_create_failed", "session_id_missing",
 		"prompt_write_failed", "prompt_rejected", "output_bound_exceeded",
 		"runtime_turn_failed", "runtime_turn_interrupted", "runtime_completion_invalid",
 		"authority_expired", "authority_no_longer_effective", "provider_auth_disclosure_denied",
-		"turn_cancelled_or_timed_out", "runtime_gateway_failed",
+		"turn_cancelled_or_timed_out", "runtime_gateway_failed", "runtime_cleanup_failed",
 		"runtime_auth_auth", "runtime_auth_auth_permanent",
 		"runtime_billing_billing", "runtime_billing_billing_unverified",
 		"runtime_disk_disk_full", "runtime_endpoint_timeout", "runtime_endpoint_ssl_cert_verification",

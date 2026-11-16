@@ -55,6 +55,13 @@ func (s *Service) validAgentCharterSuccessor(previous, next registry.AgentRevisi
 }
 
 func (s *Service) ApproveAgentCharterAs(ctx context.Context, subject core.Subject, agentID string, input ApproveAgentCharterInput) (FleetAgent, error) {
+	s.agentRevisionMu.Lock()
+	defer s.agentRevisionMu.Unlock()
+	return s.approveAgentCharterLocked(ctx, subject, agentID, input, nil)
+}
+
+// Caller holds agentRevisionMu; admission must not call repository operations.
+func (s *Service) approveAgentCharterLocked(ctx context.Context, subject core.Subject, agentID string, input ApproveAgentCharterInput, admission func() error) (FleetAgent, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return FleetAgent{}, err
 	}
@@ -85,7 +92,22 @@ func (s *Service) ApproveAgentCharterAs(ctx context.Context, subject core.Subjec
 	if err != nil {
 		return FleetAgent{}, err
 	}
-	err = s.FleetRepository.PublishAgentRevision(ctx, next, fleet.AuditFact{Event: core.AuditEvent{Type: "fleet.agent.charter.approved", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, AgentID: agentID, Outcome: "ok", Reason: "principal approved exact charter successor; no authority issued"}})
+	admit := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := s.requireFleetPrincipal(subject); err != nil {
+			return err
+		}
+		if admission != nil {
+			return admission()
+		}
+		return nil
+	}
+	if err = admit(); err != nil {
+		return FleetAgent{}, err
+	}
+	err = s.FleetRepository.PublishAgentRevision(ctx, next, fleet.AuditFact{Event: core.AuditEvent{Type: "fleet.agent.charter.approved", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, AgentID: agentID, Outcome: "ok", Reason: "principal approved exact charter successor; no authority issued"}}, admit)
 	if err != nil {
 		return FleetAgent{}, err
 	}

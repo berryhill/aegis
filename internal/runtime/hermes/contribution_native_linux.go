@@ -196,7 +196,7 @@ func terminateContributionGroup(ctx context.Context, group int) (bool, error) {
 	return terminateContributionGroupFrom(ctx, group, os.ReadDir, os.ReadFile, unix.PidfdOpen, unix.PidfdSendSignal, unix.Close)
 }
 
-func terminateContributionGroupFrom(ctx context.Context, group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error), open func(int, int) (int, error), signal func(int, unix.Signal, *unix.Siginfo, int) error, closeFD func(int) error) (bool, error) {
+func terminateContributionGroupFrom(ctx context.Context, group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error), open func(int, int) (int, error), signal func(int, unix.Signal, *unix.Siginfo, int) error, closeFD func(int) error, reapTerminal ...func(int) error) (bool, error) {
 	entries, err := readDir("/proc")
 	if err != nil {
 		return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusDirectory, err)
@@ -217,7 +217,17 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		if err != nil {
 			return false, execution.NativeQuiescenceFailure(execution.NativeQuiescenceCensusStat, err)
 		}
-		if pg != group || state == "Z" || state == "X" || state == "x" {
+		if pg != group {
+			continue
+		}
+		if state == "Z" || state == "X" || state == "x" {
+			// Optional turn cleanup reaps adopted descendants by pidfd. Native
+			// contribution callers retain their existing no-writer observation.
+			if pid != group && len(reapTerminal) != 0 {
+				if err := reapTerminal[0](pid); err != nil {
+					return false, err
+				}
+			}
 			continue
 		}
 		empty = false

@@ -96,6 +96,19 @@ Use `references/onboarding-fixtures.json` only to interpret representative non-s
 
 ## Denial, interruption, and recovery
 
+For the source candidate's registered default-profile continuation, the native
+Unix manager offers explicit `with-models` read consent during registration.
+Follow actual returned inputs: model snapshot and exact registration, `setup
+default` source inspection, exact account choice if ambiguous, `connect`, then
+separate exact charter-digest approval. Connect may prepare that default's review
+but never approve it. No intermediate files or inferred accounts are needed.
+Historical metadata-only registrations instead offer explicit `models` migration.
+Standalone local-manager identity is not Unix-peer identity: preserve its denial
+and use the supported owning-service CLI, never upgrade its issuer. Keep the
+configured default, including unavailable Antigravity; connected/promoted does
+not mean executable or live-qualified. This continuation does not alter bootstrap
+registration semantics or authorize automatic login inspection.
+
 Preserve fail-closed distinctions and exact reason codes. Zero or ambiguous identity, non-TTY protected action, stale authentication, locked custody, unsafe permissions, malformed or ambiguous layout, invalid operational authority, unsupported Hermes, unavailable Ollama, absent model, digest drift, missing/stale certification, gateway mismatch, and canceled work are not interchangeable.
 
 After interruption, rerun artifact inspection or `aegis init`; never repeat a mutation blindly. Aegis resumes only from securely validated artifacts. A process exit, partial file, printed digest, certification attempt, unit file, PID, open browser, or model response is not completion evidence. If a preview's source digest changed before apply, stop and regenerate the preview. If exact ownership or digest checks fail, preserve the artifact for manual review rather than deleting or overwriting it.

@@ -1,5 +1,7 @@
 # Contributing to Aegis
 
+For modern Hermes adapter work, retain the complete public runtime-command argv and distinguish PM-built developer proof from installed clean-home dependency activation. Use synthetic tokens and networkless native fixtures; do not promote the existing test qualifier seam into production. See [launch evidence and remaining gates](docs/implementation/native-profile-modern-launch.md).
+
 Before launching an engineering acceptance candidate, read the repository-owned
 [port-isolation workflow](.hermes/acceptance-port-isolation.md). Main 8448/8098 is
 reserved; dynamically claim 8450–8469 with isolated state and lifetime custody.
@@ -31,6 +33,7 @@ Source candidate: typed Doer candidate readiness and retained-draft save/read/CA
 - Go 1.26.10 or newer
 - Stable Hermes Agent `>=0.18.0` for real adapter checks; no arbitrary upper cap. Version admission is not release qualification: run exact-version protocol/capability checks and retain the version and evidence.
 - Linux for Unix `SO_PEERCRED` API tests
+- Linux for disposable Hermes attempt/design execution and owned-group cleanup tests
 - `govulncheck` for vulnerability scanning
 
 ## Contribution implementation and independent acceptance

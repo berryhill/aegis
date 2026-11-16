@@ -14,7 +14,7 @@ import (
 // Native source use requires an exact authenticated connection; no ambient profile discovery. No
 // binding/value is returned through product adapters; secrets stay process-local.
 func (s *Service) resolveControllerProviderAuthentication(ctx context.Context, h core.HermesConfig) (hermes.ProviderAccessToken, error) {
-	if ctx == nil || ctx.Err() != nil || core.ValidateProviderAuthentication(h, nil, nil) != nil || h.ProviderAuthentication == nil {
+	if ctx == nil || ctx.Err() != nil || core.ValidateProviderAuthentication(h, nil, nil) != nil || h.ProviderAuthentication == nil || h.ProviderAuthentication.Mode != core.ControllerCodexAccessTokenV1 {
 		return hermes.ProviderAccessToken{}, hermes.ErrProviderAuthUnauthorized
 	}
 	cfg, err := s.effectiveControllerCodexConfig()

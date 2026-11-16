@@ -160,6 +160,9 @@ func (a *Adapter) ResolveProviderAuthentication(ctx context.Context, h core.Herm
 	if h.ProviderAuthentication == nil || core.ValidateProviderAuthentication(h, nil, nil) != nil {
 		return ProviderAccessToken{}, ErrProviderAuthUnauthorized
 	}
+	if h.ProviderAuthentication.Mode != core.ControllerCodexAccessTokenV1 {
+		return ProviderAccessToken{}, ErrProviderAuthUnauthorized
+	}
 	if a == nil || a.providerAuthentication == nil {
 		return ProviderAccessToken{}, ErrProviderAuthAbsent
 	}

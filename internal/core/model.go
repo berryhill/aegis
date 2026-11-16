@@ -277,6 +277,10 @@ type Mandate struct {
 	ExpiresAt       time.Time         `json:"expires_at"`
 }
 type Session struct {
+	// Launch lane is observational transport provenance, never authority. Omission
+	// retains historical default-lane sessions; attempts record their own lane.
+	LaunchProvider      string     `json:"launch_provider,omitempty"`
+	LaunchModel         string     `json:"launch_model,omitempty"`
 	ID                  string     `json:"id"`
 	Mandate             Mandate    `json:"mandate"`
 	RuntimeSessionID    string     `json:"runtime_session_id"`

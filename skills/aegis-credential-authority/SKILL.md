@@ -42,6 +42,30 @@ First inspect `aegis secret --help`, `aegis serve --help`, and the installed con
 
 If an operation or option is absent from installed help, report it unavailable. Do not invent generic secret reads, arbitrary HTTP forwarding, caller-selected URLs, headers, methods, profiles, deployments, or broker destinations.
 
+## Imported-Agent composition (source candidate)
+
+When `agents providers --help` advertises guided setup, follow the returned exact
+`setup default` continuation. This explicitly requests source inspection for the
+approved default lane. A unique grant is previewed, never auto-connected; multiple
+grants require the operator to choose one of the exact returned entry commands.
+`connect` may prepare the default's exact successor review but never approves it.
+Source/account consent and exact-charter approval remain separate. Preserve
+`executable: false`, unqualified native runtime denials, and unavailable Antigravity
+defaults without fallback or billing conversion. Use returned `next_cli` with its
+owning configuration/target rather than repeated placeholder plumbing.
+
+For manual advanced control, use the file-free owning-service
+`agents providers AGENT candidates default`, then `review default CREDENTIAL_ID`,
+then `connect REVIEW_ID`, under the existing global config/target options. These
+are aliases through the exact native connection services, not new custody or
+Agent credential authority. Independently review `promote PROVIDER MODEL` and
+confirm only its generated `approve REVIEW_ID CHARTER_DIGEST`. The manager exposes
+the same steps under `/agents providers AGENT` only with the original fresh human
+Unix-peer subject; otherwise it reports missing authority, never upgrades identity.
+Use `status` after uncertain connection results. Replacement remains the separate
+explicit controller-codex workflow below. Never equate connection with executable
+qualification or promote Antigravity markers.
+
 ## Exact native Codex connection and replacement
 
 After explicit owner authorization for operational login selection, inspect `controller-codex --help` and use `--config OWNER_CONFIG --target CONSOLE_URL controller-codex candidates PROFILE_HOME` for non-secret opaque credential IDs and eligibility. Eligibility does not prove approved-model entitlement. Preview an exact ID with `controller-codex preview PROFILE_HOME --credential ID`; when explicitly replacing an existing connection and installed help advertises it, add `--replace`. Apply only its fresh single-use `review_id` with `controller-codex connect REVIEW_ID`, then read `controller-codex show`. Replacement revalidates the reviewed predecessor and configuration and retains append-only connection history; it does not edit native auth bytes, operator YAML, Agent authority or the model. Do not change model/provider or select another login without owner authorization. Preserve stale-review, expiry, source drift and conflict denials.

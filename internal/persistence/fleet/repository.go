@@ -90,7 +90,9 @@ type LoopAvailabilityRepository interface {
 // no generic put, update, delete, latest-substitution, or engine transaction API.
 type Repository interface {
 	RegisterAgent(context.Context, registry.AgentRegistration, registry.AgentRevision, AuditFact) (bool, error)
-	PublishAgentRevision(context.Context, registry.AgentRevision, AuditFact) error
+	// Admission callbacks run immediately before commit, must not reenter a store,
+	// and are never serialized. Omitted callbacks retain storage-only semantics.
+	PublishAgentRevision(context.Context, registry.AgentRevision, AuditFact, ...func() error) error
 	GetAgentRegistration(context.Context, string) (registry.AgentRegistration, error)
 	GetAgentRegistrationBySource(context.Context, registry.FleetSource) (registry.AgentRegistration, error)
 	GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error)

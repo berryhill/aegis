@@ -19,6 +19,27 @@ import (
 // trusted to remain empty: every zero-tool gateway must prove that before use.
 const emptyToolset = "context_engine"
 
+var errUnexpectedToolEvent = errors.New("Hermes tool isolation: unexpected tool event")
+
+// waitTurnGateway detects tool events on an empty-tool turn before ordinary
+// event filtering can discard them. Native tool callbacks carry params.session_id;
+// a missing ID on this private stream cannot establish an unrelated session.
+// Explicit foreign sessions retain the existing unrelated-event behavior.
+// This is detection, not prevention of a runtime tool's effects. In particular,
+// it must not apply to authorized tool-bearing (including broker) sessions.
+func waitTurnGateway(ctx context.Context, messages <-chan gatewayMessage, failures <-chan error, sessionID string, emptyTools bool, match func(gatewayMessage) bool) (gatewayMessage, error) {
+	denied := func(m gatewayMessage) bool {
+		return emptyTools && m.Method == "event" && strings.HasPrefix(m.Params.Type, "tool.") && (m.Params.SessionID == sessionID || m.Params.SessionID == "")
+	}
+	message, err := waitGateway(ctx, messages, failures, func(m gatewayMessage) bool {
+		return denied(m) || match(m)
+	})
+	if err == nil && denied(message) {
+		return gatewayMessage{}, errUnexpectedToolEvent
+	}
+	return message, err
+}
+
 func launchToolsets(tools []string) string {
 	var selected []string
 	for _, tool := range tools {
@@ -55,11 +76,11 @@ func verifyEmptyGateway(ctx context.Context, stdin io.Writer, messages <-chan ga
 func probeEmptyGateway(ctx context.Context, descriptor core.RuntimeDescriptor, home string) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	python := gatewayPython(descriptor)
-	if python == "" {
-		return errors.New("Hermes tool isolation: gateway Python unavailable")
+	launch, err := discoverGatewayCommand(ctx, descriptor, home)
+	if err != nil {
+		return err
 	}
-	cmd := exec.CommandContext(ctx, python, "-m", "tui_gateway.entry")
+	cmd := exec.CommandContext(ctx, launch.argv[0], launch.argv[1:]...)
 	cmd.Dir = home
 	cmd.Env = append(minimalEnv(home, nil), "HERMES_PYTHON_SRC_ROOT="+descriptor.Installation, "HERMES_TUI_TOOLSETS="+emptyToolset, "HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_TUI_SKILLS=", "HERMES_DISABLE_AUTO_SKILLS=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -72,6 +93,9 @@ func probeEmptyGateway(ctx context.Context, descriptor core.RuntimeDescriptor, h
 		return err
 	}
 	cmd.Stderr = io.Discard
+	if err = launch.fresh(); err != nil {
+		return err
+	}
 	if err = cmd.Start(); err != nil {
 		return err
 	}

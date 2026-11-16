@@ -188,8 +188,17 @@ func publishControllerConnection(fd int, staged, target string) error {
 	return unix.Fsync(fd)
 }
 
-func ConnectControllerCodex(path string, expected []byte, binding ControllerCodexLogin) error {
-	return connectControllerCodex(path, expected, binding, publishControllerConnection)
+// Admission runs after staging/sync and immediately before atomic publication.
+// It must not mutate this connection. Nil/omitted admission is for storage-only callers.
+func ConnectControllerCodex(path string, expected []byte, binding ControllerCodexLogin, admission ...func() error) error {
+	return connectControllerCodex(path, expected, binding, func(fd int, staged, target string) error {
+		for _, admit := range admission {
+			if err := admit(); err != nil {
+				return err
+			}
+		}
+		return publishControllerConnection(fd, staged, target)
+	})
 }
 
 func connectControllerCodex(path string, expected []byte, binding ControllerCodexLogin, publish func(int, string, string) error) error {

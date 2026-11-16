@@ -87,7 +87,7 @@ type ReadinessRequest struct {
 type FleetRepository interface {
 	RegisterAgent(context.Context, registry.AgentRegistration, registry.AgentRevision, fleet.AuditFact) (bool, error)
 	GetAgentRegistration(context.Context, string) (registry.AgentRegistration, error)
-	PublishAgentRevision(context.Context, registry.AgentRevision, fleet.AuditFact) error
+	PublishAgentRevision(context.Context, registry.AgentRevision, fleet.AuditFact, ...func() error) error
 	PublishLoop(context.Context, loop.PublishRequest, fleet.AuditFact) (loop.PublicationDecision, error)
 	AppendLoopLifecycle(context.Context, loop.LifecycleRequest, fleet.AuditFact) (loop.LifecycleEvent, bool, error)
 	PublishGraph(context.Context, graph.PublishRequest, fleet.AuditFact) (graph.PublicationDecision, error)

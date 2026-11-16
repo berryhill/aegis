@@ -7,6 +7,21 @@ import (
 )
 
 func registerControllerCodexRoutes(g *echo.Group, s *app.Service) {
+	g.POST("/agents/:agent/providers", func(c *echo.Context) error {
+		sub, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var in app.AgentProviderSetupInput
+		if err = decode(c, &in); err != nil {
+			return err
+		}
+		out, err := s.AgentProviderSetupAs(c.Request().Context(), sub, c.Param("agent"), in)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, out)
+	})
 	g.POST("/controller/codex/probe", func(c *echo.Context) error {
 		sub, e := requestSubject(c)
 		if e != nil {

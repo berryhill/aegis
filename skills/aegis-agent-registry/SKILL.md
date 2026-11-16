@@ -46,6 +46,40 @@ The corresponding protected HTTP operations are `POST /v1/agents`, `GET /v1/agen
 
 If an operation is absent from installed help, label it unavailable. There is no shipped general Agent update, delete, unretire, deployment-management, named-profile import, arbitrary profile path, recursive profile discovery, or arbitrary source-scanning operation. The manager may expose sanitized read-only local profile inventory and the one exact default-profile import above; neither surface authorizes general scanning or execution.
 
+## Explicit configured models and provider follow-up
+
+When advertised by this source candidate, `/agents import hermes default with-models`
+previews bounded configured selections; repeat its exact generated confirmation
+only after owner approval. Ordinary import stays metadata-only. Neither connects
+credentials. Ordinary registration offers this explicit model-read choice in its
+authoritative rendering, without reading model config on the operator's behalf.
+Follow the returned exact `/agents providers AGENT setup default` input. It
+explicitly selects the default native source for the approved immutable default
+lane, previews a unique eligible grant, or returns exact account/entry choices.
+Never infer a choice from model, priority or label. Confirm only the returned
+source/account `connect`; its response prepares, but does not approve, the exact
+default-lane charter successor. Review that distinct scope and repeat its exact
+generated approval only after owner consent. `next_cli` retains owning config and
+target; do not reconstruct IDs/digests or author intermediate files. An Antigravity
+default stays unavailable with its exact reason; never switch it to obtain green.
+
+For an existing metadata-only import use `/agents providers AGENT models`, then
+review and repeat its exact `approve REVIEW_ID CHARTER_DIGEST`; never re-register
+or create another identity to evade a collision. This creates an immutable
+configuration-only successor. Follow its returned setup input. Advanced manual
+commands remain available after separately authorized account selection:
+`candidates default`, `review default [CREDENTIAL_ID]`, `connect REVIEW_ID`, then
+`promote PROVIDER MODEL` and the newly generated exact successor approval. Each
+action follows `/agents providers AGENT`; only that explicit Codex lane is promoted.
+
+If the manager lacks fresh human local-os/linux-so-peercred authority, use the
+existing owning-service `aegis --config OWNER_CONFIG --target CONSOLE_URL agents
+providers AGENT ACTION [VALUES...]` path; never forge the subject or open another
+store. Review IDs expire in five minutes. After uncertain writes, read status and
+exact Agent history before retrying. A connected source or approved successor is
+not executable qualification; zero Agent credential rights and the existing
+Codex/unsupported-Antigravity gates remain. No token or manual YAML is needed.
+
 ## Register one existing participant
 
 Start from bundled `references/register-input.v1.json` for the complete strict

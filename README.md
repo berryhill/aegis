@@ -115,6 +115,25 @@ trust block or one later exact-contract addition to its existing allowlist;
 it never automatically repairs drift. See [the connection
 procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
+Direct Loop Queue preparation now uses a requested approved Hermes effect lane
+without requiring an unused default provider. The explicit manager import
+`/agents import hermes default with-models` additionally reviews and snapshots
+bounded configured provider/model selections. Legacy imports stay metadata-only;
+configuration is neither connection nor transport qualification. See
+[provider-reuse limits](docs/implementation/native-profile-provider-reuse.md).
+The file-free `/agents providers AGENT setup default` follow-up (also the owning-service CLI)
+guides independent native-account review and exact charter-successor approval,
+with actual account choices and generated exact next inputs. Ordinary registration
+offers explicit model-read consent; connecting prepares but never approves the
+configured default's successor. Antigravity stays visible and unavailable, without fallback.
+The advanced commands remain supported,
+including explicit migration of historical metadata-only registrations. Fresh
+consent is rechecked at publication boundaries after native validation; connection
+and charter-successor approval remain distinct and do not qualify execution.
+[Procedure and remaining gates](docs/implementation/native-profile-provider-connection.md).
+
+Modern bounded gateway turns preserve Hermes's complete installation runtime command and write an isolated bounded config. The exact provider gate remains closed pending installed dependency-selection and qualification proof; see [launch integration and evidence limits](docs/implementation/native-profile-modern-launch.md).
+
 ## Retained task execution (source candidate)
 
 For an owner-requested Doer create-and-execute operation, use the owning-service
@@ -372,6 +391,11 @@ The optional Linux [session credential broker](docs/CREDENTIAL_BROKER.md) implem
 
 ## Runtime behavior and limits
 
+- Disposable `AttemptTurn`/design execution requires Linux owned-group custody.
+  Cleanup keeps the gateway leader unreaped through bounded group shutdown;
+  a cooperative leader cannot hide a TERM-resistant ordinary descendant.
+  Unverified cleanup returns failure without output and retains the home.
+  This is not containment of processes that deliberately escape the group.
 - Accepted Hermes minimum: stable Hermes Agent `>=0.18.0`, without an arbitrary upper cap; charter constraints are enforced. Version acceptance is not blanket compatibility qualification: retained live evidence names 0.18.2, and protocol/capability/authority checks still fail closed. See [runtime contract](specs/RUNTIME_AND_SESSIONS.md).
 - Design uses the real Hermes structured TUI gateway in safe mode with explicit `context_engine` selection and verifies an empty `tools.show` inventory before submitting a prompt; never `-z`/one-shot. `no_mcp` remains an Aegis authority spelling, not a Hermes TUI toolset pin.
 - Every operational session gets a new process and a unique disposable `HERMES_HOME`; manager sessions never reuse one another's home or inherit normal `~/.hermes`.

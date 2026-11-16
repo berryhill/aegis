@@ -457,6 +457,13 @@ func renderGatewayTurn(output io.Writer, result managergateway.TurnResult) {
 }
 
 func renderGatewayResult(output io.Writer, result slash.Result) {
+	if result.Reason == "agent_provider_setup" || result.Reason == "local_hermes_agent_import_prepared" || result.Reason == "local_hermes_agent_import_confirmed" {
+		if message, ok := result.Data["message"].(string); ok {
+			fmt.Fprintln(output, "AEGIS / authoritative")
+			fmt.Fprintln(output, tui.Sanitize(message, tui.DefaultSanitizeOptions(tui.Prose)))
+			return
+		}
+	}
 	if result.Operation == "manager.help" {
 		fmt.Fprintln(output, "Available commands:")
 		if commands, ok := result.Data["commands"].([]any); ok {

@@ -67,6 +67,23 @@ go test ./internal/api -run '^TestInstalledDaemonDoerProtectedSetupNoDisplay$' -
 
 This builds a private source-root executable, closes fixture stores before real `serve`, and requests public successor/host/provision setup through the default pinned companion without DISPLAY/WAYLAND_DISPLAY. It requires `unavailable` and independently reloads unchanged durable draft/Agent state and absence of authority grants. Fake fixture enrollment is test-only; there is no human approval or provider inference. Untrusted checkout ancestry produces an explicit prerequisite skip, not acceptance; review directory custody before hardening permissions. See `docs/implementation/offline-doer-public-success-launch-review.md` for actual execution evidence and scope.
 
+## Session preparation and approved step lanes
+
+Direct Loop Queue preparation starts its clean session on the first Hermes
+action lane in the exact published definition. An explicit provider/model must
+resolve inside the selected charter envelope; an omitted lane keeps the charter
+default. It no longer resolves an unused default Codex login before preparing an
+explicitly selected local lane. Readiness still checks every required step lane,
+and each actual attempt independently resolves its lane and repeats authentication
+and fresh authority admission. This is not fallback or account switching.
+
+The original charter, mandate and full authority envelope remain immutable.
+Session `launch_provider` / `launch_model` record an explicit resolved bootstrap
+lane, not authority or the lane of subsequent attempts. Historical sessions omit
+these additive fields. Ordinary session starts retain their default behavior.
+This change does not implement profile model snapshots or automatic native OAuth
+connection, and does not qualify Antigravity; see [remaining gates](implementation/native-profile-provider-reuse.md).
+
 ## Controller-owned Codex transport and typed Doer proposal adapters (source candidate)
 
 The optional charter field `hermes.provider_authentication: {"mode":"controller-codex-access-token.v1"}` separates controller-owned inference transport from Agent credential authority. It accepts only an explicit Codex provider/model with zero Agent tools, toolsets, credential scopes, plugins, MCP servers or persistent/profile home. Historical omitted fields preserve canonical encoding; existing provider credential scopes are not reclassified or removed. An exact successor, authenticated approval, provisioning receipt and fresh session admission remain independent gates.

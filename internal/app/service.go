@@ -70,14 +70,22 @@ type Service struct {
 	sessionTerminalMu         sync.Mutex // guards only the ephemeral per-session terminal lock map
 	sessionTerminalLocks      map[string]*sessionTerminalLock
 	nativeConnectionMu        sync.Mutex
-	nativeReviews             map[string]nativeConnectionReview
-	loopRunMu                 sync.Mutex                         // guards Run admission/preparation and foreground worker ownership
-	contributionRuns          map[string]*contributionRunControl // guarded by loopRunMu
-	loopRunWorkers            map[string]bool                    // guarded by loopRunMu; durable claims remain the execution fence
-	doerTaskMu                sync.Mutex                         // foreground retained-task continuation in this owning service
-	capMu                     sync.RWMutex
-	capabilities              map[[32]byte]broker.Capability
-	brokerRequests            map[[32]byte]map[[32]byte]struct{}
+	nativeCodexMetadata       controllerCodexMetadataSource // private startup-only synthetic test seam; nil uses Hermes
+	agentModelMu              sync.Mutex
+	// Lock order: agentModelMu -> nativeConnectionMu -> agentRevisionMu -> stores.
+	// Native/source I/O must finish before taking agentRevisionMu. Supported
+	// lifecycle and charter-successor mutations share this effect fence.
+	agentRevisionMu      sync.Mutex
+	agentModelReviews    map[string]agentModelReview
+	agentProviderReviews map[string]agentProviderConnectionReview
+	nativeReviews        map[string]nativeConnectionReview
+	loopRunMu            sync.Mutex                         // guards Run admission/preparation and foreground worker ownership
+	contributionRuns     map[string]*contributionRunControl // guarded by loopRunMu
+	loopRunWorkers       map[string]bool                    // guarded by loopRunMu; durable claims remain the execution fence
+	doerTaskMu           sync.Mutex                         // foreground retained-task continuation in this owning service
+	capMu                sync.RWMutex
+	capabilities         map[[32]byte]broker.Capability
+	brokerRequests       map[[32]byte]map[[32]byte]struct{}
 }
 
 // AuditAuthority is the narrow append and verification boundary that hardened
@@ -1280,7 +1288,13 @@ func (s *Service) StartSession(ctx context.Context, mandateID string) (core.Sess
 	}
 	return s.StartSessionAs(ctx, sub, mandateID)
 }
-func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateID string) (session core.Session, startErr error) {
+func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateID string) (core.Session, error) {
+	return s.startSessionLaneAs(ctx, sub, mandateID, "", "")
+}
+
+// Queue preparation may select an already approved effect lane without changing
+// the mandate. Ordinary session starts retain the charter default.
+func (s *Service) startSessionLaneAs(ctx context.Context, sub core.Subject, mandateID, provider, model string) (session core.Session, startErr error) {
 	stage, authorityID := "mandate_validation", ""
 	defer func() {
 		if startErr != nil {
@@ -1311,12 +1325,19 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err = core.ValidateLocalInferenceAuthority(m.Hermes, m.Tools, m.Scopes.Credentials); err != nil {
 		return core.Session{}, err
 	}
-	if m.Hermes.ProviderAuthentication != nil {
-		_, err = s.resolveControllerProviderAuthentication(ctx, m.Hermes)
-	} else if m.Hermes.LocalInference == nil {
-		credentials, err = s.resolveProviderCredential(m.Hermes.Provider, m.Scopes.Credentials)
+	lane, err := m.Hermes.ResolveLane(provider, model)
+	if err != nil {
+		return core.Session{}, err
 	}
-	if err == nil {
+	effectiveHermes := m.Hermes.WithLane(lane)
+	if effectiveHermes.ProviderAuthentication != nil {
+		_, err = s.resolveControllerProviderAuthentication(ctx, effectiveHermes)
+	} else if effectiveHermes.LocalInference == nil {
+		credentials, err = s.resolveProviderCredential(effectiveHermes.Provider, m.Scopes.Credentials)
+	}
+	// Preserve historical ordinary-session credential materialization. Explicit
+	// Queue bootstrap lanes must not require unrelated default/allowed providers.
+	if err == nil && provider == "" && model == "" {
 		for _, lane := range m.Hermes.AllowedLanes {
 			runtimeLane, laneErr := m.Hermes.ResolveLane(lane.Provider, lane.Model)
 			if laneErr != nil {
@@ -1397,7 +1418,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		return core.Session{}, err
 	}
 	stage = "runtime_launch"
-	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, authority, credentials, bridge, func(c context.Context) error {
+	id, home, pid, launchedToolsets, err := s.Hermes.LaunchLane(ctx, s.Store.Root(), m, authority, provider, model, credentials, bridge, func(c context.Context) error {
 		if err := s.validateMandate(m); err != nil {
 			return err
 		}
@@ -1426,10 +1447,13 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	verification := "launch_arguments"
 	if bridge.Enabled {
 		verification = "exact_registered_aegis_bridge_tool"
-	} else if m.Hermes.ProviderAuthentication != nil {
+	} else if effectiveHermes.ProviderAuthentication != nil || effectiveHermes.LocalInference != nil || provider != "" || model != "" {
 		verification = "exact_registered_empty_toolset"
 	}
 	sess := core.Session{ID: sessionID, Mandate: m, RuntimeSessionID: id, RuntimePID: pid, ProcessStart: processStartToken(pid), RuntimeHome: home, VerifiedToolsets: launchedToolsets, ToolsetVerification: verification, Status: "running", StartedAt: s.Now()}
+	if provider != "" || model != "" {
+		sess.LaunchProvider, sess.LaunchModel = effectiveHermes.Provider, effectiveHermes.Model
+	}
 	if sess.ProcessStart == "" {
 		stop, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

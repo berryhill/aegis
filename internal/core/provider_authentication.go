@@ -4,9 +4,15 @@ import "errors"
 
 const ControllerCodexAccessTokenV1 = "controller-codex-access-token.v1"
 
-// ProviderAuthentication explicitly approves controller-owned inference transport,
-// not Agent credential use. Omission retains the historical scope contract and
-// canonical encoding. A material change requires a newly approved charter,
+// ConfiguredProviderV1 records an approved model selection, NOT authentication.
+// Runtime resolvers must deny this mode before consulting any credential source.
+// Connecting it requires a separately approved charter successor.
+const ConfiguredProviderV1 = "configured-provider.v1"
+
+// ProviderAuthentication selects a closed controller transport policy, not Agent
+// credential use. ConfiguredProviderV1 is explicitly non-executable metadata;
+// ControllerCodexAccessTokenV1 approves transport but does not prove a connection.
+// Omission retains the historical scope contract and canonical encoding. A material change requires a newly approved charter,
 // mandate and clean session; old provider scopes are never reclassified.
 type ProviderAuthentication struct {
 	Mode string `json:"mode"`
@@ -32,7 +38,20 @@ func validateSingleProviderAuthentication(h HermesConfig, tools, credentials []s
 	if h.ProviderAuthentication == nil {
 		return nil
 	}
-	if h.ProviderAuthentication.Mode != ControllerCodexAccessTokenV1 || (h.Provider != "codex" && h.Provider != "openai-codex") || h.Model == "" || h.Model == "none" || h.LocalInference != nil {
+	switch h.ProviderAuthentication.Mode {
+	case ConfiguredProviderV1:
+		// This closed metadata set is independent of transport qualification.
+		if h.Provider != "codex" && h.Provider != "openai-codex" && h.Provider != "antigravity-oauth" {
+			return errors.New("unsupported configured provider")
+		}
+	case ControllerCodexAccessTokenV1:
+		if h.Provider != "codex" && h.Provider != "openai-codex" {
+			return errors.New("unsupported controller provider authentication")
+		}
+	default:
+		return errors.New("unsupported controller provider authentication")
+	}
+	if h.Model == "" || h.Model == "none" || h.LocalInference != nil {
 		return errors.New("unsupported controller provider authentication")
 	}
 	if len(tools) != 0 || len(h.Toolsets) != 0 || len(credentials) != 0 || len(h.MCPServers) != 0 || len(h.Plugins) != 0 || h.Profile != "" || h.PersistentHome {

@@ -139,16 +139,16 @@ func readControllerHistory(fd int, base string, snapshot []byte, current *Contro
 
 // Replace only the exact reviewed existing operational binding. This never
 // edits operator YAML, auth files, credentials, Agent charters, or prior facts.
-func ReplaceControllerCodex(path string, expected []byte, previous, binding ControllerCodexLogin) error {
-	return replaceControllerCodex(path, expected, previous, binding, nil)
+func ReplaceControllerCodex(path string, expected []byte, previous, binding ControllerCodexLogin, admission ...func() error) error {
+	return replaceControllerCodex(path, expected, previous, binding, nil, admission...)
 }
 
 // Called only by the explicit one-use app review path. Runtime/show never call it.
-func ReplaceControllerCodexReviewed(path string, expected []byte, previous, binding ControllerCodexLogin, review ControllerCodexConfigReview) error {
+func ReplaceControllerCodexReviewed(path string, expected []byte, previous, binding ControllerCodexLogin, review ControllerCodexConfigReview, admission ...func() error) error {
 	if !review.Additive || previous != binding {
 		return ErrConnectionConfig
 	}
-	return replaceControllerCodex(path, expected, previous, binding, &review)
+	return replaceControllerCodex(path, expected, previous, binding, &review, admission...)
 }
 
 func replacementPredecessor(path string, review *ControllerCodexConfigReview) (*ControllerCodexLogin, error) {
@@ -162,7 +162,7 @@ func replacementPredecessor(path string, review *ControllerCodexConfigReview) (*
 	return b, nil
 }
 
-func replaceControllerCodex(path string, expected []byte, previous, binding ControllerCodexLogin, review *ControllerCodexConfigReview) error {
+func replaceControllerCodex(path string, expected []byte, previous, binding ControllerCodexLogin, review *ControllerCodexConfigReview, admission ...func() error) error {
 	current, err := ConnectionSnapshot(path)
 	if err != nil || !bytes.Equal(current, expected) {
 		return ErrConnectionConfig
@@ -244,6 +244,11 @@ func replaceControllerCodex(path string, expected []byte, previous, binding Cont
 		return ErrConnectionConfig
 	}
 	target := fmt.Sprintf("%s%s.replacement-%06d", filepath.Base(path), connectionSuffix, count+1)
+	for _, admit := range admission {
+		if err := admit(); err != nil {
+			return err
+		}
+	}
 	if publishControllerConnection(fd, staged, target) != nil {
 		return ErrConnectionConfig
 	}

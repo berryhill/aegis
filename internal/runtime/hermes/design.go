@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/berryhill/aegis/internal/core"
 )
@@ -56,18 +55,21 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 	if err != nil {
 		return "", "", err
 	}
-	if !retain {
-		defer func() {
-			if removeErr := os.RemoveAll(home); err == nil && removeErr != nil {
-				err = removeErr
+	cleanupHome := true
+	defer func() {
+		if !retain && cleanupHome {
+			if removeErr := os.RemoveAll(home); removeErr != nil {
+				proposal = ""
+				err = errors.Join(err, ErrAttemptCleanup)
 			}
-		}()
+		}
+	}()
+	launch, err := discoverGatewayCommand(ctx, descriptor, home)
+	if err != nil {
+		cleanupHome = !errors.Is(err, ErrAttemptCleanup)
+		return "", home, err
 	}
-	python := gatewayPython(descriptor)
-	if python == "" {
-		return "", home, errors.New("Hermes TUI gateway Python executable not found")
-	}
-	command := exec.CommandContext(ctx, python, "-m", "tui_gateway.entry")
+	command := exec.CommandContext(ctx, launch.argv[0], launch.argv[1:]...)
 	command.Dir = home
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Env = append(minimalEnv(home, credentials),
@@ -89,30 +91,42 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 	if err != nil {
 		return "", home, err
 	}
+	if err = prepareAttemptProcess(); err != nil {
+		return "", home, err
+	}
+	if err = launch.fresh(); err != nil {
+		return "", home, err
+	}
 	if err = command.Start(); err != nil {
 		return "", home, err
 	}
-	go func() { _, _ = io.Copy(io.Discard, stderr) }()
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-	defer func() {
-		_ = stdin.Close()
-		if command.Process != nil {
-			_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
-		}
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			if command.Process != nil {
-				_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-			}
-			<-done
-		}
-	}()
+	cleanupHome = false
+	stderrDone := make(chan struct{})
+	go func() { defer close(stderrDone); _, _ = io.Copy(io.Discard, stderr) }()
 
 	messages := make(chan gatewayMessage, 32)
 	readErrors := make(chan error, 1)
-	go readGateway(stdout, messages, readErrors)
+	stopWatching := watchAttemptProcess(command, readErrors)
+	readerContext, cancelReader := context.WithCancel(ctx)
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		readGatewayContext(readerContext, stdout, messages, readErrors)
+	}()
+	defer func() {
+		cancelReader()
+		stopWatching()
+		cleanupErr := stopOwnedAttemptProcess(command, stdin)
+		_ = stdout.Close()
+		_ = stderr.Close()
+		<-readerDone
+		<-stderrDone
+		cleanupHome = cleanupErr == nil
+		if cleanupErr != nil {
+			proposal = ""
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
 	if _, err = waitGateway(ctx, messages, readErrors, func(message gatewayMessage) bool {
 		return message.Method == "event" && message.Params.Type == "gateway.ready"
 	}); err != nil {
@@ -145,7 +159,7 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 	var response strings.Builder
 	started := false
 	for {
-		message, waitErr := waitGateway(ctx, messages, readErrors, func(message gatewayMessage) bool {
+		message, waitErr := waitTurnGateway(ctx, messages, readErrors, sessionID, true, func(message gatewayMessage) bool {
 			return (message.Method == "event" && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
 		})
 		if waitErr != nil {
@@ -203,6 +217,12 @@ func gatewayPython(descriptor core.RuntimeDescriptor) string {
 }
 
 func readGateway(reader io.Reader, messages chan<- gatewayMessage, failures chan<- error) {
+	readGatewayContext(context.Background(), reader, messages, failures)
+}
+
+// Callers that can stop consuming early cancel delivery and close the owned
+// process pipe before joining this reader, including when its buffer is full.
+func readGatewayContext(ctx context.Context, reader io.Reader, messages chan<- gatewayMessage, failures chan<- error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64<<10), 4<<20)
 	for scanner.Scan() {
@@ -210,13 +230,20 @@ func readGateway(reader io.Reader, messages chan<- gatewayMessage, failures chan
 		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
 			continue
 		}
-		messages <- message
+		select {
+		case messages <- message:
+		case <-ctx.Done():
+			return
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		failures <- err
-		return
+	err := scanner.Err()
+	if err == nil {
+		err = io.EOF
 	}
-	failures <- io.EOF
+	select {
+	case failures <- err:
+	case <-ctx.Done():
+	}
 }
 
 func waitGateway(ctx context.Context, messages <-chan gatewayMessage, failures <-chan error, match func(gatewayMessage) bool) (gatewayMessage, error) {
