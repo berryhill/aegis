@@ -6,6 +6,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## [Unreleased]
 
+- Raise the development, CI and release Go toolchain floor to 1.26.11 for
+  [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859), the `net/http`
+  HTTP/1 MaxBytesReader header race. Preserve the pinned vulnerability scanner
+  and security gates; no unrelated dependency upgrades or waivers.
+- Synchronize the published operation matrix and owning-service inventory for
+  `agents providers` and `POST /v1/agents/:agent/providers`, with Registry ownership,
+  actual source/test references and unchanged fail-closed coverage checks.
+
 - Guide imported-profile setup through real native-manager rendering and owning
   CLI continuations: offer explicit model-read consent, preserve the configured
   default, show exact source/account choices, and prepare (never approve) the

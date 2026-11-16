@@ -160,7 +160,7 @@ Observed source/binary SHA-256 identities:
 
 ## Reproduction
 
-Use the Makefile's `GOTOOLCHAIN=go1.26.10`, `GOMAXPROCS=2`, `GOFLAGS=-p=1`,
+Use the Makefile's `GOTOOLCHAIN=go1.26.11`, `GOMAXPROCS=2`, `GOFLAGS=-p=1`,
 `GOMEMLIMIT=512MiB` and task-owned TMPDIR. No test here starts an Aegis listener.
 
 ```sh

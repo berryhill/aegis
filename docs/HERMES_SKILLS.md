@@ -107,10 +107,14 @@ portable schema or runtime-capability attestation.
 
 The protected owning-service adapter explicitly supports charter import/validate/show,
 plan preview/show, approval request/approve/reject/show, provision, session
-preview/start/show/authority/list, Agent register/list/show/history/approve-charter,
+preview/start/show/authority/list, Agent register/list/show/history/providers/approve-charter,
 Loop retained task/readiness/setup/queue/publication/lifecycle/availability operations,
 Graph list/show/publish/submit and Queue preparations/list/result/show/process/bind-runtime.
 See the router allowlist and installed help for exact command spellings and inputs.
+`agents providers AGENT ACTION [VALUES...]` uses `POST /v1/agents/:agent/providers`
+through the owning service. Native-source connection consent and exact
+charter-successor approval remain separate fresh-principal decisions; neither
+connection nor approval proves provider execution qualification.
 `POST /v1/queue/:item/bind-runtime` is implemented and used by the online
 `queue bind-runtime FILE` adapter; it repeats controller-authority admission.
 This is explicit forwarding, not transparent forwarding of every direct-service
