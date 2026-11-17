@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Mode-specific packing: 7 normal + 13 race lanes, not 25 x 2 jobs.
+        # Mode-specific packing: 7 normal + 14 race lanes for 26 groups.
         # Existing subprocess partitions/alarms remain independently enforced.
         include:
           - {mode: normal, group: api-a}
@@ -81,6 +81,7 @@ jobs:
           - {mode: race, group: manager-d}
           - {mode: race, group: manager-e}
           - {mode: race, group: cli-command}
+          - {mode: race, group: cli-host}
           - {mode: race, group: cli}
           - {mode: race, group: support-a}
           - {mode: race, group: support-b}

@@ -21,8 +21,9 @@ facts rather than promote the wrapper to success.
 
 - `implementation-contribution` selects exactly the anchored, escaped top-level
   `TestManagedContributionRepairAndCustody`,
-  `TestManagedContributionProductiveDeliveryRepair` and
-  `TestManagedContributionSameAgentSeparateSessions` parents.
+  `TestManagedContributionProductiveDeliveryRepair`,
+  `TestManagedContributionSameAgentSeparateSessions` and
+  `TestManagedContributionEngineeringRegressionRepair` parents.
 - `implementation` dynamically selects every other default entry returned by the
   actual mode's Go test inventory, including future tests, runnable examples and
   fuzz targets. No static exclusion list or skipped test is introduced.
@@ -30,8 +31,9 @@ facts rather than promote the wrapper to success.
   `TestMain` still runs separately in each Go test process.
 - Missing target, malformed/incomplete inventory and empty partitions deny
   execution. Both modes retain `-count=1` and `-timeout=8m`.
-- CI adds both groups in normal and race modes under the unchanged ten-minute
-  implementation job limit. Exact-head evidence requires every named group;
+- CI runs both groups in the normal implementation lane; race defaults remain
+  in implementation and race contribution runs in the existing CLI lane, each
+  under the unchanged ten-minute job limit. Exact-head evidence requires every named lane;
   missing, cancelled, skipped or failed shards deny release even if aggregate
   gates appear green. Supervisor/cgroup/KDF/crypto limits remain unchanged.
 
@@ -44,6 +46,57 @@ Use `--list-only` with either group and with/without `--race` to inspect the
 actual selected command without running its tests.
 
 ## Evidence tiers and remaining gates
+
+### Post-merge aggregate margin correction
+
+Main run **43976201285**, job **133680692904**, exhausted the implementation
+process alarm at **480.165s**. `TestNativeContinuation` had been active for 17s
+and its `failed_acceptance` child for 6s: this is cumulative execution cost, not
+an eight-minute hang in that child. The prior passing local default group took
+435.219s; its JSON stream measured the complete engineering regression repair
+root at **66.26s**. Moving that root projects **368.959s** locally, not a hosted
+success claim or a subtraction from a completed hosted total (the failed group
+had unfinished tests).
+
+The receiving race CLI lane's retained hosted phases were compile 110.501s,
+inventory 2.107s, CLI root 87.048s, CLI final 85.193s and contribution 158.704s.
+Adding the measured root projects **509.813s**, leaving **90.187s** for setup,
+cleanup and variation within 600s. The contribution process projects 224.964s
+within its own 480s alarm. No additional process, compilation, lane or job is
+introduced; normal mode keeps both partitions in the same lane. These are
+mixed-host planning estimates; fresh exact-head hosted CI must verify the fit.
+
+The dependency trace is `TestManagedContributionEngineeringRegressionRepair`
+→ `testManagedContributionRepairAndCustody` → `fixture` / `stdlibSeededNative`.
+It creates a synthetic module without third-party requirements, no dependency
+bundle and no templ files. Its native commands use fresh private module caches
+and `GOPROXY=off`. It therefore needs no new race CLI offline-preparation step.
+The actual locked-dependency and templ roots remain in implementation; manager's
+offline fixture remains in manager-a. The unchanged workflow condition and that
+selection parity are regression-tested. All native TTLs, test bodies and
+resource limits remain unchanged, as do the earlier normal-manager and race-API
+packing corrections.
+
+### Dedicated host-review lane after the implementation repair
+
+Run `43979771143` retained the implementation repair but cancelled race
+`cli-command` at the shared 600s job cap. Log `job-133692963167.log` records
+129.037s command compile, 1.078s inventory and passing 345.418s defaults, then
+the separate `cli-contribution-host` process starts and is cancelled. The earlier
+approximately 164s host observation no longer fits alongside those slower phases.
+No host assertion failure was observed; unfinished execution is not PASS.
+
+Only that existing complete race group moves to new `cli-host`; defaults stay in
+`cli-command`, normal stays unchanged, and the implementation root partition above
+is preserved. Independently compiling the host command binary projects 294.115s
+including inventory and historical host execution, before setup/cleanup, rather
+than packing both processes into one job. All 26 groups remain exact-once across
+7 normal and 14 race lanes; the workflow and exact-head required job set include
+`Go race / cli-host`. The 600s job, 480s process, native-operation, cgroup and
+credential boundaries remain unchanged. This is additional execution headroom,
+not test removal, a new partition, result caching or hosted acceptance proof.
+
+### Historical evidence
 
 Deterministic Python tests qualify exact-once default inventory coverage,
 future-test inclusion, missing-target denial, escaped/anchored parents, real

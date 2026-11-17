@@ -22,6 +22,22 @@ class EvidenceTests(unittest.TestCase):
                  "conclusion": "success", "name": name} for i, name in enumerate(MODULE.REQUIRED_JOBS)]
         return run, jobs
 
+    def test_dedicated_host_job_is_mandatory_in_every_release_profile(self):
+        name = 'Go race / cli-host'
+        self.assertIn(name, MODULE.REQUIRED_JOBS)
+        self.assertNotIn('Go normal / cli-host', MODULE.REQUIRED_JOBS)
+        for version in (None, '0.3.0', '0.3.1'):
+            run, jobs = self.fixture()
+            host = next(job for job in jobs if job['name'] == name)
+            mutations = [lambda: [job for job in jobs if job['name'] != name],
+                         lambda: [*jobs, dict(host, id=999)]]
+            mutations += [lambda status=status: [dict(job, conclusion=status) if job['name'] == name else job for job in jobs]
+                          for status in ('cancelled', 'skipped', 'failure', 'timed_out')]
+            mutations.append(lambda: [dict(job, head_sha='b' * 40) if job['name'] == name else job for job in jobs])
+            for mutate in mutations:
+                with self.subTest(version=version), self.assertRaises(ValueError):
+                    MODULE.validate(run, mutate(), SHA, 456, version)
+
     def test_valid_exact_source(self):
         run, jobs = self.fixture()
         self.assertEqual(MODULE.validate(run, jobs, SHA, 456)["source_revision"], SHA)
