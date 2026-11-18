@@ -48,6 +48,9 @@ func publicationHasRetainedRoot(txn *badgerdb.Txn, repositoryID uint64, base str
 	defer history.Close()
 	for history.Rewind(); history.Valid(); history.Next() {
 		wire, err := history.Item().ValueCopy(nil)
+		if err == nil && canonicalDecisionSibling(txn, history.Item().Key(), wire) {
+			continue
+		}
 		var entry DeliveryObservation
 		if err != nil || strictDelivery(wire, &entry) != nil || delivery.ValidateHistoryEnvelope(entry) != nil {
 			return false, fleet.ErrCorrupt
@@ -206,6 +209,9 @@ func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]Deli
 			if !bytes.Equal(wire, deliveryWire(validated)) {
 				return nil, fleet.ErrCorrupt
 			}
+			continue
+		}
+		if canonicalDecisionSibling(txn, it.Item().Key(), wire) {
 			continue
 		}
 		var entry DeliveryObservation

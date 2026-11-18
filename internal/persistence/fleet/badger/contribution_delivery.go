@@ -378,6 +378,13 @@ func loadDeliveryHistory(txn *badgerdb.Txn, id string) ([]DeliveryObservation, e
 	defer it.Close()
 	for it.Rewind(); it.Valid(); it.Next() {
 		if !bytes.Equal(it.Item().Key(), headKey) {
+			wire, err := it.Item().ValueCopy(nil)
+			if err != nil {
+				return nil, err
+			}
+			if canonicalDecisionSibling(txn, it.Item().Key(), wire) {
+				continue
+			}
 			count++
 			if count > 2048 {
 				return nil, fleet.ErrCorrupt

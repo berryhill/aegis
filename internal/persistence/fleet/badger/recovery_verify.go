@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/disposition"
 	"github.com/berryhill/aegis/internal/evidence"
@@ -304,66 +303,29 @@ func verifyFleetRecovery(ctx context.Context, db *badgerdb.DB) (string, uint64, 
 				e = recoveryJSON[core.AuditEvent](b)
 			case familyContribution:
 				if len(p) == 1 {
-					var c contribution.Contract
-					c, e = loadContribution(tx, p[0])
-					if e == nil {
-						var item queue.Item
-						item, e = loadQueueItem(tx, c.QueueItemID)
-						if e == nil && (item.GraphRunID != c.RunID || item.Submission.ID != c.SubmissionID) {
-							e = fleet.ErrCorrupt
-						}
-					}
+					_, e = recoveryContribution(tx, p[0])
 				} else {
-					e = recoveryCanonical(b, queue.UnmarshalArchive)
+					e = recoveryArchive(tx, p, b, false)
 				}
 			case familyContributionRequest:
-				if len(p) == 2 {
-					var c contribution.Contract
-					c, e = loadContribution(tx, string(b))
-					if e == nil && (c.OwnerID != p[0] || c.Key != p[1]) {
-						e = recoveryCanonical(b, queue.UnmarshalArchive)
-					}
-				} else {
-					e = fleet.ErrCorrupt
-				}
+				e = recoveryUnique(recoveryContributionIndex(tx, k[1], p, b), recoveryArchive(tx, p, b, true))
 			case familyContributionIssue:
-				if len(p) != 2 {
-					return fleet.ErrCorrupt
-				}
-				var c contribution.Contract
-				c, e = loadContribution(tx, string(b))
-				if e == nil && !bytes.Equal(k, issueKey(c)) {
-					e = fleet.ErrCorrupt
-				}
+				e = recoveryUnique(recoveryContributionIndex(tx, k[1], p, b), recoveryReplay(tx, p, b))
 			case familyContributionControl:
-				if len(p) == 2 {
-					_, e = loadContributionControl(tx, p[0])
-				} else {
-					e = recoveryCanonical(b, queue.UnmarshalPreferences)
-				}
+				e = recoveryUnique(recoveryControl(tx, p, b), recoveryPreferences(tx, p, b, false))
 			case familyQueuePreferencesHead:
-				e = recoveryCanonical(b, queue.UnmarshalPreferences)
+				e = recoveryPreferences(tx, p, b, true)
 			case familyContributionContinuity:
 				if len(p) != 2 {
 					return fleet.ErrCorrupt
 				}
 				_, _, e = loadContributionContinuity(tx, p[0])
+			case familyGraphNode, familyGraphNodeCheckpoint:
+				// Full-family normal reopen validation runs once below.
 			case familyContributionDecision:
-				var d contribution.Decision
-				e = json.Unmarshal(b, &d)
-				if e == nil {
-					wire, _ := json.Marshal(d)
-					if !bytes.Equal(wire, b) || len(p) != 2 || d.QueueItemID != p[0] || d.ID != p[1] {
-						e = fleet.ErrCorrupt
-					}
-					if e == nil {
-						var c contribution.Contract
-						c, e = loadContribution(tx, p[0])
-						if e == nil && (d.ContractDigest != c.Digest || d.OwnerID != c.OwnerID || d.Key != c.Key) {
-							e = fleet.ErrCorrupt
-						}
-					}
-				}
+				e = recoveryUnique(recoveryDecision(tx, p, b), recoveryDelivery(tx, p, b))
+			case familyContributionPublication:
+				e = recoveryPublication(tx, p, b)
 			default:
 				return fmt.Errorf("unknown fleet family %x", k[1])
 			}
@@ -371,7 +333,7 @@ func verifyFleetRecovery(ctx context.Context, db *badgerdb.DB) (string, uint64, 
 				return fmt.Errorf("fleet recovery key %x: %w", k, e)
 			}
 		}
-		return nil
+		return validateGraphNodeFamilies(tx)
 	})
 	if err == nil && !schema {
 		err = fleet.ErrCorrupt

@@ -64,6 +64,9 @@ func TestQueuePresentationArchiveDurableOwnedTerminal(t *testing.T) {
 	if err != nil || !created || got != v {
 		t.Fatalf("archive: %+v %v %v", got, created, err)
 	}
+	if _, _, recoveryErr := verifyFleetRecovery(ctx, s.db); recoveryErr != nil {
+		t.Errorf("normal archive writer/readback must be recoverable: %v", recoveryErr)
+	}
 	if _, created, err = s.SetQueueArchive(ctx, v, 0); err != nil || created {
 		t.Fatalf("replay: %v %v", created, err)
 	}
@@ -152,6 +155,9 @@ func TestQueuePresentationPreferencesReplayAndReopen(t *testing.T) {
 	}
 	if _, created, err := s.SetQueuePreferences(ctx, v, 0); err != nil || !created {
 		t.Fatalf("set: %v %v", created, err)
+	}
+	if _, _, recoveryErr := verifyFleetRecovery(ctx, s.db); recoveryErr != nil {
+		t.Errorf("normal preferences writer/readback must be recoverable: %v", recoveryErr)
 	}
 	if _, created, err := s.SetQueuePreferences(ctx, v, 0); err != nil || created {
 		t.Fatalf("replay: %v %v", created, err)

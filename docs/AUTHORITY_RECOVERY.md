@@ -138,6 +138,29 @@ Hashes are integrity bookkeeping, not signatures against a malicious OS owner.
 
 ## Verification boundary
 
+The bounded Queue presentation source repair recognizes legacy shared physical
+families `0x70`–`0x73`: Archive history/head and presentation replay/Preferences
+coexist with Contribution contracts/request/issue/control records. Recovery
+requires exactly one canonical interpretation with exact key, history, head and
+replay bindings. Archive additionally reuses immutable ownership and terminal
+Queue/disposition checks. Preferences use the existing `0x74` head. Missing,
+orphaned, inconsistent or ambiguous records deny; no records are dropped or
+renumbered. Control prefix scans exclude only corroborated Preferences records.
+
+Graph node/checkpoint families `0x67`/`0x68` now reuse the normal reopen validator.
+The `0x79` Decision/Delivery collision requires exactly one canonical historical
+interpretation; Delivery and Publication `0x7a` reuse normal history, slot,
+root, mirror and release/handoff checks. Prefix scans exclude only Decisions
+corroborated by canonical contracts, roles and continuity reservations. Recovery
+does not demand live effect authority or renew historical decisions.
+
+Isolated normal-writer histories, malformed records and abrupt-exit combined
+authority/fleet recovery are exercised, with exact logical byte preservation and
+unchanged prior authority receipt. This is not complete fleet qualification:
+public authenticated CLI independent acceptance, positive released/displaced-root
+recovery qualification and installed/live target acceptance remain separate gates.
+Do not infer that an operator retry is safe from these focused tests.
+
 Fleet Loop availability uses distinct persisted encodings: the `0x27` event
 family contains canonical sealed event/audit envelopes, while the `0x28` head
 family contains a raw event digest keyed by logical Loop ID. Recovery uses the
