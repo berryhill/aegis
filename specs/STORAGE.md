@@ -69,6 +69,17 @@ Readiness is action-specific and implementation-observed. Both planes require th
 
 ## Migration and recovery
 
+Authenticated offline Linux recovery MAY snapshot original `0664`/`0660` Badger
+`LOCK`, `DISCARD`, numeric `.vlog` and `.mem` evidence only through the bounded
+descriptor-relative private-custody policy in [authority recovery](../docs/AUTHORITY_RECOVERY.md#exact-admissible-state-and-engine-proof).
+This exception MUST NOT apply to normal Open, lifecycle markers, receipts or the
+candidate side of publication. Original files MUST remain unchanged; copies are
+created owner-only. Pre/post-exchange resume MUST identify both exact byte digests
+and separately prove strict candidate permissions. Unknown names, unsafe ancestry,
+ACLs, links, ownership, modes or changed identity/content MUST deny. Root/current-UID
+trust and the existing filesystem qualification remain prerequisites; current
+custody does not prove absence of historical exposure or compromise.
+
 Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves physical evidence, independently proves pinned Badger WAL framing/checksums/complete transactions, removes only proven zero padding in a working copy, validates all canonical records before and after replay, and publishes through atomic directory exchange. Strict private operation receipts support exact pre/post-exchange retries and retain immutable per-operation history. Ambiguity and damaged/torn logs refuse; Darwin recovery fails closed before mutation. See [the procedure and limits](../docs/AUTHORITY_RECOVERY.md).
 
 Legacy authority JSON is collision input only; it is never merged into Badger. A generation is activated only through the implemented staged, synced, no-replace publication protocol. Dirty lifecycle evidence requires verified maintenance/recovery before operational open. Logical authority recovery imports verified canonical records into a fresh inactive generation and rebuilds, rather than trusts, derived authority projections. Native recovery requires exact identity for an already retained generation. Selection returns an explicit durable-commit outcome so a failure after marker publication cannot be interpreted as pre-activation failure. Credential backup/recovery remains a separate bbolt and key-custody procedure; copying one engine does not constitute a complete Aegis backup.

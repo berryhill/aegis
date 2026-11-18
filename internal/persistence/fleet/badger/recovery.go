@@ -214,7 +214,9 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (out Inte
 	}
 	// A completed operation is reusable until normal Open changes its engine.
 	if e == nil && r.Phase == "completed" {
-		d, x := physical.Directory(ctx, selected, "")
+		// A later interrupted writer may have created fresh umask-mode engine
+		// files. This is original evidence, not a candidate/live-open exception.
+		d, x := physical.OriginalDirectory(ctx, selected, "")
 		if x != nil {
 			return out, x
 		}
@@ -251,7 +253,7 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (out Inte
 		if _, err = physical.Copy(ctx, lock, filepath.Join(evidence, "WRITER.lock")); err != nil {
 			return
 		}
-		original, x := physical.Directory(ctx, selected, filepath.Join(evidence, "store"))
+		original, x := physical.OriginalDirectory(ctx, selected, filepath.Join(evidence, "store"))
 		if x != nil {
 			return out, x
 		}
@@ -331,22 +333,18 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (out Inte
 			return
 		}
 	}
-	a, e := physical.Directory(ctx, selected, "")
+	post, e := physical.RecoveryPair(ctx, selected, work, r.Original, r.Candidate)
 	if e != nil {
 		return out, e
 	}
-	w, e := physical.Directory(ctx, work, "")
-	if e != nil {
-		return out, e
-	}
-	if a == r.Original && w == r.Candidate && r.Phase == "verified" {
+	if !post && r.Phase == "verified" {
 		if err = ctx.Err(); err != nil {
 			return
 		}
 		if err = physical.Exchange(selected, work); err != nil {
 			return
 		}
-	} else if a != r.Candidate || w != r.Original {
+	} else if !post {
 		return out, errors.New("fleet recovery activation identity conflict")
 	}
 	for _, p := range []string{root, r.Evidence} {

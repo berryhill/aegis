@@ -1,5 +1,14 @@
 # Aegis MVP Threat Model
 
+Authenticated interrupted recovery may admit recognized original Badger log/lock/
+discard files with engine-created group-write bits only beneath descriptor-pinned,
+current-owner private custody without POSIX ACLs or aliases. It copies rather than
+chmods originals, verifies unchanged identities/content, and retains strict candidate,
+marker and receipt checks through exchange/resume. Root and same-UID hostility,
+historical exposure and arbitrary filesystem semantics are not covered; current
+private mode cannot establish that a store was never compromised. See the exact
+[recovery policy and denials](AUTHORITY_RECOVERY.md#exact-admissible-state-and-engine-proof).
+
 Modern runtime commands validate installation-bound PM activation before native credential custody. The additive compiled record binds exact source, interpreter/package identity, input locks, committed manifest, editable workspace source and dependency bytes; runtime children hold normal source-read/GC leases. Freshness checks are not an atomic host-filesystem seal or protection from hostile same-UID mutation. Ordinary same-account catalog metadata and rejected unavailable-tool correction are not automatically authority violations; the separate one-POST diagnostic remains closed for this runtime. See [the installed boundary](implementation/native-profile-installed-integration.md).
 
 Imported-Agent provider setup retains separate native source/account consent and

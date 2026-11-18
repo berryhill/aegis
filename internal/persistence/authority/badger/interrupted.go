@@ -11,6 +11,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	authoritypersistence "github.com/berryhill/aegis/internal/persistence/authority"
+	physical "github.com/berryhill/aegis/internal/persistence/recoveryphysical"
 	badgerdb "github.com/dgraph-io/badger/v4"
 )
 
@@ -129,7 +130,7 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (result I
 	if err != nil {
 		return result, err
 	}
-	original, err := recoveryDirectory(ctx, selected, "")
+	original, err := physical.OriginalDirectory(ctx, selected, "")
 	if err != nil {
 		return result, err
 	}
@@ -219,7 +220,7 @@ func preserveInterrupted(ctx context.Context, root string, generation Generation
 		Mode       uint32 `json:"mode"`
 		ModifiedAt string `json:"modified_at"`
 	}{}
-	copyFile := func(source, name string) error {
+	copyFile := func(source, name string, original bool) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -228,13 +229,17 @@ func preserveInterrupted(ctx context.Context, root string, generation Generation
 			return err
 		}
 		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || !info.Mode().IsRegular() || !ownedByCurrentEUID(info) || stat.Nlink != 1 || info.Mode().Perm()&0022 != 0 {
+		if !ok || !info.Mode().IsRegular() || !ownedByCurrentEUID(info) || stat.Nlink != 1 || (!original && info.Mode().Perm()&0022 != 0) {
 			return errors.New("unsafe interrupted authority evidence source")
 		}
 		if err := CheckDiskReserve(destination, uint64(info.Size())); err != nil {
 			return err
 		}
-		sum, err := recoveryCopy(ctx, source, filepath.Join(destination, name))
+		copySource := recoveryCopy
+		if original {
+			copySource = physical.OriginalCopy
+		}
+		sum, err := copySource(ctx, source, filepath.Join(destination, name))
 		if err != nil {
 			return err
 		}
@@ -247,7 +252,7 @@ func preserveInterrupted(ctx context.Context, root string, generation Generation
 		return nil
 	}
 	for _, name := range []string{"ACTIVE", "DIRTY"} {
-		if err = copyFile(filepath.Join(root, name), name); err != nil {
+		if err = copyFile(filepath.Join(root, name), name, false); err != nil {
 			return destination, err
 		}
 	}
@@ -272,7 +277,7 @@ func preserveInterrupted(ctx context.Context, root string, generation Generation
 		if total > recoveryByteLimit {
 			return destination, errors.New("recovery byte bound")
 		}
-		if err = copyFile(filepath.Join(selected, entry.Name()), filepath.Join("store", entry.Name())); err != nil {
+		if err = copyFile(filepath.Join(selected, entry.Name()), filepath.Join("store", entry.Name()), true); err != nil {
 			return destination, err
 		}
 	}

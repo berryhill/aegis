@@ -17,6 +17,9 @@ func TestFleetRecoveryCrashChild(t *testing.T) {
 		return
 	}
 	syscall.Umask(0077)
+	if os.Getenv("AEGIS_TEST_RECOVERY_UMASK") == "0002" {
+		syscall.Umask(0002)
+	}
 	s, e := Open(context.Background(), root)
 	if e != nil {
 		t.Fatal(e)
