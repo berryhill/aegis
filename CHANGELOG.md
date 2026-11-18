@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Admit narrowly recognized permissive-umask original Badger evidence during
+  authenticated offline recovery only under descriptor-verified private Linux
+  custody. Retain originals, strict candidate/control permissions and exact
+  pre/post-exchange receipt proof across authority and fleet recovery. No live
+  open, authentication, expiry or writer-lock bypass; see `docs/AUTHORITY_RECOVERY.md`.
+
 - Give the existing complete host-review race group a dedicated mandatory
   `Go race / cli-host` CI job after the shared command job exhausted its deadline.
   Keep defaults separate, all 26 groups and seven normal lanes, and every

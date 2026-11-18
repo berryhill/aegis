@@ -218,6 +218,9 @@ func TestInterruptedRecoveryPreservesRevocationAndAudit(t *testing.T) {
 func TestInterruptedRecoveryProcessExit(t *testing.T) {
 	if root := os.Getenv("AEGIS_TEST_INTERRUPTED_ROOT"); root != "" {
 		syscall.Umask(0077)
+		if os.Getenv("AEGIS_TEST_RECOVERY_UMASK") == "0002" {
+			syscall.Umask(0002)
+		}
 		store, err := Open(context.Background(), root)
 		if err != nil {
 			os.Exit(3)

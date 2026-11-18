@@ -17,7 +17,8 @@ Recovery requires the existing enrolled principal password through the protected
 secret provider, not the credential-vault passphrase, command arguments, environment
 variables, or confirmation flags. Missing enrollment, cancelled authentication,
 wrong principal, or a present protected Unix socket refuses by default. The command opens no
-full service, fleet store, credential vault, runtime or listener. Authentication
+full service, credential vault, runtime or listener. It performs bounded offline
+physical recovery of authority and an existing fleet store. Authentication
 freshness is bounded by configured TTL, capped at two minutes, and checked before
 publication boundaries. A retry requires fresh authentication.
 
@@ -29,7 +30,8 @@ aegis --config /absolute/path/to/aegis.yaml gateway status
 ```
 
 Fresh authenticated product readback and gateway/fleet readiness are separate
-acceptance gates. Recovery neither renews authority nor repairs fleet-v1.
+acceptance gates. Physical fleet recovery neither renews authority nor retries
+execution or repairs logical inconsistencies.
 
 ## Explicit orphan transport review (Linux source candidate)
 
@@ -72,7 +74,28 @@ Before engine inspection, preserve ACTIVE, DIRTY and every selected engine file
 in a private `recovery-evidence/interrupted-*` directory with `SHA256.json` recording
 original hashes, sizes, modes and modification times. Copies are bounded to 4096
 files and 16 GiB logical bytes, cancellable and sparse-aware; symlinks, hard links,
-foreign ownership, writable-by-others files and nested engine entries refuse.
+foreign ownership, world-write and nested engine entries refuse.
+
+On Linux, original engine evidence alone may retain mode `0664` or `0660` on
+Badger `LOCK`, `DISCARD`, numeric `.vlog` and numeric `.mem` files created under
+a permissive umask. This is not a chmod repair or a general writable-file bypass.
+Descriptor-relative no-follow traversal pins every ancestor and the source file;
+the store must be current-UID-owned `0700`, every ancestor root/current-UID-owned,
+with no unprotected group/other-writable ancestry (root-owned sticky directories
+are permitted). A current-UID private ancestor protects writable descendants.
+Any access/default POSIX ACL, unsupported ACL query, special mode, unknown engine
+name, unsafe link count, identity drift or content/metadata mutation denies.
+Only the original is admitted this way: snapshot/work copies are created `0600`,
+and candidate validation retains its strict checks. Receipt resume reidentifies
+the exact original/candidate byte pair on either side of exchange and separately
+rechecks the candidate strictly before promotion. No markers, receipt permissions,
+normal live opens, authentication bounds or writer exclusion are relaxed.
+
+This custody proof trusts root and the current UID, as the existing local storage
+model does. It cannot prove historical confidentiality or rule out prior exposure
+or hostile same-UID/root processes. Suspected earlier compromise remains outside
+supported recovery; current private mode is not evidence that compromise never
+occurred. Originals remain unchanged and retained after exchange.
 
 Recovery supports the pinned unencrypted Badger v4.9.5 WAL format. Independent
 framing, CRC and complete-transaction proof must succeed. Only fully scanned zero
@@ -120,6 +143,12 @@ and exact canonical preservation; malformed/incomplete/checksum WAL refusal;
 receipt custody/substitution/cancellation denial; actual retries after injected
 receipt, exchange, directory-sync, CLEAN, DIRTY-removal and completion boundaries;
 completed idempotency and a later independent recovery with unchanged history.
+Isolated child processes also create actual Badger files under umask `0002` and
+exit without close: authority recovery preserves populated canonical bytes and
+original inode/mode/bytes through pre/post-exchange retries; fleet recovery covers
+the additional `DISCARD` file and a controlled post-exchange receipt-resume fixture.
+Real ACL, links, unsafe modes, snapshot mutation and permissive-candidate negatives
+remain separate from these successful recovery cases.
 Fault hooks model process interruption at completed boundaries, not hardware
 power-loss or filesystem durability guarantees. Installed/live acceptance and
 independent release review remain separate. Normal launch, demo, contributor and

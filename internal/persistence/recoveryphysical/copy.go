@@ -37,6 +37,11 @@ func Copy(ctx context.Context, source, destination string) (string, error) {
 	if err != nil || !os.SameFile(info, opened) || opened.Size() != info.Size() {
 		return "", errors.New("recovery source changed")
 	}
+	return copyOpened(ctx, in, info, destination)
+}
+
+func copyOpened(ctx context.Context, in *os.File, info os.FileInfo, destination string) (string, error) {
+	var err error
 	var out *os.File
 	if destination != "" {
 		out, err = os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
@@ -94,6 +99,10 @@ func Copy(ctx context.Context, source, destination string) (string, error) {
 }
 
 func Directory(ctx context.Context, source, dest string) (string, error) {
+	return directory(ctx, source, dest, Copy)
+}
+
+func directory(ctx context.Context, source, dest string, copyFile func(context.Context, string, string) (string, error)) (string, error) {
 	if err := requireSecureDirectory(source); err != nil {
 		return "", err
 	}
@@ -122,6 +131,7 @@ func Directory(ctx context.Context, source, dest string) (string, error) {
 		}
 	}
 	inventory := map[string]string{}
+	identities := map[string]os.FileInfo{}
 	var total int64
 	for _, e := range entries {
 		info, err := e.Info()
@@ -129,6 +139,7 @@ func Directory(ctx context.Context, source, dest string) (string, error) {
 			return "", err
 		}
 		total += info.Size()
+		identities[e.Name()] = info
 		if total > recoveryByteLimit {
 			return "", errors.New("recovery byte bound")
 		}
@@ -136,14 +147,14 @@ func Directory(ctx context.Context, source, dest string) (string, error) {
 		if dest != "" {
 			target = filepath.Join(dest, e.Name())
 		}
-		sum, err := Copy(ctx, filepath.Join(source, e.Name()), target)
+		sum, err := copyFile(ctx, filepath.Join(source, e.Name()), target)
 		if err != nil {
 			return "", err
 		}
 		inventory[e.Name()] = sum
 	}
 	current, err := os.Lstat(source)
-	if err != nil || !os.SameFile(original, current) {
+	if err != nil || !os.SameFile(original, current) || !SameChangeTime(original, current) {
 		return "", errors.New("recovery directory changed")
 	}
 	after, err := os.ReadDir(source)
@@ -153,6 +164,11 @@ func Directory(ctx context.Context, source, dest string) (string, error) {
 	for i := range after {
 		if after[i].Name() != entries[i].Name() {
 			return "", errors.New("recovery inventory changed")
+		}
+		before := identities[after[i].Name()]
+		now, e := after[i].Info()
+		if e != nil || !os.SameFile(before, now) || !SameChangeTime(before, now) || before.Mode() != now.Mode() || before.Size() != now.Size() || before.ModTime() != now.ModTime() {
+			return "", errors.New("recovery inventory identity changed")
 		}
 	}
 	if dest != "" {

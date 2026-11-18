@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	physical "github.com/berryhill/aegis/internal/persistence/recoveryphysical"
 	"io"
 	"os"
 	"path/filepath"
@@ -250,18 +251,9 @@ func resumeRecovery(ctx context.Context, root, principal string) (InterruptedRec
 		return fail()
 	}
 	work := filepath.Join(r.Evidence, "work")
-	a, e := recoveryDirectory(ctx, selected, "")
+	post, e := physical.RecoveryPair(ctx, selected, work, r.EvidenceDigest, r.CandidateDigest)
 	if e != nil {
 		return result, true, e
-	}
-	w, e := recoveryDirectory(ctx, work, "")
-	if e != nil {
-		return result, true, e
-	}
-	post := a == r.CandidateDigest && w == r.EvidenceDigest
-	pre := a == r.EvidenceDigest && w == r.CandidateDigest
-	if !post && !pre {
-		return fail()
 	}
 	if r.Phase == "completed" {
 		if !post {

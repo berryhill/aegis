@@ -177,6 +177,14 @@ post-event process termination is not pre-execution tool denial. See the
 
 ## Interrupted operational authority
 
+Original Badger log/lock/discard evidence may have engine-created `0664`/`0660`
+modes only under the narrow [private recovery custody policy](docs/AUTHORITY_RECOVERY.md#exact-admissible-state-and-engine-proof).
+No in-place chmod or permissive candidate promotion is permitted. Descriptor
+identity, current ownership, private ancestry, absence of POSIX ACLs, single links
+and unchanged source bytes/metadata are required. This does not establish prior
+confidentiality or protect against hostile root/current-UID processes. Suspected
+historical compromise is not repaired by current permission checks.
+
 The source-only explicit `authority recover-interrupted --quarantine-orphan-transport`
 adapter requires fresh enrolled-principal authentication, complete kernel VFS
 unbound proof and exact reviewed socket custody before no-replace quarantine.
