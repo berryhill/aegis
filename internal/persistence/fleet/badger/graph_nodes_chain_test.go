@@ -160,6 +160,9 @@ func TestGraphNodeProtocolDurableChain(t *testing.T) {
 		t.Fatalf("expired lease: %v", e)
 	}
 	fail(s.CheckpointGraphNode(ctx, pc, audit("fleet.graph.node.checkpointed", pn.ID), blobs))
+	if _, _, recoveryErr := verifyFleetRecovery(ctx, s.db); recoveryErr != nil {
+		t.Errorf("normal node admission/checkpoint must be recoverable: %v", recoveryErr)
+	}
 	p, e := s.GetQueueProjection(ctx, claim.QueueItem.ID)
 	fail(e)
 	if p.State != queue.StateClaimed || p.Attempts != 1 {
@@ -190,6 +193,7 @@ func TestGraphNodeProtocolDurableChain(t *testing.T) {
 		t.Fatalf("early aggregate: %v", e)
 	}
 	fail(s.CheckpointGraphNode(ctx, cc, audit("fleet.graph.node.checkpointed", cn.ID), blobs))
+	checkPresentationRecovery(t, s, true)
 	// Corrupt canonical family bytes in isolated store only. Each mutation must
 	// deny readback and aggregate, then restore the original immutable bytes.
 	for _, family := range []byte{familyGraphNode, familyGraphNodeCheckpoint} {
@@ -216,6 +220,7 @@ func TestGraphNodeProtocolDurableChain(t *testing.T) {
 				corruptWire, err := json.Marshal(envelope)
 				fail(err)
 				fail(s.update(ctx, func(txn *badgerdb.Txn) error { return txn.Set(k, corruptWire) }))
+				checkPresentationRecovery(t, s, false)
 				if err = s.view(ctx, validateGraphNodeFamilies); !errors.Is(err, fleet.ErrCorrupt) {
 					t.Fatalf("family qualification accepted mutation: %v", err)
 				}

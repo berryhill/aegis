@@ -4,6 +4,18 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Repair bounded fleet recovery dispatch for Queue Archive, Preferences and
+  presentation replay in legacy families shared with Contribution records.
+  Require unique canonical interpretations, exact history/head/replay references
+  and Archive ownership/terminal evidence; retain every logical record. Validate
+  shared Preferences/Control prefixes without counting Preferences as controls.
+  Extend canonical recovery to Graph nodes/checkpoints and Contribution
+  Decision/Delivery/Publication history using normal reference and custody
+  validators, without renewing authority or discarding unknown outcomes.
+  Populated abrupt-exit tests preserve logical bytes and prior authority receipts.
+  Focused isolated tests are not complete recovery or deployment qualification;
+  see `docs/AUTHORITY_RECOVERY.md` for independent acceptance gates.
+
 - Validate fleet recovery's Loop availability head as its normal writer's raw
   digest index, joined to the complete sealed availability history and immutable
   publication ownership, rather than decoding it as event JSON. Reject malformed,

@@ -81,6 +81,9 @@ func TestDirectSnapshotAtomicDurableWithoutGraph(t *testing.T) {
 	if created, err := store.AcceptSubmission(ctx, accepted, fact); err != nil || !created {
 		t.Fatalf("accept %v %v", created, err)
 	}
+	if _, _, recoveryErr := verifyFleetRecovery(ctx, store.db); recoveryErr != nil {
+		t.Errorf("direct historical snapshot must be recoverable: %v", recoveryErr)
+	}
 	original, _ := graph.MarshalRunSnapshot(snapshot)
 	// Later definition publication must not retarget accepted direct work.
 	later := lr

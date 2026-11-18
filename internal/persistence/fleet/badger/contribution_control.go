@@ -57,9 +57,28 @@ func loadContributionControl(txn *badgerdb.Txn, id string, caches ...*contributi
 	defer it.Close()
 	count := uint64(0)
 	for it.Rewind(); it.Valid(); it.Next() {
-		if !bytes.Equal(it.Item().Key(), key(familyContributionControl, id, "head")) {
-			count++
+		if bytes.Equal(it.Item().Key(), key(familyContributionControl, id, "head")) {
+			continue
 		}
+		// Legacy Preferences share this physical prefix. Exclude only an
+		// exactly keyed, canonically corroborated Preferences revision, never
+		// an unknown entry or a failed Control decode alone.
+		k := it.Item().KeyCopy(nil)
+		parts, err := decodeKeyParts(k, familyContributionControl)
+		if err != nil {
+			return out, fleet.ErrCorrupt
+		}
+		wire, err := it.Item().ValueCopy(nil)
+		if err != nil {
+			return out, err
+		}
+		if recoveryPreferences(txn, parts, wire, false) == nil {
+			if _, err := decodeContributionControl(wire); err == nil {
+				return out, fleet.ErrCorrupt
+			}
+			continue
+		}
+		count++
 	}
 	if !found {
 		if count != 0 {
