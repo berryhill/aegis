@@ -4,6 +4,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Validate fleet recovery's Loop availability head as its normal writer's raw
+  digest index, joined to the complete sealed availability history and immutable
+  publication ownership, rather than decoding it as event JSON. Reject malformed,
+  orphaned or mismatched heads/events; retain all physical custody and authority
+  gates. Populated abrupt-exit fixtures preserve Registry, Loop, Graph, Queue and
+  evidence records across recovery and retries after completed authority recovery.
+
 - Admit narrowly recognized permissive-umask original Badger evidence during
   authenticated offline recovery only under descriptor-verified private Linux
   custody. Retain originals, strict candidate/control permissions and exact
