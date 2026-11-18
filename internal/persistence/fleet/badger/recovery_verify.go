@@ -54,6 +54,17 @@ func verifyFleetRecovery(ctx context.Context, db *badgerdb.DB) (string, uint64, 
 	schema := false
 	s := &Store{db: db}
 	err := db.View(func(tx *badgerdb.Txn) error {
+		availabilityVerified := map[string]bool{}
+		verifyAvailability := func(id string) error {
+			if availabilityVerified[id] {
+				return nil
+			}
+			if _, err := availabilityHistory(tx, id); err != nil {
+				return err
+			}
+			availabilityVerified[id] = true
+			return nil
+		}
 		it := tx.NewIterator(badgerdb.DefaultIteratorOptions)
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
@@ -153,9 +164,24 @@ func verifyFleetRecovery(ctx context.Context, db *badgerdb.DB) (string, uint64, 
 				}
 				_, e = get(tx, key(familyLoopLifecycleEvent, p[0], string(b)))
 			case familyLoopAvailabilityEvent:
-				_, e = decodeAvailabilityRecord(b)
+				var record availabilityRecord
+				record, e = decodeAvailabilityRecord(b)
+				if e == nil && (len(p) != 1 || p[0] != record.Event.EventID) {
+					e = fleet.ErrCorrupt
+				}
+				if e == nil {
+					// Validate the chain even when its head is missing. An orphaned
+					// event must not evade verification by omitting the index.
+					e = verifyAvailability(record.Event.LoopID)
+				}
 			case familyLoopAvailabilityHead:
-				e = recoveryCanonical(b, loop.UnmarshalAvailabilityEvent)
+				if len(p) != 1 {
+					return fleet.ErrCorrupt
+				}
+				// AppendLoopAvailability stores a raw digest here, not an event
+				// JSON document. The normal reader binds it to the final sealed
+				// event and verifies the complete chain and publication ownership.
+				e = verifyAvailability(p[0])
 			case familyGraphRevision:
 				if len(p) != 2 || len(p[1]) != 8 {
 					return fleet.ErrCorrupt

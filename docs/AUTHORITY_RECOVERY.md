@@ -138,6 +138,23 @@ Hashes are integrity bookkeeping, not signatures against a malicious OS owner.
 
 ## Verification boundary
 
+Fleet Loop availability uses distinct persisted encodings: the `0x27` event
+family contains canonical sealed event/audit envelopes, while the `0x28` head
+family contains a raw event digest keyed by logical Loop ID. Recovery uses the
+normal availability-history validator to bind each head to the final event and
+validate sequence, predecessor, immutable publication and stable ownership. It
+also validates event-key identity and checks histories reached from events, so a
+missing head cannot hide an orphan. This is exact schema validation, not a JSON
+fallback, skipped index or logical repair.
+
+Representative synthetic fixtures write Registry, Loop publication/lifecycle/
+availability, Graph, Queue claim/attempt and evidence/disposition records through
+normal fleet writers, then abruptly exit without closing Badger. Recovery must
+preserve every logical key/value byte and permit normal historical readback.
+Tests cover malformed heads/events and retry after the authority stage has
+already completed, including a subsequent fleet refusal. These are isolated
+storage proofs, not authenticated CLI, real-provider or installed-target proof.
+
 Local regressions cover populated abrupt process exit, committed revocation/audit
 and exact canonical preservation; malformed/incomplete/checksum WAL refusal;
 receipt custody/substitution/cancellation denial; actual retries after injected
