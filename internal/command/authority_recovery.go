@@ -56,7 +56,7 @@ func authorityRecoveryCmd(o *rootOptions, profile ExecutionProfile) *cobra.Comma
 			quarantined = transport.review.EvidencePath()
 		}
 		// Emit retained evidence custody even when verification refuses recovery.
-		if result.EvidencePath != "" || quarantined != "" {
+		if result.VerifiedClean || result.EvidencePath != "" || quarantined != "" {
 			var value any = result
 			if transport != nil {
 				value = struct {

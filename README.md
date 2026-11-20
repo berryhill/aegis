@@ -157,7 +157,7 @@ Do not select an older published coordinator that lacks this command.
 See [the supported procedure](docs/INSTALLED_UPDATE_BOOTSTRAP.md).
 
 
-Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves the original physical evidence, validates complete Badger transactions and zero padding before working-copy replay, and retains exact resumable recovery receipts. Ambiguous or damaged logs refuse. See [the recovery procedure and limits](docs/AUTHORITY_RECOVERY.md).
+Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers exact interrupted generations on Linux. Combined recovery can also verify an already clean, closed authority generation under its exclusive maintenance lease before recovering a still-dirty fleet; it never infers integrity from CLEAN alone or changes authority-only recovery semantics. It preserves the original physical evidence, validates complete Badger transactions and zero padding before working-copy replay, and retains exact resumable recovery receipts. Ambiguous or damaged logs refuse. See [the recovery procedure and limits](docs/AUTHORITY_RECOVERY.md).
 
 Source candidate: `loops setup-protected FILE` requests independent enrolled-password/native exact review through the owning service for retained Doer successor, provisioning or host consent. The hidden product-launched companion never borrows an agent terminal/PTY; generic typed approval still denies. Setup does not publish or Run; installed human/provider acceptance remains pending. See [the workflow](docs/DOER_LOOP.md#protected-setup-through-installed-skills-source-candidate).
 

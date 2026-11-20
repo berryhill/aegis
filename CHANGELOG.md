@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Allow authenticated combined recovery to validate normally closed authority
+  before recovering a still-interrupted fleet. Preserve authority-only denial of
+  ordinary clean generations, pending/completed receipt handling, writer locks
+  and authentication bounds. Clean validation reports `verified_clean: true`,
+  without fabricating recovery evidence or changing authority markers.
+
 - Repair bounded fleet recovery dispatch for Queue Archive, Preferences and
   presentation replay in legacy families shared with Contribution records.
   Require unique canonical interpretations, exact history/head/replay references

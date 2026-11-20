@@ -15,7 +15,7 @@ import (
 )
 
 func TestRecoverInterruptedAuthorityAuthenticatedOfflineBoundary(t *testing.T) {
-	for _, scenario := range []string{"valid", "wrong-password", "wrong-os-principal", "wrong-verifier-principal", "missing-verifier", "online"} {
+	for _, scenario := range []string{"valid", "valid-clean-combined", "wrong-password", "wrong-os-principal", "wrong-verifier-principal", "missing-verifier", "online"} {
 		t.Run(scenario, func(t *testing.T) {
 			state := filepath.Join(t.TempDir(), "state")
 			if err := os.Mkdir(state, 0700); err != nil {
@@ -32,8 +32,10 @@ func TestRecoverInterruptedAuthorityAuthenticatedOfflineBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = os.Rename(filepath.Join(root, "CLEAN"), filepath.Join(root, "DIRTY")); err != nil {
-				t.Fatal(err)
+			if scenario != "valid-clean-combined" {
+				if err = os.Rename(filepath.Join(root, "CLEAN"), filepath.Join(root, "DIRTY")); err != nil {
+					t.Fatal(err)
+				}
 			}
 			principal := cfg.Principal.ID
 			if scenario == "wrong-verifier-principal" {
@@ -62,8 +64,16 @@ func TestRecoverInterruptedAuthorityAuthenticatedOfflineBoundary(t *testing.T) {
 				}
 			}
 			dirty, _ := os.ReadFile(filepath.Join(root, "DIRTY"))
-			result, err := RecoverInterruptedAuthority(context.Background(), cfg, password)
-			if scenario == "valid" {
+			recover := RecoverInterruptedAuthority
+			if scenario == "valid-clean-combined" {
+				recover = RecoverInterruptedInstance
+			}
+			result, err := recover(context.Background(), cfg, password)
+			if scenario == "valid-clean-combined" {
+				if err != nil || result.Recovered || result.Generation != g || result.EvidencePath != "" {
+					t.Fatalf("clean combined: %+v %v", result, err)
+				}
+			} else if scenario == "valid" {
 				if err != nil || !result.Recovered || result.Generation != g {
 					t.Fatalf("%+v %v", result, err)
 				}

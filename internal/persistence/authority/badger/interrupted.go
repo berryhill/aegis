@@ -17,10 +17,11 @@ import (
 
 // InterruptedRecovery is evidence of validation, not a new authority grant.
 type InterruptedRecovery struct {
-	Generation   Generation `json:"generation"`
-	EvidencePath string     `json:"evidence_path"`
-	Records      uint64     `json:"records"`
-	Recovered    bool       `json:"recovered"`
+	Generation    Generation `json:"generation"`
+	EvidencePath  string     `json:"evidence_path"`
+	Records       uint64     `json:"records"`
+	Recovered     bool       `json:"recovered"`
+	VerifiedClean bool       `json:"verified_clean,omitempty"`
 }
 
 // RecoverInterrupted admits only an exact interrupted-open generation. It never
@@ -30,7 +31,19 @@ func RecoverInterrupted(ctx context.Context, root string) (InterruptedRecovery, 
 	return RecoverInterruptedAs(ctx, root, "offline-maintenance")
 }
 
-func RecoverInterruptedAs(ctx context.Context, root, principal string) (result InterruptedRecovery, err error) {
+func RecoverInterruptedAs(ctx context.Context, root, principal string) (InterruptedRecovery, error) {
+	return recoverInterruptedAs(ctx, root, principal, false)
+}
+
+// RecoverInterruptedOrVerifyClosedAs is the authority stage of authenticated
+// combined instance recovery. Unlike authority-only recovery, it also accepts a
+// strictly verified clean close without publishing markers or recovery evidence.
+// The caller must authenticate the principal; normal Open never invokes this API.
+func RecoverInterruptedOrVerifyClosedAs(ctx context.Context, root, principal string) (InterruptedRecovery, error) {
+	return recoverInterruptedAs(ctx, root, principal, true)
+}
+
+func recoverInterruptedAs(ctx context.Context, root, principal string, allowClosed bool) (result InterruptedRecovery, err error) {
 	if err = recoveryExchangeSupported(); err != nil {
 		return result, err
 	}
@@ -54,6 +67,13 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (result I
 	defer lease.release()
 	if resumed, found, e := resumeRecovery(ctx, root, principal); found || e != nil {
 		return resumed, e
+	}
+	if allowClosed {
+		if _, e := os.Lstat(filepath.Join(root, "CLEAN")); e == nil {
+			return verifyClosedForRecovery(ctx, root)
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return result, e
+		}
 	}
 	generation, err := inspectInterrupted(root)
 	if err != nil {

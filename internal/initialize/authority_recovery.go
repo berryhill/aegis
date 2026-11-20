@@ -85,7 +85,11 @@ func recoverInterrupted(ctx context.Context, cfg config.Config, password []byte,
 			}
 		}
 		var err error
-		result, err = authoritybadger.RecoverInterruptedAs(bounded, filepath.Join(cfg.StateDir, "persistence", "authority-v1"), cfg.Principal.ID)
+		recoverAuthority := authoritybadger.RecoverInterruptedAs
+		if fleet {
+			recoverAuthority = authoritybadger.RecoverInterruptedOrVerifyClosedAs
+		}
+		result, err = recoverAuthority(bounded, filepath.Join(cfg.StateDir, "persistence", "authority-v1"), cfg.Principal.ID)
 		if err != nil || !fleet {
 			return err
 		}

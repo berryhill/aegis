@@ -22,7 +22,8 @@ physical recovery of authority and an existing fleet store. Authentication
 freshness is bounded by configured TTL, capped at two minutes, and checked before
 publication boundaries. A retry requires fresh authentication.
 
-Only after zero exit status and JSON `recovered: true`:
+Only after zero exit status and authority JSON `recovered: true` or
+`verified_clean: true` (the command also checks the fleet before returning zero):
 
 ```sh
 aegis --config /absolute/path/to/aegis.yaml gateway start
@@ -56,6 +57,32 @@ can leave transport evidence; that path is custody evidence, not success.
 This adapter is source qualification only until independently reviewed and
 incorporated into a verified candidate. It does not establish live recovery,
 provider admission, renewed authority, or whole-contribution acceptance.
+
+## Already-clean authority in combined recovery
+
+A normal authority close can precede an interrupted fleet close. After the same
+fresh OS-principal/password authentication, combined recovery verifies that
+authority under its exclusive maintenance lease and then recovers the fleet
+under the existing single deadline. It requires exact ACTIVE/CLEAN equality,
+absent DIRTY, private directories, one selected store, empty staging/retired,
+strict engine-file custody, engine identity/checksums and every canonical
+authority record. A marker alone is not integrity proof.
+
+Pending recovery receipts still take their original exact resume path, including
+a crash after CLEAN publication. Exact completed recovery returns its original
+result. After a subsequent normal close changes engine bytes, completed history
+must still belong to the authenticated principal and its retained original copies
+must verify unchanged. Receipt-less evidence, damaged history and ambiguous
+layouts deny; nothing is deleted or rewritten to obtain a clean result.
+
+For a normally closed authority, `verified_clean: true` means validation only:
+`recovered` remains false, no new authority evidence or receipt is created, and
+ACTIVE/CLEAN and engine bytes stay unchanged. A retained prior evidence path is
+custody history, not a claim that this close was physically recovered. The
+authority-only application API (including its upgrade caller) still rejects an
+ordinary clean close; normal Open and fresh runtime admission are unchanged.
+A successful authority result printed alongside a nonzero command exit does not
+mean fleet recovery succeeded.
 
 ## Exact admissible state and engine proof
 
@@ -137,6 +164,29 @@ snapshots remain, including partial evidence. Preserve them privately. Missing
 Hashes are integrity bookkeeping, not signatures against a malicious OS owner.
 
 ## Verification boundary
+
+The opt-in `TestCombinedRecoveryPublicCLI` fixture uses a built executable,
+normal principal enrollment and an explicit fixture-only pinentry helper. An
+actual writer closes authority normally, populates Registry, Loop, direct Queue
+snapshot/submission, Preferences and Contribution control/Decision/Delivery
+histories, then exits without closing fleet. The public command and retry must
+preserve every logical fleet key/value, permit normal reopen and leave authority
+markers and prior completed receipts unchanged. Negatives cover wrong password,
+cancellation, ambiguous authority and malformed fleet publication history. This
+is isolated public-CLI storage proof, not a real-provider run, positive released/
+displaced-root qualification, independent review or installed/live acceptance.
+
+Run against a source-built candidate in its real repository directory:
+
+```sh
+AEGIS_COMBINED_RECOVERY_BINARY="$PWD/aegis" \
+  go test ./internal/persistence/fleet/badger -run '^TestCombinedRecoveryPublicCLI$' -count=1 -v
+```
+
+Without the environment variable this acceptance test is explicitly skipped.
+The optional `AEGIS_COMBINED_RECOVERY_BASELINE` points to the prior source-built
+executable and requires the original clean-authority failure before the candidate
+recovers that same disposable state. No gateway or listener is started.
 
 The bounded Queue presentation source repair recognizes legacy shared physical
 families `0x70`–`0x73`: Archive history/head and presentation replay/Preferences
