@@ -1,5 +1,19 @@
 # Security Policy
 
+Manager `/agents model-add` is an operator-only terminal control, intercepted
+before model dispatch. It reuses enrolled-password native login, origin/CSRF,
+live session validation and a purpose-separated single-use review receipt.
+Peer identity, model prose, piped passwords and approval flags cannot approve.
+The service recomputes the exact one-lane successor and repeats authentication
+at writes; existing scopes/defaults and runtime credential gates are preserved.
+
+Owned Loop model edits are inert proposals, not authority. Their protected
+Console approval requires a live fresh password principal, same-origin CSRF and
+an exact single-use review receipt; local-OS/peer identities cannot approve via
+this seam. Only one missing lane in one enabled stanza is proposed; defaults,
+tools, credentials and selectors remain unchanged. Normal publication and runtime
+gates remain separate. See [scope and partial-write recovery](docs/OWNED_LOOP_MODEL_UPDATE.md).
+
 Modern gateway argv is installation-bound and byte/identity-rechecked before spawn; the complete bootstrap remains intact. Bounded disposable-turn configuration is not a host sandbox, universal HTTP firewall or provider qualification. Installed PM dependency selection remains a separate gate: [modern launch boundary](docs/implementation/native-profile-modern-launch.md).
 
 Provider setup uses separate fresh Unix-peer source/account consent and exact

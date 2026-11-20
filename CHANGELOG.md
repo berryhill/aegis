@@ -4,6 +4,21 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add operator-only `/agents model-add AGENT PROVIDER MODEL` in the gateway-backed
+  manager. Inline protected password authentication and exact single-use review
+  add only the requested lane, without a Loop draft, browser or manual second
+  workflow. Existing defaults, capabilities, credential controls and provider
+  qualification gates remain unchanged. No connection, publication or Run occurs.
+
+- Add file-free owned Loop model updates and immutable pending-edit readback.
+  Approved lanes use normal publication; one missing model is retained for exact
+  independent Console password/CSRF/single-use review, then the owner publishes
+  the same candidate. Exact published updates reconcile original key/provenance
+  after expiry or Agent drift; terminal history no longer consumes the 16-pending
+  review cap. Unknown step selectors return deterministic input errors.
+  No peer self-approval, default change, activation or Run.
+  See `docs/OWNED_LOOP_MODEL_UPDATE.md` for supported transport/design limits.
+
 - Repair bounded fleet recovery dispatch for Queue Archive, Preferences and
   presentation replay in legacy families shared with Contribution records.
   Require unique canonical interpretations, exact history/head/replay references

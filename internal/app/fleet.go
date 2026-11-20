@@ -127,9 +127,13 @@ type PublishLoopInput struct {
 }
 
 type PublishedLoop struct {
-	Revision   loop.LoopRevision         `json:"revision"`
-	Validation loop.LoopValidationResult `json:"validation"`
-	Decision   loop.PublicationDecision  `json:"decision"`
+	// PendingEdit is present only for the explicit owned-edit submission path.
+	// Its presence means no publication decision or executable revision exists.
+	PendingEdit *LoopModelEdit              `json:"pending_edit,omitempty"`
+	Provenance  *loop.PublicationProvenance `json:"provenance,omitempty"`
+	Revision    loop.LoopRevision           `json:"revision"`
+	Validation  loop.LoopValidationResult   `json:"validation"`
+	Decision    loop.PublicationDecision    `json:"decision"`
 }
 
 type SetLoopLifecycleInput struct {

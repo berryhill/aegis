@@ -335,7 +335,7 @@ func shouldSubmitGatewayTurn(mode, input string) bool {
 }
 
 func gatewayManagerCommandSummary() string {
-	return "Commands: /status, /context, /help, /cancel, /exit\nAgent controls: conversational prepare/count/list/show; /agents readiness; /agents list; /agents show <agent-id> [revision]; /agents import hermes default; /agents prepare ...; /agents register ...; exact grammar: /help agents"
+	return "Commands: /status, /context, /help, /cancel, /exit\nAgent controls: /agents model-add AGENT PROVIDER MODEL (inline protected operator review); conversational prepare/count/list/show; /agents readiness; /agents list; /agents show <agent-id> [revision]; /agents import hermes default; /agents prepare ...; /agents register ...; exact grammar: /help agents"
 }
 
 func closeGatewayManager(result error, client *gatewayManagerClient, timeout time.Duration) error {
@@ -396,6 +396,16 @@ func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewa
 			return nil
 		}
 		if input == "" {
+			continue
+		}
+		if selection, handled, parseErr := parseManagerModelAdd(input); handled {
+			if parseErr != nil {
+				fmt.Fprintln(output, parseErr)
+				continue
+			}
+			if err := runManagerModelAdd(sessionCtx, cmd, cfg, selection); err != nil {
+				return err
+			}
 			continue
 		}
 		detection := slash.Detect(input)

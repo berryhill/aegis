@@ -1,5 +1,16 @@
 # Contributing to Aegis
 
+For inline operator model addition, run `TestAgentModelAdd*` and
+`TestManagerModelAdd*` in app/API/command plus the existing protected setup
+client regressions. Preserve the explicit terminal-only command, independently
+authenticated exact review and zero Loop/Queue/provider effects.
+
+For owned Loop model-update changes, preserve the original publication denial
+and regress inert retention, independent Console decision, same-candidate resume,
+default/history preservation and stale/foreign/conflicting denial. Focused tests
+are `TestOwnedLoopModel*` in app, API and command packages. See
+[the source workflow and qualification limits](docs/OWNED_LOOP_MODEL_UPDATE.md).
+
 For modern Hermes adapter work, use the complete supported installed-dependency module/code argv, real PM-created generations and synthetic native auth in networkless fixtures. Production qualification must bind frozen source/interpreter/dependency evidence; an observer-only test record is not production policy. See [installed integration and remaining gates](docs/implementation/native-profile-installed-integration.md).
 
 Before launching an engineering acceptance candidate, read the repository-owned

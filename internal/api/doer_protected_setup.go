@@ -60,6 +60,7 @@ func registerDoerProtectedSetupRoutes(e *echo.Echo, svc *app.Service, manager *c
 		}
 		return manager.AuthorizeMutation(c.Request())
 	}
+	registerAgentModelAddNativeRoutes(e, svc, manager, authorize)
 	e.POST("/console/loops/doer/setup-native/logout", func(c *echo.Context) error {
 		if _, err := authorize(c); err != nil {
 			return mapConsoleError(err)

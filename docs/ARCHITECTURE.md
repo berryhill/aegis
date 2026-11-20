@@ -1,5 +1,28 @@
 # Aegis MVP Architecture
 
+Owned model updates compose the existing operational Store, protected Console
+review manager, exact Agent charter-successor service and unchanged Loop
+publication service. No new daemon, runtime, credential store or scheduler:
+
+```mermaid
+flowchart LR
+    Operator[Direct manager model-add command] --> Native[Inline native password and exact review]
+    Native --> Charter
+    Owner[Registered Loop owner] --> Edit[Exact next revision]
+    Edit -->|already approved lane| Publish[Normal Loop publication]
+    Edit -->|one missing model| Pending[Inert retained edit]
+    Pending --> Human[Independent password Console review]
+    Human --> Charter[Exact approved Agent charter successor]
+    Pending -->|owner resumes same bytes| Publish
+    Charter -->|fresh publication admission| Publish
+    Edit -->|exact published key and provenance| Read[Read-only historical publication]
+    Pending -->|terminal review retained before slot reuse| History[Bounded per-edit immutable history]
+```
+
+Neither the pending edit nor its human decision activates or executes the Loop.
+Provider connection, provisioning, mandates and execution remain independent.
+See [supported boundaries](OWNED_LOOP_MODEL_UPDATE.md).
+
 Modern stdio launch and bounded native account parsing execute Hermes's complete installed-dependency argv. Credential-free activation validates the real PM generation before native custody; exact source/interpreter/dependency qualification and pre-start freshness remain separate from controller authority. Hermes retains its normal source-read lock and generation lease. Modern AttemptTurn writes only its bounded private lane config. See [the additive exact qualification](implementation/native-profile-installed-integration.md); legacy records and authority boundaries are unchanged.
 
 The imported-Agent `providers` follow-up composes existing ControllerCodex and

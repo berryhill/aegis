@@ -245,7 +245,21 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 			return usage(err)
 		}
 		path = "/v1/loops/" + url.PathEscape(args[0]) + fmt.Sprintf("/%d", revision)
-	case "loops publish", "loops validate":
+	case "loops model-update":
+		revision, err := exactRevision(args)
+		if err != nil {
+			return usage(err)
+		}
+		proposal, err := loopModelUpdateInput(cmd)
+		if err != nil {
+			return usage(err)
+		}
+		method, path, input = http.MethodPost, "/v1/loops/"+url.PathEscape(args[0])+fmt.Sprintf("/%d/model-edit", revision), proposal
+	case "loops edit-show":
+		path = "/v1/loops/edits/" + url.PathEscape(args[0])
+	case "loops edit-publish":
+		method, path = http.MethodPost, "/v1/loops/edits/"+url.PathEscape(args[0])+"/publish"
+	case "loops publish", "loops validate", "loops edit":
 		var proposal app.PublishLoopInput
 		if err := decodeJSONFile(args[0], &proposal); err != nil {
 			return usage(err)
@@ -259,6 +273,9 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		method, path, input = http.MethodPost, "/v1/loops", proposal
 		if operation == "loops validate" {
 			path += "/validate"
+		}
+		if operation == "loops edit" {
+			path += "/edits"
 		}
 	case "loops activate", "loops retire":
 		var proposal app.SetLoopLifecycleInput
@@ -413,7 +430,8 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 			return errors.New("owning_instance_unavailable: cannot reach configured protected Unix API; no local-store fallback")
 		}
 		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		pendingEdit := response.StatusCode == http.StatusAccepted && method == http.MethodPost && (operation == "loops edit" || operation == "loops model-update") && path != "/v1/config"
+		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated && !pendingEdit {
 			if processing && response.StatusCode >= 500 {
 				return unknown()
 			}

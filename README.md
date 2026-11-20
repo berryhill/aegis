@@ -1,5 +1,17 @@
 # Aegis
 
+Source candidate: in the gateway-backed manager, `/agents model-add silas openai-codex gpt-6.2-sol`
+adds one exact model permission through inline protected password authentication
+and review. No Loop draft, browser or second command is required. Defaults and
+credential controls remain unchanged; this does not connect or run a provider.
+See [operator model addition](docs/OWNED_LOOP_MODEL_UPDATE.md#inline-operator-model-addition-no-loop-required).
+
+Source candidate: [owned Loop model updates](docs/OWNED_LOOP_MODEL_UPDATE.md)
+publish already-approved selections normally and retain one exact unapproved
+model edit for independent protected Console review. `loops model-update` needs
+no end-user JSON or typed digest; the owner resumes the same revision with
+`loops edit-publish`. Defaults, prior history and execution gates stay unchanged.
+
 Source candidate: [issue-derived Go engineering](docs/issue-derived-engineering.md)
 adds owning-service preparation from ordinary issue prose, retained independent
 decisions, bounded large-asset inspection/patching, new-regression preimages and

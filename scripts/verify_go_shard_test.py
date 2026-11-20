@@ -535,10 +535,10 @@ class ShardTests(unittest.TestCase):
                 'api-b': ('api-b', 'cli', 'persistence'),
             },
             'race': {
-                'orchestration': ('orchestration', 'orchestration-contribution'),
+                'orchestration': ('orchestration', 'persistence', 'cli-contribution-approval'),
                 'api-b': ('api-b', 'remainder-b'),
                 'manager-b': ('manager-contribution-restart',),
-                'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+                'manager-e': ('manager-contribution-disconnect', 'manager-contribution-final'),
             },
         }
         for mode, lanes in expected.items():
@@ -575,7 +575,7 @@ class ShardTests(unittest.TestCase):
                          ('cli-contribution-root', 'cli-contribution-final',
                           'implementation-contribution'))
         self.assertEqual(shard.bundle_groups('api-a', True),
-                         ('api-a', 'persistence'))
+                         ('api-a', 'orchestration-contribution'))
         self.assertEqual(shard.bundle_groups('api-b', True),
                          ('api-b', 'remainder-b'))
         self.assertEqual(shard.bundle_groups('support-a', True),
@@ -599,7 +599,7 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
-    def test_repacked_modes_preserve_exact_once_union_six_race_moves_one_normal_move(self):
+    def test_repacked_modes_preserve_exact_once_union_and_only_expected_moves(self):
         # Freeze the pre-repack maps, accounting separately for the new exact
         # missing-host partition in api-b. Only cli-host adds a lane; no other
         # lane names or unrelated group changes.
@@ -646,6 +646,9 @@ class ShardTests(unittest.TestCase):
         new_owner = {group: lane for lane, groups in shard.BUNDLES['race'].items() for group in groups}
         self.assertEqual({group: (old_owner[group], lane) for group, lane in new_owner.items()
                           if old_owner[group] != lane}, {
+            'persistence': ('api-a', 'orchestration'),
+            'orchestration-contribution': ('orchestration', 'api-a'),
+            'cli-contribution-approval': ('manager-e', 'orchestration'),
             'implementation-contribution': ('implementation', 'cli'),
             'manager-contribution-cancel': ('manager-c', 'manager-d'),
             'cli-contribution-disconnect': ('cli', 'support-a'),
@@ -654,20 +657,20 @@ class ShardTests(unittest.TestCase):
             'cli-contribution-host': ('api-b', 'cli-host'),
         })
         self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
-        # Both newly moved whole groups must remain present exactly once.
-        for group, destination in (('cli', 'support-a'), ('cli-contribution-host', 'cli-host')):
+        # Removing or duplicating any complete group must fail closed.
+        for group, destination in new_owner.items():
             for invalid in (tuple(g for g in shard.BUNDLES['race'][destination] if g != group),
                             (*shard.BUNDLES['race'][destination], group)):
                 with mock.patch.dict(shard.BUNDLES['race'], {destination: invalid}), self.assertRaises(ValueError):
                     shard.bundle_groups(destination, True)
 
-    def test_race_persistence_uses_existing_api_a_lane_budget(self):
-        # Two hosted attempts exhausted support-a with both complete groups.
-        # Reuse api-a's existing job budget; package alarms stay unchanged.
+    def test_race_persistence_uses_existing_orchestration_lane_budget(self):
+        self.assertEqual(shard.bundle_groups('orchestration', True),
+                         ('orchestration', 'persistence', 'cli-contribution-approval'))
         self.assertEqual(shard.bundle_groups('support-a', True),
                          ('remainder-a', 'cli-contribution-disconnect', 'cli'))
         self.assertEqual(shard.bundle_groups('api-a', True),
-                         ('api-a', 'persistence'))
+                         ('api-a', 'orchestration-contribution'))
         self.assertEqual(len(shard.BUNDLES['race']), 14)
         self.assertEqual(sum(group == 'persistence'
                              for groups in shard.BUNDLES['race'].values()

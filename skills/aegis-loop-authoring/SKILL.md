@@ -14,6 +14,39 @@ metadata:
 
 # Aegis Loop authoring
 
+## Owned model edits (matching source candidate required)
+
+Discover `loops model-update --help` before use. For an existing owned revision,
+use `aegis --config OWNER_CONFIG --target CONSOLE_ORIGIN loops model-update LOOP REVISION --agent OWNER_AGENT --provider PROVIDER --model MODEL`.
+Omit `--step` to change all explicitly declared Hermes turns, or repeat `--step ID`
+for selected turns; Laya/deterministic nodes and other contract bytes stay intact.
+The product derives the successor/predecessor and stable key. No human JSON or
+hash-pasting is required. Approved lanes publish normally without operator work.
+
+For one missing model, read `pending_edit.missing_model`, the exact retained
+candidate and `confirmation_url`. Hand that owning-Console link to the human;
+never operate their password/review/confirmation controls or borrow a Unix-peer
+principal to approve. Only fresh protected Console review grants the exact model
+permission. Read with `loops edit-show ID`, then separately invoke
+`loops edit-publish ID` to publish the same candidate under normal checks. Neither
+review nor publication activates or Runs. Existing defaults and prior evidence
+remain unchanged. `loops edit FILE` is an optional exact agent-authored proposal
+adapter, not a required end-user workaround.
+
+Automatic design is bounded to one sole enabled stanza and one exact missing
+lane. Existing unambiguous provider transport is retained; a new Codex lane may
+request the existing zero-Agent-tool/credential controller transport without
+proving connection/readiness. Ambiguity, contribution roles, new local artifact
+digests and unsupported new transports deny, never fall back or erase authority.
+Pending reviews have a fixed seven-day permission window and a 16-active cap.
+Terminal proposals remain in individually bounded immutable history; they do not
+permanently exhaust capacity or renew permission. Read `edit-show` status before
+continuing: published updates reconcile the original exact key and provenance,
+even after expiry/Agent drift; never reapprove or republish them. Expired/stale
+unfinished edits cannot approve/publish. Receipts do not survive restart. Unknown
+step selectors return `invalid_input` without mutation. Source tests using
+`openai-codex / gpt-6.2-sol` are not live/provider acceptance.
+
 ## URL-only engineering contribution (matching candidate required)
 
 Probe `aegis loops contribution --help` on the actual executable. When present,

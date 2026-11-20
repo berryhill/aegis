@@ -101,6 +101,8 @@ type Repository interface {
 	ListAgentRevisions(context.Context, string) ([]registry.AgentRevision, error)
 
 	PublishLoop(context.Context, loop.PublishRequest, AuditFact) (loop.PublicationDecision, error)
+	// VerifyLoopPublication reconciles an exact historical request without writes.
+	VerifyLoopPublication(context.Context, loop.PublishRequest) error
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)
 	GetLoopValidation(context.Context, string, uint64, string) (loop.LoopValidationResult, error)
 	GetLoopPublicationProvenance(context.Context, string, uint64) (loop.PublicationProvenance, error)
