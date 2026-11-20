@@ -118,7 +118,10 @@ func protectedSetupInputStatus(err error) string {
 
 // Inject only the human surfaces for tests; production has no approval flag,
 // password argument, environment input or file input.
-func executeDoerProtectedSetup(ctx context.Context, cfg config.Config, input app.DoerProtectedSetupInput, acquire func(context.Context) ([]byte, error), confirm func(context.Context, app.DoerProtectedSetupReview) string, emit func(app.DoerProtectedSetupResult) error) error {
+type protectedNativeRequest func(context.Context, string, string, []byte, any) error
+
+// withProtectedNativeSession never exposes password/session material to chat.
+func withProtectedNativeSession(ctx context.Context, cfg config.Config, acquire func(context.Context) ([]byte, error), interact func(protectedNativeRequest) error) error {
 	origin, err := url.Parse(cfg.API.Console.Origin)
 	if err != nil {
 		return errors.New("owning_instance_mismatch")
@@ -139,6 +142,7 @@ func executeDoerProtectedSetup(ctx context.Context, cfg config.Config, input app
 		if err != nil {
 			return errors.New("protected_setup_unavailable")
 		}
+		req.GetBody = nil // No automatic replay of authentication or decisions.
 		req.Header.Set("Origin", cfg.API.Console.Origin)
 		req.Header.Set("Content-Type", contentType)
 		if cookie != nil {
@@ -147,8 +151,8 @@ func executeDoerProtectedSetup(ctx context.Context, cfg config.Config, input app
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			if path == "/decision" {
-				return errors.New("protected_setup_outcome_unknown: read retained draft and exact approval receipts before retry; no automatic retry")
+			if strings.HasSuffix(path, "decision") {
+				return errors.New("protected_setup_outcome_unknown: read exact target and approval history before retry; no automatic retry")
 			}
 			if requestCtx.Err() != nil {
 				return errors.New("protected_setup_" + protectedSetupInputStatus(requestCtx.Err()))
@@ -160,7 +164,7 @@ func executeDoerProtectedSetup(ctx context.Context, cfg config.Config, input app
 			return errors.New("protected_setup_denied")
 		}
 		if resp.StatusCode != 200 || resp.Header.Get("Location") != "" {
-			if path == "/decision" {
+			if strings.HasSuffix(path, "decision") {
 				return errors.New("protected_setup_outcome_unknown: inspect exact retained state before retry")
 			}
 			return errors.New("protected_setup_denied")
@@ -213,39 +217,46 @@ func executeDoerProtectedSetup(ctx context.Context, cfg config.Config, input app
 	if login.ConfigIdentity != core.Digest(cfg) {
 		return errors.New("owning_instance_mismatch")
 	}
-	raw, _ := json.Marshal(input)
-	var review app.DoerProtectedSetupReview
-	if err = request(ctx, "/review", "application/json", raw, &review); err != nil {
-		return err
-	}
-	if review.Action != input.Action || review.Draft.ID != input.ID || review.Draft.Version != input.ExpectedVersion || review.Receipt == "" {
-		return errors.New("protected_setup_response_unverified")
-	}
-	if review.Proposal != nil {
-		p := review.Proposal
-		original, e := core.Canonicalize(p.Original.Charter)
-		proposed, e2 := core.Canonicalize(p.Proposed.Charter)
-		if e != nil || e2 != nil || original.Digest != p.Original.Digest || proposed.Digest != p.Proposed.Digest || p.DraftID != input.ID || p.DraftVersion != input.ExpectedVersion || p.Expected != review.Draft.Agent {
+	return interact(request)
+}
+
+func executeDoerProtectedSetup(ctx context.Context, cfg config.Config, input app.DoerProtectedSetupInput, acquire func(context.Context) ([]byte, error), confirm func(context.Context, app.DoerProtectedSetupReview) string, emit func(app.DoerProtectedSetupResult) error) error {
+	return withProtectedNativeSession(ctx, cfg, acquire, func(request protectedNativeRequest) error {
+		var err error
+		raw, _ := json.Marshal(input)
+		var review app.DoerProtectedSetupReview
+		if err = request(ctx, "/review", "application/json", raw, &review); err != nil {
+			return err
+		}
+		if review.Action != input.Action || review.Draft.ID != input.ID || review.Draft.Version != input.ExpectedVersion || review.Receipt == "" {
 			return errors.New("protected_setup_response_unverified")
 		}
-	}
-	decision := confirm(ctx, review)
-	if decision != "approve" && decision != "reject" {
-		return errors.New("protected_setup_" + decision)
-	}
-	raw, _ = json.Marshal(app.DoerProtectedSetupDecision{Receipt: review.Receipt, Decision: decision})
-	var result app.DoerProtectedSetupResult
-	if err = request(ctx, "/decision", "application/json", raw, &result); err != nil {
-		return err
-	}
-	if result.Draft.ID != input.ID || !reflect.DeepEqual(result.Draft.Contract, review.Draft.Contract) { // contract has slices; full equality below
-		return errors.New("protected_setup_response_unverified")
-	}
-	if decision == "reject" {
-		return errors.New("protected_setup_denied: exact review rejected; retained task unchanged")
-	}
-	if result.Status != "approved" || !verifyDoerProtectedResult(cfg, review, result) {
-		return errors.New("protected_setup_response_unverified")
-	}
-	return emit(result)
+		if review.Proposal != nil {
+			p := review.Proposal
+			original, e := core.Canonicalize(p.Original.Charter)
+			proposed, e2 := core.Canonicalize(p.Proposed.Charter)
+			if e != nil || e2 != nil || original.Digest != p.Original.Digest || proposed.Digest != p.Proposed.Digest || p.DraftID != input.ID || p.DraftVersion != input.ExpectedVersion || p.Expected != review.Draft.Agent {
+				return errors.New("protected_setup_response_unverified")
+			}
+		}
+		decision := confirm(ctx, review)
+		if decision != "approve" && decision != "reject" {
+			return errors.New("protected_setup_" + decision)
+		}
+		raw, _ = json.Marshal(app.DoerProtectedSetupDecision{Receipt: review.Receipt, Decision: decision})
+		var result app.DoerProtectedSetupResult
+		if err = request(ctx, "/decision", "application/json", raw, &result); err != nil {
+			return err
+		}
+		if result.Draft.ID != input.ID || !reflect.DeepEqual(result.Draft.Contract, review.Draft.Contract) { // contract has slices; full equality below
+			return errors.New("protected_setup_response_unverified")
+		}
+		if decision == "reject" {
+			return errors.New("protected_setup_denied: exact review rejected; retained task unchanged")
+		}
+		if result.Status != "approved" || !verifyDoerProtectedResult(cfg, review, result) {
+			return errors.New("protected_setup_response_unverified")
+		}
+		return emit(result)
+	})
 }

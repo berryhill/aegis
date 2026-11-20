@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:9e78a308bd9536004113d7c6b8d4bc8e2c10be8ef8cf05679ecc7927a4f8d9f2",
+    "content_digest": "sha256:ea7a3b8659ccba228d607cae43b336d0f41fee12e58810c4e677647641216849",
     "source_revision": "repository"
   },
   "operations": [
@@ -105,7 +105,7 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:17822c8155df998e65086c4eadddfd51d9d8a51abfebca1cb4b3e10f0d39d4cf",
+      "content_digest": "sha256:82ad7063997f1bb0380215dd50c2ebbdf676005b44ed38579b4b8af403f82888",
       "files": [
         {
           "path": "SKILL.md",
@@ -119,8 +119,8 @@
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:dcadb67b572723c37e892989d3eab5e1f8822474f562b83641bbaa02afbdb6d0",
-          "size": 36009
+          "sha256": "sha256:6e7bb22f6e5d332625428b51fd91abcd3e4cae834f14ac41fe86e241d53be974",
+          "size": 36598
         }
       ]
     },
@@ -260,12 +260,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:87080263c7a1b07f037de9f1869c5a24376ee5f9e0eed4e9de8f77122e4ec732",
+      "content_digest": "sha256:00979d3ed85e82d0d2d05a128ec0e3eb1f529fb8e27fe205ebaf90d775fec1db",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:1b53152f164fdf483cbf510c0e68aaf1e1708064f5dabc0059af706af8a4787e",
-          "size": 17834
+          "sha256": "sha256:a03b704264325d686daa6a877774c90a9656b16c3198cda830db4e2796e42dc2",
+          "size": 18744
         },
         {
           "path": "references/registry-fixtures.json",
@@ -330,12 +330,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:bcd5a26afcf9276d51550e598995e76fe7ba1590539dd55d44c495364780123e",
+      "content_digest": "sha256:f3e7c9a4ed7818b85f22d257af270a6aec2cf60b5a021afe4cfa35ddd26bb762",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:a135bb45f76d2e8ecdd9ae7c613590350af0e0b8f9219a397bb006da59e32a1e",
-          "size": 60208
+          "sha256": "sha256:63184d246936609d989fa662c125d8c6d3cfa024179e95aa69dff92e491a8058",
+          "size": 62509
         },
         {
           "path": "references/authoring-contract.v1.md",

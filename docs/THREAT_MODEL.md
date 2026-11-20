@@ -1,5 +1,24 @@
 # Aegis MVP Threat Model
 
+The manager model-add control is selected only by direct operator command input,
+not a model proposal. Native enrolled-password authentication and a separate
+review-receipt purpose bind the current Agent and recomputed narrow charter.
+No ambient peer self-approval or arbitrary charter payload is accepted. Protected
+input is never model context; uncertain writes are not retried automatically.
+
+Owned Loop edits cannot turn a requester/Unix-peer principal into a model approver.
+The existing password Console owns independent session-bound exact review;
+the service rejects peer, revoked, stale and substituted decisions, retains the
+original candidate, and repeats principal admission at charter/Registry effects.
+Proposal storage grants no authority. Published readback verifies the original
+request key, complete definition/validation and publisher/owner/audit provenance,
+not digest equality or current-Agent republication. Terminal history is retained
+separately from the 16-active-review bound; expiry and stale reviews grant no new
+permission. One enabled stanza and one missing lane
+avoid union or inferred provider selection; defaults and other scopes survive.
+Same-UID hostility, cross-store atomicity and runtime/provider qualification are
+not implied. See [the bounded design and recovery contract](OWNED_LOOP_MODEL_UPDATE.md).
+
 Authenticated interrupted recovery may admit recognized original Badger log/lock/
 discard files with engine-created group-write bits only beneath descriptor-pinned,
 current-owner private custody without POSIX ACLs or aliases. It copies rather than

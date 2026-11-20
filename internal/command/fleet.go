@@ -232,6 +232,7 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 	command.AddCommand(queueLoop)
 	command.AddCommand(loopDoerServiceCommands(build)...)
 	command.AddCommand(loopAvailabilityCommands(build)...)
+	command.AddCommand(loopModelEditCommands()...)
 	command.AddCommand(list, loopExampleCmd(), loopHelloCmd(), loopImplementationCmd(), loopContributionCmd(), loopDoerCmd(), loopDoerReusableCmd(), loopTemplatesCmd(), validate, publish, show, activate, retire)
 	return command
 }

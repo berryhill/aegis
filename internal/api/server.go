@@ -149,6 +149,8 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusConflict, "expired", "authority expired"
 	case app.IsFleetDenied(err):
 		return http.StatusForbidden, "denied", "fleet authority denied"
+	case errors.Is(err, app.ErrLoopModelEditInput):
+		return http.StatusBadRequest, "invalid_input", app.ErrLoopModelEditInput.Error()
 	case errors.Is(err, app.ErrLoopAvailabilityInput):
 		return http.StatusBadRequest, "invalid_input", "invalid Loop availability input"
 	case app.IsFleetUnavailable(err):
@@ -970,6 +972,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleAgents, agentID))
 	})
 	registerDoerSetupRoutes(e, svc, consoleManager)
+	registerLoopModelEditConsole(e, svc, consoleManager)
 	registerDoerProtectedSetupRoutes(e, svc, consoleManager)
 	RegisterContributionDecisionRoutes(e, svc, consoleManager)
 	installContributionDecisionDelivery(svc)
@@ -1913,6 +1916,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 	})
 	registerControllerCodexRoutes(g, svc)
 	registerDoerServiceRoutes(g, svc)
+	registerLoopModelEditRoutes(g, svc)
 	registerDoerProtectedInvokeRoutes(g, svc, nil)
 	registerLoopAvailabilityRoutes(g, svc)
 	g.GET("/loops", func(c *echo.Context) error {

@@ -46,6 +46,20 @@ The corresponding protected HTTP operations are `POST /v1/agents`, `GET /v1/agen
 
 If an operation is absent from installed help, label it unavailable. There is no shipped general Agent update, delete, unretire, deployment-management, named-profile import, arbitrary profile path, recursive profile discovery, or arbitrary source-scanning operation. The manager may expose sanitized read-only local profile inventory and the one exact default-profile import above; neither surface authorizes general scanning or execution.
 
+## Direct operator model addition
+
+When advertised by the candidate gateway-backed manager, an operator can enter
+`/agents model-add AGENT PROVIDER MODEL` (for example, exact canonical `silas`,
+`openai-codex`, `gpt-6.2-sol`). The product suspends ordinary input for protected
+enrolled-password authentication and exact review, then returns to the same
+manager. No Loop draft, browser, JSON file or second command is needed. Never
+operate its password/APPROVE controls as an agent or send them in chat. Piped
+input is rejected. Peer identity or model output is not independent consent.
+Only one lane in one enabled stanza is added; defaults, capabilities, credentials
+and all runtime gates are preserved. No provider connection, provisioning, Loop
+publication or Run is included. After uncertainty inspect exact Agent history;
+never blindly retry or infer success. Older installed versions may lack this path.
+
 ## Explicit configured models and provider follow-up
 
 When advertised by this source candidate, `/agents import hermes default with-models`

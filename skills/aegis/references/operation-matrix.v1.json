@@ -11,6 +11,7 @@
       "loops readiness", "loops task-execute", "loops task-save", "loops draft-save", "loops task-show", "loops draft-show",
       "loops setup-protected", "loops setup-browser", "loops setup-review", "loops setup-decide", "loops task-continue", "loops draft-continue",
       "loops queue", "loops list", "loops inventory", "loops availability", "loops archive", "loops restore", "loops show", "loops publish", "loops validate", "loops activate", "loops retire",
+      "loops model-update", "loops edit", "loops edit-show", "loops edit-publish",
       "graphs list", "graphs show", "graphs publish", "graphs submit",
       "queue preparations", "queue list", "queue result", "queue show", "queue process", "queue bind-runtime", "queue cancel", "queue revoke", "queue retry"
     ],
@@ -351,7 +352,9 @@
         "POST /console/agents/registration/review",
         "POST /console/agents/registration/execute",
         "POST /console/agents/:agent/lifecycle",
-        "PUT /v1/agents/:agent/charter"
+        "PUT /v1/agents/:agent/charter",
+        "POST /console/loops/doer/setup-native/model-review",
+        "POST /console/loops/doer/setup-native/model-decision"
       ],
       "transport_classification": "shipped"
     },
@@ -454,6 +457,10 @@
         "aegis loops archive",
         "aegis loops restore",
         "aegis loops publish",
+        "aegis loops model-update",
+        "aegis loops edit",
+        "aegis loops edit-show",
+        "aegis loops edit-publish",
         "aegis loops show",
         "aegis loops activate",
         "aegis loops retire",
@@ -483,6 +490,12 @@
         "POST /console/loops/availability",
         "POST /v1/loops/validate",
         "POST /v1/loops",
+        "POST /v1/loops/edits",
+        "POST /v1/loops/:loop/:revision/model-edit",
+        "GET /v1/loops/edits/:id",
+        "POST /v1/loops/edits/:id/publish",
+        "GET /console/loops/model-edit",
+        "POST /console/loops/model-edit",
         "PUT /v1/loops/:loop/lifecycle",
         "GET /v1/loops/:loop/:revision",
         "GET /console/loops",
