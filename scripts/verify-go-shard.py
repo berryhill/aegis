@@ -120,14 +120,9 @@ BUNDLES = {
         'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {
-        # Hosted 40952580487 twice exhausted support-a: persistence 268s +
-        # remainder-a 323s. Reuse api-a's existing 16m job (observed 479s),
-        # without changing its 12m API or persistence's 8m process alarms.
-        # Hosted 41229014561 exhausted api-a's 16m job after its passing API
-        # and persistence groups. api-b completed in 563s under the same cap;
-        # remainder-b previously took 186s. Move that complete existing group
-        # to api-b, preserving every partition, alarm, lane and resource bound.
-        'api-a': ('api-a', 'persistence'),
+        # Exchange whole groups between the existing 16m lanes: persistence
+        # exhausted api-a on the PR and its base (44807218852, 44367191288).
+        'api-a': ('api-a', 'orchestration-contribution'),
         # Hosted 43969794998 exhausted 960s after the first three groups,
         # just as missing-host started. Move only cli and missing-host to
         # measured spare lanes; API + remainder projects 853.933s before setup.
@@ -135,13 +130,13 @@ BUNDLES = {
         # Hosted 41218036692: compile 65s + defaults 444s left too little
         # of 600s for contribution. Keep that group in a separate lane.
         'implementation': ('implementation',),
-        'orchestration': ('orchestration', 'orchestration-contribution'),
+        'orchestration': ('orchestration', 'persistence', 'cli-contribution-approval'),
         # Preserve cancellation with manager-d's existing manager binary.
         'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
         'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
         'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel'),
-        'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+        'manager-e': ('manager-contribution-disconnect', 'manager-contribution-final'),
         # Hosted 41220874653: cli-command defaults took 462s plus 106s
         # compilation; support-a completed in 314s and takes disconnect.
         'cli-command': ('cli-command',),
