@@ -1,5 +1,11 @@
 # Aegis MVP Threat Model
 
+Combined offline recovery never treats a clean authority marker as permission
+to bypass verification: it holds the exclusive maintenance lease, checks exact
+closed-generation identity and canonical integrity, and preserves pending and
+completed recovery evidence before proceeding to fleet. This does not renew
+authority, extend authentication freshness or weaken ordinary Open.
+
 Authenticated interrupted recovery may admit recognized original Badger log/lock/
 discard files with engine-created group-write bits only beneath descriptor-pinned,
 current-owner private custody without POSIX ACLs or aliases. It copies rather than
