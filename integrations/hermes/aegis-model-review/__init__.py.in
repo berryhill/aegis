@@ -1,0 +1,18 @@
+"""A request is not evidence of presentation, approval, or mutation."""
+import json
+
+NAME = 'request_@AGENT@_model_review'
+
+
+def request(args, **_):
+    # Only an intent; the owning plain CLI consumes the typed completion event.
+    # This tool does not import frontend code, open a terminal, or wait for input.
+    return '{"aegis":"request_@AGENT@_model_review.v1"}' if args == {} else '{"status":"invalid"}'
+
+
+def register(ctx):
+    ctx.register_tool(NAME, 'aegis-model-review', {
+        'name': NAME,
+        'description': 'Request operator review of adding only @PROVIDER@/@MODEL@ for @AGENT@. Never ask for credentials or a decision in chat.',
+        'parameters': {'type': 'object', 'properties': {}, 'additionalProperties': False},
+    }, request)

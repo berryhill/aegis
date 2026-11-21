@@ -221,6 +221,12 @@ func newRoot(deps Dependencies, observe rootServiceObserver) *cobra.Command {
 		if err := validateExecutionProfile(deps.Profile, profileLayout, o, cmd.Name() == "reset"); err != nil {
 			return usage(err)
 		}
+		if cmd.Name() == "hermes-model-review" && cmd.Parent() == root {
+			if deps.Profile != ProductionProfile || hermesReviewConfig == "" || o.configFile != hermesReviewConfig || hermesReviewSocket == "" || hermesReviewOrigin == "" || hermesReviewAgent == "" || hermesReviewProvider == "" || hermesReviewModel == "" || o.target != "" || updateAlias || cmd.Flags().Changed("state-dir") {
+				return usage(errors.New("protected_setup_unavailable"))
+			}
+			return nil // No lifecycle inspection or local store access.
+		}
 		if (cmd.Name() == "doer-approval-companion" || cmd.Name() == "doer-setup-companion" || cmd.Name() == "contribution-decision-companion") && cmd.Parent() == root {
 			// Narrow internal IPC adapter: no lifecycle/store constructor. Profile
 			// validation above and the adapter's exact config/transport gates remain.
@@ -418,6 +424,7 @@ func newRoot(deps Dependencies, observe rootServiceObserver) *cobra.Command {
 	root.AddCommand(skillsCmd())
 	root.AddCommand(authorityRecoveryCmd(o, deps.Profile))
 	addGatewayRecovery(root, deps, o)
+	root.AddCommand(hermesModelReviewCmd(o))
 	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
 	root.AddCommand(NewDoerSetupCompanionCommand(func() string { return o.configFile }))
 	root.AddCommand(NewContributionDecisionCompanionCommand(func() string { return o.configFile }))

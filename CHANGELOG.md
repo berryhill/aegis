@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add private build-time packaging for a scoped Linux Hermes review companion and matching plain CLI/plugin overlay. No fleet activation or new grant.
+
 - Add operator-only `/agents model-add AGENT PROVIDER MODEL` in the gateway-backed
   manager. Inline protected password authentication and exact single-use review
   add only the requested lane, without a Loop draft, browser or manual second

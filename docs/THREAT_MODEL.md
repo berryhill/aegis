@@ -527,3 +527,5 @@ remain protected separate surfaces. Lost pending confirmation is denied; durable
 readback and stable request identities recover outcomes. See the [operation and
 verification matrix](CONVERSATIONAL_OPERATIONS.md). Synthetic proposal tests are not
 real-model, browser, installed or live-provider qualification.
+
+The optional [Hermes foreground review](../integrations/hermes/README.md) trusts the operator-controlled packager, runtime, OS and terminal. Tool completion requests presentation, never a grant; neither a peer UID nor the terminal handback authenticates the operator.
