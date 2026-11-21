@@ -1,0 +1,172 @@
+diff --git a/cli.py b/cli.py
+index bae4b552d2..9e6ca9f2d5 100644
+--- a/cli.py
++++ b/cli.py
+@@ -1486,7 +1486,9 @@ class HermesCLI(CLIBacktrackMixin, CLIInitMixin, CLITuiRuntimeMixin, CLIProcessN
+                 if self._tui_multiline_shortcuts:
+                     _enable_extended_enter_keys(app.output)
+                 self._pet_start_anim()
+-                app.run()
++                from hermes_cli.aegis_review import attached
++                with attached(app):
++                    app.run()
+         except (EOFError, KeyboardInterrupt, BrokenPipeError):
+             pass
+         except (KeyError, OSError) as _stdin_err:
+diff --git a/hermes_cli/aegis_review.py b/hermes_cli/aegis_review.py
+new file mode 100644
+index 0000000000..a11264d27c
+--- /dev/null
++++ b/hermes_cli/aegis_review.py
+@@ -0,0 +1,123 @@
++"""Plain CLI lifecycle endpoint. No listener, input buffer or decision callback."""
++from contextlib import contextmanager
++import os
++import pwd
++import secrets
++import select
++import stat
++import time
++import subprocess
++import termios
++import threading
++
++from prompt_toolkit.application import run_in_terminal
++
++# The deployment owner installs the reviewed Aegis executable at this fixed path.
++_COMPANION = '/usr/local/libexec/aegis/8448/aegis'
++_CONFIG = '@CONFIG@'
++_lock = threading.Lock()
++_active = None
++
++
++def _trusted_binary():
++    path = _COMPANION
++    while True:
++        st = os.lstat(path)
++        if st.st_uid or st.st_mode & 0o022 or not (
++            stat.S_ISREG(st.st_mode) if path == _COMPANION else stat.S_ISDIR(st.st_mode)
++        ):
++            return False
++        if path == '/':
++            return True
++        path = os.path.dirname(path)
++
++
++@contextmanager
++def attached(app):
++    global _active
++    host = [app, os.getpid(), False]
++    with _lock:
++        if _active is not None:
++            raise RuntimeError('duplicate plain CLI frontend')
++        _active = host
++    try:
++        yield
++    finally:
++        with _lock:
++            _active = None
++
++
++def _foreground(app):
++    return (app.is_running and app.input.fileno() == 0 and app.output.fileno() == 1
++            and os.tcgetpgrp(0) == os.getpgrp()
++            and all(os.isatty(i) and os.path.samestat(os.fstat(0), os.fstat(i)) for i in (1, 2)))
++
++
++def request(expected_app):
++    """At most one fixed request per attached process; never return a decision."""
++    with _lock:
++        host = _active
++        if host is None or host[0] is not expected_app or host[1] != os.getpid() or host[2]:
++            return False
++        app = host[0]
++        host[2] = True  # Claim before any external check, including reentrant callbacks.
++    try:
++        if not _foreground(app) or not _trusted_binary():
++            return False
++        app.loop.call_soon_threadsafe(_dispatch, host, context=app.context.copy())
++    except (AttributeError, OSError, RuntimeError):
++        return False
++    return True
++
++
++def _handback():
++    """Discard late lines outside PTK. Only fresh explicit handback resumes chat."""
++    token = secrets.token_hex(4).encode()
++    os.write(2, b'\nReview ended. To return to chat type ' + token + b' then Enter: ')
++    deadline = time.monotonic() + 60
++    line = bytearray(4096)
++    try:
++        while (left := deadline - time.monotonic()) > 0 and select.select([0], [], [], left)[0]:
++            count = os.readv(0, [line])
++            if not count:
++                break
++            if count == len(token) + 1 and memoryview(line)[:count] == token + b'\n':
++                return True
++    finally:
++        line[:] = bytes(len(line))
++    return False
++
++
++def _dispatch(host):
++    app = host[0]
++    def review():
++        if _active is not host or not _foreground(app):
++            return
++        saved = termios.tcgetattr(0)
++        hidden = termios.tcgetattr(0)
++        hidden[3] |= termios.ICANON
++        hidden[3] &= ~(termios.ECHO | termios.ECHONL | termios.ISIG | termios.IEXTEN)
++        termios.tcsetattr(0, termios.TCSAFLUSH, hidden)
++        resumed = False
++        try:
++            try:
++                subprocess.run([_COMPANION, '--config', _CONFIG, 'hermes-model-review'],
++                               stdin=0, stdout=1, stderr=2, cwd='/', close_fds=True,
++                               env={'HOME': pwd.getpwuid(os.getuid()).pw_dir, 'PATH': '/usr/bin:/bin'},
++                               check=False, timeout=195)
++            except (OSError, subprocess.SubprocessError):
++                os.write(2, b'\nAegis review unavailable; reconcile before retry.\n')
++            termios.tcsetattr(0, termios.TCSAFLUSH, hidden)
++            resumed = _handback()
++        finally:
++            try:
++                termios.tcsetattr(0, termios.TCSAFLUSH, saved)
++            except termios.error:
++                resumed = False
++            if not resumed:
++                # No implicit return to an accepting chat reader (including on EOF).
++                os._exit(1)
++    # PTK detaches its input reader and restores cooked mode before review.
++    # Run synchronously on its event loop: no competing chat input processing.
++    if _active is host and app.is_running:
++        run_in_terminal(review)
+diff --git a/hermes_cli/cli_stream_mixin.py b/hermes_cli/cli_stream_mixin.py
+index 2066336aa7..4baf5e7776 100644
+--- a/hermes_cli/cli_stream_mixin.py
++++ b/hermes_cli/cli_stream_mixin.py
+@@ -723,6 +723,11 @@ class CLIStreamMixin:
+         progress modes tool.completed also commits a stacked scrollback line (tool history).
+         """
+         from cli import CLI_CONFIG, _DIM, _RST, _cprint, _hermes_home
++        if (event_type == 'tool.completed' and function_name == 'request_@AGENT@_model_review'
++                and not kwargs.get('is_error') and kwargs.get('result') in (
++                    '{"aegis":"request_@AGENT@_model_review.v1"}', {'aegis': 'request_@AGENT@_model_review.v1'})):
++            from hermes_cli.aegis_review import request
++            request(getattr(self, '_app', None))
+         # MoA reference outputs (display-only events from the MoA facade): render each answer
+         # as a labelled thinking-style block BEFORE the aggregator acts.
+         if event_type == "moa.reference":
+diff --git a/tui_gateway/agent_factory.py b/tui_gateway/agent_factory.py
+index 11bd4a37ff..37d5f8e13f 100644
+--- a/tui_gateway/agent_factory.py
++++ b/tui_gateway/agent_factory.py
+@@ -486,6 +486,7 @@ def _tool_progress_enabled(sid: str) -> bool:
+ 
+ 
+ _TOOL_LIFECYCLE_UI_TOOLS = frozenset({
++    "request_@AGENT@_model_review",
+     "clarify", "manage_connections", "setup_mcp",
+     "image_generate", "manage_catalog", "delegate_task", "setup_beat", "set_theme",
+     # File edits are the turn's deliverable — the diff card the user reviews.

@@ -422,3 +422,5 @@ remain protected separate surfaces. Lost pending confirmation is denied; durable
 readback and stable request identities recover outcomes. See the [operation and
 verification matrix](docs/CONVERSATIONAL_OPERATIONS.md). Synthetic proposal tests are not
 real-model, browser, installed or live-provider qualification.
+
+The optional [scoped Hermes companion](integrations/hermes/README.md) requires a trusted private build and root-controlled launcher path. Never put workstation pins or operator input in public artifacts.

@@ -1,0 +1,3 @@
+name: aegis-model-review
+version: 0.1.0
+description: Request a protected scoped model review on the foreground plain CLI.

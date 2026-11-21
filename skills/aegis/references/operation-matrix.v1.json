@@ -46,6 +46,10 @@
       "reason": "Hidden internal broker stdio entrypoint; not a public skill transport."
     },
     {
+      "path": "aegis hermes-model-review",
+      "reason": "Hidden package-bound foreground review; unavailable in standard builds, never a manual agent approval transport."
+    },
+    {
       "path": "aegis doer-approval-companion",
       "reason": "Hidden product-launched native approval companion with inherited private transport and exact peer/process binding; not a manual builder command or public skill transport."
     },

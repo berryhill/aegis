@@ -560,3 +560,5 @@ remain protected separate surfaces. Lost pending confirmation is denied; durable
 readback and stable request identities recover outcomes. See the [operation and
 verification matrix](CONVERSATIONAL_OPERATIONS.md). Synthetic proposal tests are not
 real-model, browser, installed or live-provider qualification.
+
+The opt-in [Hermes review adapter](../integrations/hermes/README.md) routes a typed completion to the attached plain CLI, which hands terminal fds to a fixed companion. Only the existing authenticated manager review path can change the Agent.
